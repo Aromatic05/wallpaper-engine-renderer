@@ -37,11 +37,23 @@ Result<void> OutputController::bind(const OutputTarget&        target,
     m_target = target;
     switch (source.type()) {
     case OutputSourceType::RenderPlan:
-        return bindRenderPlan(target, source);
+        {
+            auto result = bindRenderPlan(target, source);
+            if (result) {
+                auto planResult = source.renderPlan();
+                if (! planResult) {
+                    return Result<void>(planResult.error());
+                }
+                m_boundRenderPlanRevision = planResult.value()->revision();
+            }
+            return result;
+        }
     case OutputSourceType::Texture:
+        m_boundRenderPlanRevision.reset();
         return Result<void>::failure(ResultCode::NotSupported,
                                      "texture output controller is not implemented yet");
     case OutputSourceType::Surface:
+        m_boundRenderPlanRevision.reset();
         return Result<void>::failure(ResultCode::NotSupported,
                                      "surface output controller is not implemented yet");
     }

@@ -100,6 +100,8 @@ int main() {
     auto                      goodResult   = controller.bind(goodTarget, source, capabilities);
     assert(goodResult);
     assert(plan->prepared);
+    assert(controller.boundRenderPlanRevision().has_value());
+    assert(controller.boundRenderPlanRevision().value() == 7);
 
     auto genericPlan   = std::make_shared<SurfaceRenderPlan>();
     auto genericSource = SurfaceRenderPlanSource(genericPlan);
@@ -110,5 +112,7 @@ int main() {
     auto genericResult    = controller.bind(genericTarget, genericSource, capabilities);
     assert(genericResult);
     assert(genericPlan->prepared);
+    assert(controller.boundRenderPlanRevision().has_value());
+    assert(controller.boundRenderPlanRevision().value() == 3);
     return 0;
 }
