@@ -20,7 +20,8 @@ set(warn_opts
 
 add_subdirectory(common)
 add_subdirectory(host)
-add_subdirectory(backend/scene/internal)
+add_subdirectory(backend/scene)
+add_subdirectory(backend/web)
 add_subdirectory(render)
 
 add_library(
@@ -28,33 +29,22 @@ add_library(
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
   backend/BuiltinSessionFactory.cpp
-  backend/scene/CreateWESceneBackend.cpp
-  backend/web/CreateWebBackend.cpp
   api/scene/WEScene.cpp
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp
   api/web/Web.cpp
   runtime/WallpaperRuntime.cpp
-  runtime/session/WallpaperSession.cpp
-  backend/web/internal/WebBackend.cpp)
+  runtime/session/WallpaperSession.cpp)
 
 set(InteralLib
-    wpAudio
-    wpLooper
-    wpSceneBackend
-    wpVulkanRender
-    wpFs
-    wpScene
-    wpVulkan
-    wpRGraph
-    wpParticle
-    wpTimer)
+    wpSceneBackendModule
+    wpWebBackend
+)
 
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC wpUtils
-  PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
-          ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+  PRIVATE ${InteralLib})
 
 target_include_directories(${PROJECT_NAME} PUBLIC . common common/utils/include)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
