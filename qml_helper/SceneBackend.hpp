@@ -102,8 +102,8 @@ public:
     void                                                   ensureLoaded();
 
 private:
-    void setScenePropertyQurl(std::string_view, QUrl);
-    void setSceneProperty(std::string_view name, wallpaper::PropertyValue value);
+    void setSceneSource(QUrl source);
+    void setSceneAssets(QUrl assets);
     bool m_enable_valid { false };
     bool m_loaded { false };
 

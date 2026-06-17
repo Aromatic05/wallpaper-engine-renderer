@@ -126,8 +126,7 @@ public:
         });
         m_owner->ensureSession();
         m_owner->ensureLoaded();
-        m_owner->session()->setProperty(wallpaper::WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK,
-                                        std::static_pointer_cast<void>(cb));
+        wallpaper::SetWESceneFirstFrameCallback(*m_owner->session(), cb);
         m_output_binding = wallpaper::MakeWESceneOutputBinding(info);
         m_owner->setOutputBinding(m_output_binding);
         wallpaper::BindWESceneOutput(*m_owner->session(), m_output_binding);
@@ -240,27 +239,18 @@ QSGNode* SceneObject::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     return node;
 }
 
-void SceneObject::setScenePropertyQurl(std::string_view name, QUrl value) {
-    auto str_value = QDir::toNativeSeparators(value.toLocalFile()).toStdString();
+void SceneObject::setSceneSource(QUrl source) {
     ensureSession();
-
-    if (name == wallpaper::WE_SCENE_PROPERTY_SOURCE) {
-        m_source = value;
-        m_loaded = false;
-        ensureLoaded();
-        return;
-    }
-
-    if (name == wallpaper::WE_SCENE_PROPERTY_ASSETS) {
-        m_assets = value;
-    }
-
-    setSceneProperty(name, std::move(str_value));
+    m_source = std::move(source);
+    m_loaded = false;
+    ensureLoaded();
 }
 
-void SceneObject::setSceneProperty(std::string_view name, wallpaper::PropertyValue value) {
+void SceneObject::setSceneAssets(QUrl assets) {
+    auto assetsPath = QDir::toNativeSeparators(assets.toLocalFile()).toStdString();
     ensureSession();
-    m_session->setProperty(name, std::move(value));
+    m_assets = std::move(assets);
+    wallpaper::SetWESceneAssets(*m_session, std::move(assetsPath));
 }
 // qobject
 
@@ -276,44 +266,49 @@ bool  SceneObject::muted() const { return m_muted; }
 void SceneObject::setSource(const QUrl& source) {
     if (source == m_source) return;
     m_source = source;
-    setScenePropertyQurl(wallpaper::WE_SCENE_PROPERTY_SOURCE, m_source);
+    setSceneSource(m_source);
     Q_EMIT sourceChanged();
 }
 
 void SceneObject::setAssets(const QUrl& assets) {
     if (m_assets == assets) return;
     m_assets = assets;
-    setScenePropertyQurl(wallpaper::WE_SCENE_PROPERTY_ASSETS, m_assets);
+    setSceneAssets(m_assets);
 }
 
 void SceneObject::setFps(int value) {
     if (m_fps == value) return;
     m_fps = value;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(value));
+    ensureSession();
+    wallpaper::SetWESceneFps(*m_session, static_cast<std::int32_t>(value));
     Q_EMIT fpsChanged();
 }
 void SceneObject::setFillMode(int value) {
     if (m_fillMode == value) return;
     m_fillMode = value;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
+    ensureSession();
+    wallpaper::SetWESceneFillMode(*m_session, (int32_t)ToWPFillMode(value));
     Q_EMIT fillModeChanged();
 }
 void SceneObject::setSpeed(float value) {
     if (m_speed == value) return;
     m_speed = value;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_SPEED, value);
+    ensureSession();
+    wallpaper::SetWESceneSpeed(*m_session, value);
     Q_EMIT speedChanged();
 }
 void SceneObject::setVolume(float value) {
     if (m_volume == value) return;
     m_volume = value;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, value);
+    ensureSession();
+    wallpaper::SetWESceneVolume(*m_session, value);
     Q_EMIT volumeChanged();
 }
 void SceneObject::setMuted(bool value) {
     if (m_muted == value) return;
     m_muted = value;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, value);
+    ensureSession();
+    wallpaper::SetWESceneMuted(*m_session, value);
 }
 
 void SceneObject::play() {
@@ -329,7 +324,8 @@ bool SceneObject::vulkanValid() const { return m_enable_valid; }
 void SceneObject::enableVulkanValid() { m_enable_valid = true; }
 void SceneObject::enableGenGraphviz() {
     m_genGraphviz = true;
-    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_GRAPHIVZ, true);
+    ensureSession();
+    wallpaper::SetWESceneGraphviz(*m_session, true);
 }
 
 void SceneObject::setAcceptMouse(bool value) {
