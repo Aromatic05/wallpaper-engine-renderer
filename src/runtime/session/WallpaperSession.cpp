@@ -1,6 +1,16 @@
 #include "api/WallpaperSession.hpp"
 
+#include "output/OutputController.hpp"
+#include "runtime/backend/BackendContext.hpp"
+#include "runtime/backend/BackendFactory.hpp"
 #include "runtime/backend/ContentBackend.hpp"
+#include "runtime/diagnostics/DiagnosticsHub.hpp"
+#include "runtime/input/InputQueue.hpp"
+
+#include <initializer_list>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace wallpaper
 {
@@ -24,52 +34,160 @@ Result<void> missingFactory() {
 }
 } // namespace
 
+struct WallpaperSession::Impl {
+    explicit Impl(SessionConfig sessionConfig)
+        : config(std::move(sessionConfig)) {
+        backendContext.cachePath = config.cachePath;
+    }
+
+    Result<void> ensureBackend() const {
+        if (! backend) {
+            return Result<void>::failure(ResultCode::InvalidState, "session has no loaded backend");
+        }
+        return Result<void>::success();
+    }
+
+    Result<void> ensureState(
+        std::string_view action, std::initializer_list<SessionState> allowedStates) const {
+        for (SessionState allowedState : allowedStates) {
+            if (state == allowedState) {
+                return Result<void>::success();
+            }
+        }
+
+        return Result<void>::failure(ResultCode::InvalidState,
+                                     "cannot " + std::string(action) + " while session is in state "
+                                         + sessionStateName(state));
+    }
+
+    DiagnosticsSnapshot aggregateDiagnostics() const {
+        DiagnosticsHub aggregatedDiagnostics;
+        aggregatedDiagnostics.merge(diagnosticsHub.snapshot());
+        if (backend) {
+            aggregatedDiagnostics.merge(backend->diagnostics());
+        }
+        return aggregatedDiagnostics.snapshot();
+    }
+
+    Result<void> activateOutputBinding() {
+        if (! outputTarget.has_value()) {
+            return Result<void>::failure(ResultCode::InvalidState, "session has no output target");
+        }
+        if (! backend) {
+            return Result<void>::failure(ResultCode::InvalidState, "session has no backend");
+        }
+
+        auto result =
+            outputController.bind(*outputTarget, backend->outputSource(), backend->capabilities());
+        if (! result) {
+            recordError("runtime.output", result.error());
+        }
+        return result;
+    }
+
+    Result<void> drainInputQueue() {
+        while (! inputQueue.empty()) {
+            auto event = std::move(inputQueue.front());
+            inputQueue.pop_front();
+
+            auto result = backend->sendInput(event);
+            if (! result) {
+                recordError("runtime.input", result.error());
+                return result;
+            }
+        }
+
+        return Result<void>::success();
+    }
+
+    Result<void> resetBackendForLoad() {
+        if (! backend) {
+            inputQueue.clear();
+            state = SessionState::Idle;
+            return Result<void>::success();
+        }
+
+        if (state == SessionState::Loaded || state == SessionState::Playing
+            || state == SessionState::Paused) {
+            auto stopResult = backend->stop();
+            if (! stopResult) {
+                recordError("runtime.session", stopResult.error());
+                state = SessionState::Error;
+                return stopResult;
+            }
+        }
+
+        backend.reset();
+        inputQueue.clear();
+        state = SessionState::Idle;
+        return Result<void>::success();
+    }
+
+    void recordError(const char* source, const Error& error) {
+        appendDiagnostic(DiagnosticSeverity::Error, source, error.message);
+    }
+
+    void appendDiagnostic(DiagnosticSeverity severity, const char* source, std::string message) {
+        diagnosticsHub.append(severity, source, std::move(message));
+    }
+
+    SessionConfig                   config;
+    BackendContext                  backendContext;
+    OutputController                outputController;
+    std::unique_ptr<ContentBackend> backend;
+    std::optional<WallpaperSource>  loadedSource;
+    std::optional<OutputTarget>     outputTarget;
+    PropertyMap                     pendingProperties;
+    InputQueue                      inputQueue;
+    SessionState                    state { SessionState::Idle };
+    DiagnosticsHub                  diagnosticsHub;
+};
+
 WallpaperSession::WallpaperSession(SessionConfig config)
-    : m_config(std::move(config)) {
-    m_backendContext.cachePath = m_config.cachePath;
-}
+    : m_impl(std::make_unique<Impl>(std::move(config))) {}
 
 WallpaperSession::~WallpaperSession() = default;
 
 Result<void> WallpaperSession::load(const WallpaperSource& source) {
-    if (! m_config.backendFactory) {
-        recordError("runtime.session", missingFactory().error());
-        m_state = SessionState::Error;
+    if (! m_impl->config.backendFactory) {
+        m_impl->recordError("runtime.session", missingFactory().error());
+        m_impl->state = SessionState::Error;
         return missingFactory();
     }
 
-    auto resetResult = resetBackendForLoad();
+    auto resetResult = m_impl->resetBackendForLoad();
     if (! resetResult) {
         return resetResult;
     }
 
     WallpaperSource resolvedSource = source;
-    for (const auto& [name, value] : m_pendingProperties) {
+    for (const auto& [name, value] : m_impl->pendingProperties) {
         resolvedSource.initialProperties[name] = value;
     }
 
-    auto backendResult = m_config.backendFactory->create(resolvedSource.type, m_backendContext);
+    auto backendResult =
+        m_impl->config.backendFactory->create(resolvedSource.type, m_impl->backendContext);
     if (! backendResult) {
-        recordError("runtime.session", backendResult.error());
-        m_state = SessionState::Error;
+        m_impl->recordError("runtime.session", backendResult.error());
+        m_impl->state = SessionState::Error;
         return Result<void>(backendResult.error());
     }
 
-    m_backend = std::move(backendResult.value());
-    auto loadResult = m_backend->load(resolvedSource);
+    m_impl->backend = std::move(backendResult.value());
+    auto loadResult = m_impl->backend->load(resolvedSource);
     if (! loadResult) {
-        recordError("runtime.session", loadResult.error());
-        m_state = SessionState::Error;
+        m_impl->recordError("runtime.session", loadResult.error());
+        m_impl->state = SessionState::Error;
         return loadResult;
     }
 
-    m_loadedSource = source;
-    m_state        = SessionState::Loaded;
+    m_impl->loadedSource = source;
+    m_impl->state        = SessionState::Loaded;
 
-    if (m_outputTarget.has_value()) {
-        auto bindResult = activateOutputBinding();
+    if (m_impl->outputTarget.has_value()) {
+        auto bindResult = m_impl->activateOutputBinding();
         if (! bindResult) {
-            m_state = SessionState::Error;
+            m_impl->state = SessionState::Error;
             return bindResult;
         }
     }
@@ -78,110 +196,111 @@ Result<void> WallpaperSession::load(const WallpaperSource& source) {
 }
 
 Result<void> WallpaperSession::bindOutput(OutputTarget target) {
-    m_outputTarget = std::move(target);
-    if (m_backend) {
-        return activateOutputBinding();
+    m_impl->outputTarget = std::move(target);
+    if (m_impl->backend) {
+        return m_impl->activateOutputBinding();
     }
     return Result<void>::success();
 }
 
 Result<void> WallpaperSession::play() {
-    auto stateResult = ensureBackend();
+    auto stateResult = m_impl->ensureBackend();
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    stateResult = ensureState("play",
-                              { SessionState::Loaded, SessionState::Paused, SessionState::Stopped });
+    stateResult = m_impl->ensureState(
+        "play", { SessionState::Loaded, SessionState::Paused, SessionState::Stopped });
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    auto result = m_state == SessionState::Paused ? m_backend->resume() : m_backend->start();
+    auto result = m_impl->state == SessionState::Paused ? m_impl->backend->resume()
+                                                        : m_impl->backend->start();
     if (! result) {
-        recordError("runtime.session", result.error());
-        m_state = SessionState::Error;
+        m_impl->recordError("runtime.session", result.error());
+        m_impl->state = SessionState::Error;
         return result;
     }
 
-    m_state = SessionState::Playing;
+    m_impl->state = SessionState::Playing;
     return Result<void>::success();
 }
 
 Result<void> WallpaperSession::pause() {
-    auto stateResult = ensureBackend();
+    auto stateResult = m_impl->ensureBackend();
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    stateResult = ensureState("pause", { SessionState::Playing });
+    stateResult = m_impl->ensureState("pause", { SessionState::Playing });
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    auto result = m_backend->pause();
+    auto result = m_impl->backend->pause();
     if (! result) {
-        recordError("runtime.session", result.error());
-        m_state = SessionState::Error;
+        m_impl->recordError("runtime.session", result.error());
+        m_impl->state = SessionState::Error;
         return result;
     }
 
-    m_state = SessionState::Paused;
+    m_impl->state = SessionState::Paused;
     return Result<void>::success();
 }
 
 Result<void> WallpaperSession::stop() {
-    auto stateResult = ensureBackend();
+    auto stateResult = m_impl->ensureBackend();
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    stateResult = ensureState("stop",
-                              { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
+    stateResult = m_impl->ensureState(
+        "stop", { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
     if (! stateResult) {
-        recordError("runtime.session", stateResult.error());
+        m_impl->recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
-    auto result = m_backend->stop();
+    auto result = m_impl->backend->stop();
     if (! result) {
-        recordError("runtime.session", result.error());
-        m_state = SessionState::Error;
+        m_impl->recordError("runtime.session", result.error());
+        m_impl->state = SessionState::Error;
         return result;
     }
 
-    m_state = SessionState::Stopped;
+    m_impl->state = SessionState::Stopped;
     return Result<void>::success();
 }
 
 Result<void> WallpaperSession::reload() {
-    if (! m_loadedSource.has_value()) {
+    if (! m_impl->loadedSource.has_value()) {
         auto result =
             Result<void>::failure(ResultCode::InvalidState, "session has no source to reload");
-        recordError("runtime.session", result.error());
+        m_impl->recordError("runtime.session", result.error());
         return result;
     }
 
-    auto source = *m_loadedSource;
+    auto source = *m_impl->loadedSource;
     return load(source);
 }
 
 Result<void> WallpaperSession::setProperty(std::string_view name, PropertyValue value) {
     std::string propertyName(name);
-    m_pendingProperties[propertyName] = value;
+    m_impl->pendingProperties[propertyName] = value;
 
-    if (! m_backend) {
+    if (! m_impl->backend) {
         return Result<void>::success();
     }
 
-    auto result = m_backend->setProperty(propertyName, std::move(value));
+    auto result = m_impl->backend->setProperty(propertyName, std::move(value));
     if (! result) {
-        recordError("runtime.property", result.error());
+        m_impl->recordError("runtime.property", result.error());
         return result;
     }
 
@@ -189,119 +308,24 @@ Result<void> WallpaperSession::setProperty(std::string_view name, PropertyValue 
 }
 
 Result<void> WallpaperSession::sendInput(const InputEvent& event) {
-    auto stateResult = ensureBackend();
+    auto stateResult = m_impl->ensureBackend();
     if (! stateResult) {
-        recordError("runtime.input", stateResult.error());
+        m_impl->recordError("runtime.input", stateResult.error());
         return stateResult;
     }
 
-    stateResult = ensureState("send input",
-                              { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
+    stateResult = m_impl->ensureState(
+        "send input", { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
     if (! stateResult) {
-        recordError("runtime.input", stateResult.error());
+        m_impl->recordError("runtime.input", stateResult.error());
         return stateResult;
     }
 
-    m_inputQueue.push_back(event);
-    return drainInputQueue();
+    m_impl->inputQueue.push_back(event);
+    return m_impl->drainInputQueue();
 }
 
-SessionState WallpaperSession::state() const { return m_state; }
+SessionState WallpaperSession::state() const { return m_impl->state; }
 
-DiagnosticsSnapshot WallpaperSession::diagnostics() const {
-    return aggregateDiagnostics();
-}
-
-DiagnosticsSnapshot WallpaperSession::aggregateDiagnostics() const {
-    DiagnosticsHub aggregatedDiagnostics;
-    aggregatedDiagnostics.merge(m_diagnosticsHub.snapshot());
-    if (m_backend) {
-        aggregatedDiagnostics.merge(m_backend->diagnostics());
-    }
-    return aggregatedDiagnostics.snapshot();
-}
-
-Result<void> WallpaperSession::ensureBackend() const {
-    if (! m_backend) {
-        return Result<void>::failure(ResultCode::InvalidState, "session has no loaded backend");
-    }
-    return Result<void>::success();
-}
-
-Result<void> WallpaperSession::ensureState(
-    std::string_view action, std::initializer_list<SessionState> allowedStates) const {
-    for (SessionState state : allowedStates) {
-        if (m_state == state) {
-            return Result<void>::success();
-        }
-    }
-
-    return Result<void>::failure(ResultCode::InvalidState,
-                                 "cannot " + std::string(action) + " while session is in state "
-                                     + sessionStateName(m_state));
-}
-
-Result<void> WallpaperSession::activateOutputBinding() {
-    if (! m_outputTarget.has_value()) {
-        return Result<void>::failure(ResultCode::InvalidState, "session has no output target");
-    }
-    if (! m_backend) {
-        return Result<void>::failure(ResultCode::InvalidState, "session has no backend");
-    }
-
-    auto result =
-        m_outputController.bind(*m_outputTarget, m_backend->outputSource(), m_backend->capabilities());
-    if (! result) {
-        recordError("runtime.output", result.error());
-    }
-    return result;
-}
-
-Result<void> WallpaperSession::drainInputQueue() {
-    while (! m_inputQueue.empty()) {
-        auto event = std::move(m_inputQueue.front());
-        m_inputQueue.pop_front();
-
-        auto result = m_backend->sendInput(event);
-        if (! result) {
-            recordError("runtime.input", result.error());
-            return result;
-        }
-    }
-
-    return Result<void>::success();
-}
-
-Result<void> WallpaperSession::resetBackendForLoad() {
-    if (! m_backend) {
-        m_inputQueue.clear();
-        m_state = SessionState::Idle;
-        return Result<void>::success();
-    }
-
-    if (m_state == SessionState::Loaded || m_state == SessionState::Playing
-        || m_state == SessionState::Paused) {
-        auto stopResult = m_backend->stop();
-        if (! stopResult) {
-            recordError("runtime.session", stopResult.error());
-            m_state = SessionState::Error;
-            return stopResult;
-        }
-    }
-
-    m_backend.reset();
-    m_inputQueue.clear();
-    m_state = SessionState::Idle;
-    return Result<void>::success();
-}
-
-void WallpaperSession::recordError(const char* source, const Error& error) {
-    appendDiagnostic(DiagnosticSeverity::Error, source, error.message);
-}
-
-void WallpaperSession::appendDiagnostic(DiagnosticSeverity severity,
-                                        const char*        source,
-                                        std::string        message) {
-    m_diagnosticsHub.append(severity, source, std::move(message));
-}
+DiagnosticsSnapshot WallpaperSession::diagnostics() const { return m_impl->aggregateDiagnostics(); }
 } // namespace wallpaper
