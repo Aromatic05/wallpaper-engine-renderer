@@ -249,7 +249,8 @@ Result<void> WallpaperSession::activateOutputBinding() {
         return Result<void>::failure(ResultCode::InvalidState, "session has no backend");
     }
 
-    auto result = m_outputController.bind(*m_outputTarget, m_backend->outputSource());
+    auto result =
+        m_outputController.bind(*m_outputTarget, m_backend->outputSource(), m_backend->capabilities());
     if (! result) {
         recordError("runtime.output", result.error());
     }
