@@ -37,6 +37,16 @@ target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
 
 add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
 
+add_executable(
+  host-services-contract-test
+  host_services_contract_test.cpp)
+
+target_link_libraries(host-services-contract-test PRIVATE ${PROJECT_NAME})
+target_include_directories(host-services-contract-test PRIVATE ..)
+target_compile_options(host-services-contract-test PRIVATE ${warn_opts})
+
+add_test(NAME host-services-contract-test COMMAND host-services-contract-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}
