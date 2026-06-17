@@ -24,7 +24,7 @@ class SceneObject : public QQuickItem {
     Q_PROPERTY(float volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(bool muted READ muted WRITE setMuted)
 public:
-    constexpr static std::string_view CACHE_DIR { "wescene-renderer" };
+    constexpr static std::string_view CACHE_DIR { "wallpaper-engine-renderer" };
     static std::string                GetDefaultCachePath();
 
     enum FillMode

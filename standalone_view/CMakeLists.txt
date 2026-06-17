@@ -34,7 +34,7 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PUBLIC 
         ${GLFW_LIBRARIES}
-        wescene-renderer
+        wallpaper-engine-renderer
 )
 
 if(BUILD_QML)
@@ -52,7 +52,7 @@ if(BUILD_QML)
     )
     target_link_libraries(${PROJECT_NAME}-qml
         PUBLIC 
-        wescene-renderer-qml
+        wallpaper-engine-renderer-qml
     )
     set(CMAKE_AUTOMOC OFF) 
     set(CMAKE_AUTORCC OFF) 

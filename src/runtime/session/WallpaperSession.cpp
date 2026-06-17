@@ -43,7 +43,7 @@ std::string resolveCachePath(const SessionConfig& config) {
     if (! config.hostServices || ! config.hostServices->cache.resolveCacheRoot) {
         return {};
     }
-    return config.hostServices->cache.resolveCacheRoot("wescene-renderer").string();
+    return config.hostServices->cache.resolveCacheRoot("wallpaper-engine-renderer").string();
 }
 
 SessionState sessionStateFromReadyState(BackendReadyState readyState) {
