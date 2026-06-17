@@ -17,6 +17,26 @@ target_compile_options(wallpaper-public-api-test PRIVATE ${warn_opts})
 
 add_test(NAME wallpaper-public-api-test COMMAND wallpaper-public-api-test)
 
+add_executable(
+  output-controller-contract-test
+  output_controller_contract_test.cpp)
+
+target_link_libraries(output-controller-contract-test PRIVATE ${PROJECT_NAME})
+target_include_directories(output-controller-contract-test PRIVATE ..)
+target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
+
+add_test(NAME output-controller-contract-test COMMAND output-controller-contract-test)
+
+add_executable(
+  web-backend-contract-test
+  web_backend_contract_test.cpp)
+
+target_link_libraries(web-backend-contract-test PRIVATE ${PROJECT_NAME})
+target_include_directories(web-backend-contract-test PRIVATE ..)
+target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
+
+add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}
