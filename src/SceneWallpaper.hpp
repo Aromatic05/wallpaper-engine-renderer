@@ -1,4 +1,8 @@
 #pragma once
+
+// Legacy scene wrapper kept for compatibility with the old Scene -> Renderer entrypoint.
+// New integrations should prefer WallpaperSession plus api/scene/WEScene.hpp helpers.
+
 #include <memory>
 #include <string_view>
 #include <functional>
