@@ -25,7 +25,12 @@ Result<void> WallpaperSession::load(const WallpaperSource& source) {
         return missingFactory();
     }
 
-    auto backendResult = m_config.backendFactory->create(source.type, m_backendContext);
+    WallpaperSource resolvedSource = source;
+    for (const auto& [name, value] : m_pendingProperties) {
+        resolvedSource.initialProperties[name] = value;
+    }
+
+    auto backendResult = m_config.backendFactory->create(resolvedSource.type, m_backendContext);
     if (! backendResult) {
         recordError("runtime.session", backendResult.error());
         m_state = SessionState::Error;
@@ -33,7 +38,7 @@ Result<void> WallpaperSession::load(const WallpaperSource& source) {
     }
 
     m_backend = std::move(backendResult.value());
-    auto loadResult = m_backend->load(source);
+    auto loadResult = m_backend->load(resolvedSource);
     if (! loadResult) {
         recordError("runtime.session", loadResult.error());
         m_state = SessionState::Error;
@@ -125,12 +130,14 @@ Result<void> WallpaperSession::reload() {
 }
 
 Result<void> WallpaperSession::setProperty(std::string_view name, PropertyValue value) {
-    auto stateResult = ensureBackend();
-    if (! stateResult) {
-        return stateResult;
+    std::string propertyName(name);
+    m_pendingProperties[propertyName] = value;
+
+    if (! m_backend) {
+        return Result<void>::success();
     }
 
-    auto result = m_backend->setProperty(name, std::move(value));
+    auto result = m_backend->setProperty(propertyName, std::move(value));
     if (! result) {
         recordError("runtime.property", result.error());
         return result;

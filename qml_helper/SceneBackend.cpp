@@ -253,10 +253,14 @@ void SceneObject::setScenePropertyQurl(std::string_view name, QUrl value) {
 
     if (name == wallpaper::WE_SCENE_PROPERTY_ASSETS) {
         m_assets = value;
-        if (! m_loaded) return;
     }
 
-    m_session->setProperty(name, str_value);
+    setSceneProperty(name, std::move(str_value));
+}
+
+void SceneObject::setSceneProperty(std::string_view name, wallpaper::PropertyValue value) {
+    ensureSession();
+    m_session->setProperty(name, std::move(value));
 }
 // qobject
 
@@ -285,41 +289,31 @@ void SceneObject::setAssets(const QUrl& assets) {
 void SceneObject::setFps(int value) {
     if (m_fps == value) return;
     m_fps = value;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(value));
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(value));
     Q_EMIT fpsChanged();
 }
 void SceneObject::setFillMode(int value) {
     if (m_fillMode == value) return;
     m_fillMode = value;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
     Q_EMIT fillModeChanged();
 }
 void SceneObject::setSpeed(float value) {
     if (m_speed == value) return;
     m_speed = value;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_SPEED, value);
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_SPEED, value);
     Q_EMIT speedChanged();
 }
 void SceneObject::setVolume(float value) {
     if (m_volume == value) return;
     m_volume = value;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, value);
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, value);
     Q_EMIT volumeChanged();
 }
 void SceneObject::setMuted(bool value) {
     if (m_muted == value) return;
     m_muted = value;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, value);
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, value);
 }
 
 void SceneObject::play() {
@@ -335,9 +329,7 @@ bool SceneObject::vulkanValid() const { return m_enable_valid; }
 void SceneObject::enableVulkanValid() { m_enable_valid = true; }
 void SceneObject::enableGenGraphviz() {
     m_genGraphviz = true;
-    if (m_loaded) {
-        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_GRAPHIVZ, true);
-    }
+    setSceneProperty(wallpaper::WE_SCENE_PROPERTY_GRAPHIVZ, true);
 }
 
 void SceneObject::setAcceptMouse(bool value) {

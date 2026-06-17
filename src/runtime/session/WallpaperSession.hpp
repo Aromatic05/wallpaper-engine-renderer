@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace wallpaper
@@ -51,6 +52,7 @@ private:
     std::unique_ptr<ContentBackend>  m_backend;
     std::optional<WallpaperSource>   m_loadedSource;
     std::optional<OutputTarget>      m_outputTarget;
+    PropertyMap                      m_pendingProperties;
     SessionState                     m_state { SessionState::Idle };
     DiagnosticsSnapshot              m_diagnostics;
 };
