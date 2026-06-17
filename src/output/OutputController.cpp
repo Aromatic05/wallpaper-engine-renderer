@@ -79,7 +79,7 @@ Result<void> OutputController::bind(const OutputTarget&        target,
 
             m_target                  = target;
             m_boundRenderPlanRevision = plan->revision();
-            m_boundRenderPlan         = plan.get();
+            m_boundRenderPlan         = plan;
             return Result<void>::success();
         }
     case OutputSourceType::Texture:

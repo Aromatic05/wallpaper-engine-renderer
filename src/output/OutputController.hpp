@@ -20,7 +20,7 @@ public:
 
     const OutputTarget&          target() const { return m_target; }
     std::optional<std::uint64_t> boundRenderPlanRevision() const { return m_boundRenderPlanRevision; }
-    const RenderPlan*            boundRenderPlan() const { return m_boundRenderPlan; }
+    const RenderPlan*            boundRenderPlan() const { return m_boundRenderPlan.get(); }
 
 private:
     static Result<void> validate(const OutputTarget&        target,
@@ -31,6 +31,6 @@ private:
 
     OutputTarget                 m_target {};
     std::optional<std::uint64_t> m_boundRenderPlanRevision;
-    const RenderPlan*            m_boundRenderPlan { nullptr };
+    RenderPlanPtr                m_boundRenderPlan;
 };
 } // namespace wallpaper

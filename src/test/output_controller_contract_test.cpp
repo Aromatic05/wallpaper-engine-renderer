@@ -3,6 +3,7 @@
 #include "output/RenderPlanSource.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <memory>
 
 namespace
@@ -73,6 +74,49 @@ private:
     mutable int                            calls { 0 };
     std::shared_ptr<FakeSceneRenderPlan> m_firstPlan;
     std::shared_ptr<FakeSceneRenderPlan> m_secondPlan;
+};
+
+class LifetimeTrackedRenderPlan final : public wallpaper::RenderPlan {
+public:
+    explicit LifetimeTrackedRenderPlan(std::size_t& destructionCount)
+        : m_destructionCount(destructionCount) {}
+
+    ~LifetimeTrackedRenderPlan() override { ++m_destructionCount; }
+
+    wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
+        return wallpaper::OutputTargetBindingKind::WESceneVulkan;
+    }
+
+    std::uint64_t revision() const override { return 23; }
+
+    wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget&) override {
+        ++bindCalls;
+        return wallpaper::Result<void>::success();
+    }
+
+    int bindCalls { 0 };
+
+private:
+    std::size_t& m_destructionCount;
+};
+
+class EphemeralRenderPlanSource final : public wallpaper::RenderPlanSource {
+public:
+    explicit EphemeralRenderPlanSource(std::size_t& destructionCount)
+        : m_destructionCount(destructionCount) {}
+
+    std::weak_ptr<LifetimeTrackedRenderPlan> lastPlan() const { return m_lastPlan; }
+
+protected:
+    wallpaper::Result<wallpaper::RenderPlanPtr> currentRenderPlan() const override {
+        auto plan = std::make_shared<LifetimeTrackedRenderPlan>(m_destructionCount);
+        m_lastPlan = plan;
+        return wallpaper::Result<wallpaper::RenderPlanPtr>::success(plan);
+    }
+
+private:
+    std::size_t&                                   m_destructionCount;
+    mutable std::weak_ptr<LifetimeTrackedRenderPlan> m_lastPlan;
 };
 
 class WrongBinding final : public wallpaper::OutputTargetBinding {
@@ -158,6 +202,19 @@ int main() {
     assert(unstablePlanB->bindCalls == 0);
     assert(unstableController.boundRenderPlanRevision().has_value());
     assert(unstableController.boundRenderPlanRevision().value() == 13);
+
+    std::size_t destructionCount = 0;
+    wallpaper::OutputController ownedPlanController;
+    {
+        auto ephemeralSource = EphemeralRenderPlanSource(destructionCount);
+        auto ownedResult     = ownedPlanController.bind(goodTarget, ephemeralSource, capabilities);
+        assert(ownedResult);
+        assert(! ephemeralSource.lastPlan().expired());
+    }
+    assert(destructionCount == 0);
+    assert(ownedPlanController.boundRenderPlan() != nullptr);
+    ownedPlanController = wallpaper::OutputController {};
+    assert(destructionCount == 1);
 
     auto genericPlan   = std::make_shared<SurfaceRenderPlan>();
     auto genericSource = SurfaceRenderPlanSource(genericPlan);
