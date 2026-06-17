@@ -131,26 +131,45 @@ struct WallpaperSession::Impl {
         playbackState  = PlaybackState::Idle;
     }
 
-    Result<void> activateOutputBinding(OutputSource& outputSource,
-                                       const RenderPlanPtr& resolvedPlan = nullptr) {
-        if (! outputTarget.has_value()) {
-            return Result<void>::failure(ResultCode::InvalidState, "session has no output target");
+    Result<void> bindOutputTarget(const OutputTarget& candidateTarget,
+                                  OutputSource&       outputSource,
+                                  OutputController&   candidateController,
+                                  const RenderPlanPtr& resolvedPlan = nullptr) {
+        if (! candidateTarget.valid()) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "output target binding is null");
         }
         if (! backend) {
             return Result<void>::failure(ResultCode::InvalidState, "session has no backend");
         }
 
         auto result = resolvedPlan
-                          ? outputController.bind(
-                                *outputTarget, outputSource, backend->capabilities(), resolvedPlan)
-                          : outputController.bind(
-                                *outputTarget, outputSource, backend->capabilities());
+                          ? candidateController.bind(
+                                candidateTarget, outputSource, backend->capabilities(), resolvedPlan)
+                          : candidateController.bind(
+                                candidateTarget, outputSource, backend->capabilities());
+        if (! result) {
+            return result;
+        }
+
+        outputTarget      = candidateTarget;
+        boundOutputSource = &outputSource;
+        outputController  = std::move(candidateController);
+        backend->notifyOutputBound();
+        synchronizeSessionState();
+        return Result<void>::success();
+    }
+
+    Result<void> activateOutputBinding(OutputSource& outputSource,
+                                       const RenderPlanPtr& resolvedPlan = nullptr) {
+        if (! outputTarget.has_value()) {
+            return Result<void>::failure(ResultCode::InvalidState, "session has no output target");
+        }
+
+        auto candidateController = outputController;
+        auto result = bindOutputTarget(*outputTarget, outputSource, candidateController, resolvedPlan);
         if (! result) {
             recordError("runtime.output", result.error());
-        } else {
-            boundOutputSource = &outputSource;
-            backend->notifyOutputBound();
-            synchronizeSessionState();
         }
         return result;
     }
@@ -317,11 +336,26 @@ Result<void> WallpaperSession::load(const WallpaperSource& source) {
 }
 
 Result<void> WallpaperSession::bindOutput(OutputTarget target) {
-    m_impl->outputTarget = std::move(target);
-    m_impl->boundOutputSource = nullptr;
-    if (m_impl->backend) {
-        return m_impl->activateOutputBinding(m_impl->backend->outputSource());
+    if (! target.valid()) {
+        return Result<void>::failure(ResultCode::InvalidArgument, "output target binding is null");
     }
+
+    if (! m_impl->backend) {
+        m_impl->outputTarget = std::move(target);
+        return Result<void>::success();
+    }
+
+    auto              candidateTarget      = std::move(target);
+    auto              candidateController  = m_impl->outputController;
+    auto* const       previousOutputSource = m_impl->boundOutputSource;
+    auto              result = m_impl->bindOutputTarget(
+        candidateTarget, m_impl->backend->outputSource(), candidateController);
+    if (! result) {
+        m_impl->boundOutputSource = previousOutputSource;
+        m_impl->recordError("runtime.output", result.error());
+        return result;
+    }
+
     return Result<void>::success();
 }
 

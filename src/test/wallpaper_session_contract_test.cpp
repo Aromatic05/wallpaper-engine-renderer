@@ -22,6 +22,13 @@ public:
     }
 };
 
+class WrongBinding final : public wallpaper::OutputTargetBinding {
+public:
+    wallpaper::OutputTargetBindingKind kind() const override {
+        return wallpaper::OutputTargetBindingKind::Offscreen;
+    }
+};
+
 class FakeRenderPlan final : public wallpaper::RenderPlan {
 public:
     explicit FakeRenderPlan(std::uint64_t revision = 1)
@@ -174,6 +181,11 @@ int main() {
 
     wallpaper::WallpaperSession session(config);
 
+    wallpaper::OutputTarget invalidTarget;
+    auto invalidBindResult = session.bindOutput(invalidTarget);
+    assert(! invalidBindResult);
+    assert(invalidBindResult.error().code == wallpaper::ResultCode::InvalidArgument);
+
     wallpaper::WallpaperSource source { wallpaper::BackendType::WEScene, "fake://scene", {} };
     auto loadResult = session.load(source);
     assert(loadResult);
@@ -209,6 +221,15 @@ int main() {
     assert(factory->lastBackend->renderPlanImpl()->bindCalls == 1);
     assert(session.state() == wallpaper::SessionState::Playing);
     assert(session.readyState() == wallpaper::BackendReadyState::OutputReady);
+
+    wallpaper::OutputTarget wrongTarget;
+    wrongTarget.type    = wallpaper::OutputTargetType::Surface;
+    wrongTarget.binding = std::make_shared<WrongBinding>();
+    auto failedRebindResult = session.bindOutput(wrongTarget);
+    assert(! failedRebindResult);
+    assert(failedRebindResult.error().code == wallpaper::ResultCode::InvalidArgument);
+    assert(factory->lastBackend->notifyOutputBoundCalls == 1);
+    assert(factory->lastBackend->renderPlanImpl()->bindCalls == 1);
 
     auto replacementPlan = std::make_shared<FakeRenderPlan>(2);
     factory->lastBackend->setNextRenderPlan(replacementPlan);
