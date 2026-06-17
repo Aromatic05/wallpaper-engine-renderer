@@ -20,6 +20,11 @@ CustomShaderPass::CustomShaderPass(const Desc& desc) {
     m_desc.node        = desc.node;
     m_desc.textures    = desc.textures;
     m_desc.output      = desc.output;
+    m_desc.cameraOverride = desc.cameraOverride;
+    m_desc.clearBeforeDraw = desc.clearBeforeDraw;
+    m_desc.forceAlphaWrite = desc.forceAlphaWrite;
+    m_desc.premultipliedSourceBlend = desc.premultipliedSourceBlend;
+    m_desc.should_execute = desc.should_execute;
     m_desc.sprites_map = desc.sprites_map;
 };
 CustomShaderPass::~CustomShaderPass() {}
@@ -239,17 +244,20 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
         {
             VkColorComponentFlags colorMask =
                 VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
-            bool alpha =
-                ! (m_desc.node->Camera().empty() || sstart_with(m_desc.node->Camera(), "global"));
+            bool alpha = m_desc.forceAlphaWrite || m_desc.output != SpecTex_Default;
 
             if (alpha) colorMask |= VK_COLOR_COMPONENT_A_BIT;
             color_blend.colorWriteMask = colorMask;
 
             auto blendmode = mesh.Material()->blenmode;
-            SetBlend(blendmode, color_blend);
+            SetBlend(blendmode, color_blend, m_desc.premultipliedSourceBlend);
             m_desc.blending = color_blend.blendEnable;
 
-            SetAttachmentLoadOp(blendmode, loadOp);
+            if (m_desc.clearBeforeDraw) {
+                loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            } else {
+                SetAttachmentLoadOp(blendmode, loadOp);
+            }
         }
         auto opt = CreateRenderPass(device.handle(),
                                     VK_FORMAT_R8G8B8A8_UNORM,
@@ -330,12 +338,14 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
         auto* shader_updater = scene.shaderValueUpdater.get();
         auto& sprites        = m_desc.sprites_map;
         auto& vk_textures    = m_desc.vk_textures;
+        auto  camera_override = m_desc.cameraOverride;
 
         m_desc.update_op = [shader_updater,
                             block,
                             buf,
                             bufref,
                             node,
+                            camera_override,
                             &sprites,
                             &vk_textures,
                             update_dyn_buf_op]() {
@@ -343,7 +353,7 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                                                        wallpaper::ShaderValue value) {
                 UpdateUniform(buf, *bufref, block, name, value);
             };
-            shader_updater->UpdateUniforms(node, sprites, update_unf_op);
+            shader_updater->UpdateUniforms(node, sprites, update_unf_op, camera_override);
             // update image slot for sprites
             {
                 for (auto& [i, sp] : sprites) {
@@ -377,10 +387,16 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
     }
 
     {
-        auto& sc           = scene.clearColor;
-        m_desc.clear_value = VkClearValue {
-            .color = { sc[0], sc[1], sc[2], 1.0f },
-        };
+        if (m_desc.clearBeforeDraw || m_desc.output != SpecTex_Default) {
+            m_desc.clear_value = VkClearValue {
+                .color = { 0.0f, 0.0f, 0.0f, 0.0f },
+            };
+        } else {
+            auto& sc           = scene.clearColor;
+            m_desc.clear_value = VkClearValue {
+                .color = { sc[0], sc[1], sc[2], 1.0f },
+            };
+        }
     }
     for (auto& tex : releaseTexs()) {
         device.tex_cache().MarkShareReady(tex);
@@ -389,6 +405,7 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
 }
 
 void CustomShaderPass::execute(const Device&, RenderingResources& rr) {
+    if (m_desc.should_execute && ! m_desc.should_execute()) return;
     if (m_desc.update_op) m_desc.update_op();
 
     auto&                   cmd    = rr.command;

@@ -57,6 +57,24 @@ target_compile_options(resource-correctness-test PRIVATE ${warn_opts})
 
 add_test(NAME resource-correctness-test COMMAND resource-correctness-test)
 
+add_executable(
+  effect-rendergraph-correctness-test
+  effect_rendergraph_correctness_test.cpp)
+
+target_link_libraries(effect-rendergraph-correctness-test PRIVATE ${PROJECT_NAME})
+target_include_directories(
+  effect-rendergraph-correctness-test PRIVATE
+  ..
+  ../render/rendergraph/include
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal
+  ../common
+  ../common/utils/include
+  ../render/vulkan/include)
+target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts})
+
+add_test(NAME effect-rendergraph-correctness-test COMMAND effect-rendergraph-correctness-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}

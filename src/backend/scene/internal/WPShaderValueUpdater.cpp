@@ -81,14 +81,15 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, const ExistsUniformOp&
 }
 
 void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprites,
-                                          const UpdateUniformOp& updateOp) {
+                                          const UpdateUniformOp& updateOp,
+                                          std::string_view cameraOverride) {
     if (! pNode->Mesh()) return;
 
     pNode->UpdateTrans();
 
     const SceneCamera* camera;
-    std::string_view   cam_name = pNode->Camera();
-    if (! pNode->Camera().empty()) {
+    std::string_view   cam_name = cameraOverride.empty() ? pNode->Camera() : cameraOverride;
+    if (! cam_name.empty()) {
         camera = m_scene->cameras.at(cam_name.data()).get();
     } else
         camera = m_scene->activeCamera;

@@ -50,6 +50,8 @@ void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& r
     setPrepared();
 };
 void CopyPass::execute(const Device& device, RenderingResources& rr) {
+    if (m_desc.should_execute && ! m_desc.should_execute()) return;
+
     auto& cmd = rr.command;
     auto& src = m_desc.vk_src;
     auto& dst = m_desc.vk_dst;

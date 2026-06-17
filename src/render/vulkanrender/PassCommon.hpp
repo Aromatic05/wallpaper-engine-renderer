@@ -8,7 +8,8 @@ namespace wallpaper
 {
 namespace vulkan
 {
-inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state) {
+inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state,
+                     bool premultiplied_source = false) {
     state.blendEnable  = true;
     state.colorBlendOp = VK_BLEND_OP_ADD;
     state.alphaBlendOp = VK_BLEND_OP_ADD;
@@ -21,15 +22,19 @@ inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state) {
         state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
         break;
     case BlendMode::Translucent:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.srcColorBlendFactor =
+            premultiplied_source ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
         state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        state.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.srcAlphaBlendFactor =
+            premultiplied_source ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
         state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         break;
     case BlendMode::Additive:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.srcColorBlendFactor =
+            premultiplied_source ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
         state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        state.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.srcAlphaBlendFactor =
+            premultiplied_source ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
         state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         break;
     }

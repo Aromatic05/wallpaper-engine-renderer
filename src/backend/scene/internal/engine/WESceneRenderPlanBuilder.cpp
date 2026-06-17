@@ -19,32 +19,40 @@ void doCopy(RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc, TexNode* 
     desc.src = in->key();
     desc.dst = out->key();
 }
-void addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode* out) {
+void addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode* out,
+                 std::function<bool()> should_execute = {}) {
     rgraph.addPass<vulkan::CopyPass>(
         "copy",
         PassNode::Type::Copy,
-        [&in, &out](RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc) {
+        [in, out, should_execute = std::move(should_execute)](
+            RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc) {
             doCopy(builder, desc, in, out);
+            desc.should_execute = should_execute;
         });
 }
 
-void addCopyPass(RenderGraph& rgraph, const TexNode::Desc& in, const TexNode::Desc& out) {
+void addCopyPass(RenderGraph& rgraph, const TexNode::Desc& in, const TexNode::Desc& out,
+                 std::function<bool()> should_execute = {}) {
     rgraph.addPass<vulkan::CopyPass>(
         "copy",
         PassNode::Type::Copy,
-        [&in, &out](RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc) {
+        [in, out, should_execute = std::move(should_execute)](
+            RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc) {
             auto* in_node  = builder.createTexNode(in);
             auto* out_node = builder.createTexNode(out, true);
             doCopy(builder, desc, in_node, out_node);
+            desc.should_execute = should_execute;
         });
 }
 
-TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc = nullptr) {
+TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc = nullptr,
+                     std::function<bool()> should_execute = {}) {
     TexNode* copy { nullptr };
     rgraph.addPass<vulkan::CopyPass>(
         "copy",
         PassNode::Type::Copy,
-        [&copy, in, out_desc](RenderGraphBuilder& builder, vulkan::CopyPass::Desc& pdesc) {
+        [&copy, in, out_desc, should_execute = std::move(should_execute)](
+            RenderGraphBuilder& builder, vulkan::CopyPass::Desc& pdesc) {
             auto desc = out_desc == nullptr ? in->genDesc() : *out_desc;
             if (out_desc == nullptr) {
                 desc.key += "_" + std::to_string(in->version()) + "_copy";
@@ -52,15 +60,18 @@ TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc =
             }
             copy = builder.createTexNode(desc, true);
             doCopy(builder, pdesc, in, copy);
+            pdesc.should_execute = should_execute;
         });
     return copy;
 }
 
-static TexNode::Desc createTexDesc(std::string path) {
+static TexNode::Desc createTexDesc(std::string path, const Scene* scene = nullptr) {
     return TexNode::Desc { .name = path,
                            .key  = path,
-                           .type = IsSpecTex(path) ? TexNode::TexType::Temp
-                                                   : TexNode::TexType::Imported };
+                           .type = (IsSpecTex(path) ||
+                                    (scene != nullptr && scene->renderTargets.count(path) != 0))
+                                       ? TexNode::TexType::Temp
+                                       : TexNode::TexType::Imported };
 }
 } // namespace wallpaper::rg
 
@@ -96,7 +107,9 @@ struct ExtraInfo {
     bool                       use_mipmap_framebuffer { false };
 };
 
-static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, ExtraInfo& extra) {
+static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, ExtraInfo& extra,
+                        const SceneImageEffectNode* effect_node = nullptr,
+                        const SceneImageEffect* effect_owner = nullptr) {
     auto& rgraph = *extra.rgraph;
     auto& scene  = *extra.scene;
 
@@ -111,12 +124,33 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
             for (auto& n : eff->nodes) {
                 if (cmdItor != cmdEnd && nodePos == cmdItor->afterpos) {
                     rg::addCopyPass(
-                        rgraph, rg::createTexDesc(cmdItor->src), rg::createTexDesc(cmdItor->dst));
+                        rgraph,
+                        rg::createTexDesc(cmdItor->src, &scene),
+                        rg::createTexDesc(cmdItor->dst, &scene),
+                        [eff = eff.get()] {
+                            return eff->LocalVisible();
+                        });
                     cmdItor++;
                 }
                 auto& name = n.output;
-                ToGraphPass(n.sceneNode.get(), name, node->ID(), extra);
+                ToGraphPass(n.sceneNode.get(), name, node->ID(), extra, &n, eff.get());
                 nodePos++;
+            }
+            rg::addCopyPass(
+                rgraph,
+                rg::createTexDesc(eff->BypassSource(), &scene),
+                rg::createTexDesc(eff->BypassTarget(), &scene),
+                [eff = eff.get()] {
+                    return ! eff->LocalVisible();
+                });
+            if (! eff->FinalBypassTarget().empty() && eff->FinalBypassTarget() != eff->BypassTarget()) {
+                rg::addCopyPass(
+                    rgraph,
+                    rg::createTexDesc(eff->BypassSource(), &scene),
+                    rg::createTexDesc(eff->FinalBypassTarget(), &scene),
+                    [eff = eff.get()] {
+                        return ! eff->LocalVisible();
+                    });
             }
         }
     };
@@ -124,8 +158,7 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     if (node->Mesh() == nullptr) return;
     auto* mesh = node->Mesh();
     if (mesh->Material() == nullptr) return;
-    auto* material   = mesh->Material();
-    auto* mshaderPtr = material->customShader.shader.get();
+    auto* material = mesh->Material();
 
     SceneImageEffectLayer* imgeff = nullptr;
     if (! node->Camera().empty()) {
@@ -141,11 +174,20 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     rgraph.addPass<vulkan::CustomShaderPass>(
         passName,
         rg::PassNode::Type::CustomShader,
-        [material, node, &output, &imgId, &rgraph, &scene, &extra](
+        [material, node, effect_node, effect_owner, &output, &imgId, &rgraph, &scene, &extra](
             rg::RenderGraphBuilder& builder, vulkan::CustomShaderPass::Desc& pdesc) {
             const auto& pass = builder.workPassNode();
             pdesc.node       = node;
             pdesc.output     = output;
+            if (effect_node != nullptr) {
+                pdesc.cameraOverride = effect_node->camera_override;
+                pdesc.clearBeforeDraw = effect_node->clear_before_draw;
+                pdesc.forceAlphaWrite = effect_node->force_alpha_write;
+                pdesc.premultipliedSourceBlend = effect_node->premultiplied_source_blend;
+                pdesc.should_execute = [effect_owner] {
+                    return effect_owner == nullptr || effect_owner->LocalVisible();
+                };
+            }
             CheckAndSetSprite(scene, pdesc, material->textures);
             for (usize i = 0; i < material->textures.size(); i++) {
                 const auto&  url = material->textures[i];
@@ -163,10 +205,11 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                     rg::TexNode::Desc desc;
                     desc.key  = url;
                     desc.name = url;
-                    desc.type = ! IsSpecTex(url) ? rg::TexNode::TexType::Imported
-                                                 : rg::TexNode::TexType::Temp;
+                    desc.type = (! IsSpecTex(url) && scene.renderTargets.count(url) == 0)
+                                    ? rg::TexNode::TexType::Imported
+                                    : rg::TexNode::TexType::Temp;
                     input     = builder.createTexNode(desc);
-                    if (IsSpecTex(url)) builder.markVirtualWrite(input);
+                    if (desc.type == rg::TexNode::TexType::Temp) builder.markVirtualWrite(input);
                     if (sstart_with(url, WE_MIP_MAPPED_FRAME_BUFFER))
                         extra.use_mipmap_framebuffer = true;
                 }

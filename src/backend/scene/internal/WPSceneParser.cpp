@@ -590,11 +590,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
         wpimgobj.effects.push_back(colorEffect);
     }
 
-    int32_t count_eff = 0;
-    for (const auto& wpeffobj : wpimgobj.effects) {
-        if (wpeffobj.visible) count_eff++;
-    }
-    bool hasEffect = count_eff > 0;
+    bool hasEffect = ! wpimgobj.effects.empty();
     // skip no effect fullscreen layer
     if (! hasEffect && wpimgobj.fullscreen) return;
 
@@ -762,6 +758,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
         auto imgEffectLayer = std::make_shared<SceneImageEffectLayer>(
             spImgNode.get(), wpimgobj.size[0], wpimgobj.size[1], effect_ppong_a, effect_ppong_b);
         {
+            imgEffectLayer->SetFullscreen(wpimgobj.fullscreen);
             imgEffectLayer->SetFinalBlend(imgBlendMode);
             imgEffectLayer->FinalMesh().ChangeMeshDataFrom(effct_final_mesh);
             imgEffectLayer->FinalNode().CopyTrans(*spImgNode);
@@ -784,14 +781,9 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
             scene.renderTargets[effect_ppong_b] = scene.renderTargets.at(effect_ppong_a);
         }
 
-        int32_t i_eff = -1;
         for (const auto& wpeffobj : wpimgobj.effects) {
-            i_eff++;
-            if (! wpeffobj.visible) {
-                i_eff--;
-                continue;
-            }
             std::shared_ptr<SceneImageEffect> imgEffect = std::make_shared<SceneImageEffect>();
+            imgEffect->SetLocalVisible(wpeffobj.visible);
 
             // this will be replace when resolve, use here to get rt info
             const std::string inRT { effect_ppong_a };
@@ -836,10 +828,13 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                   el.source.c_str());
                         continue;
                     }
-                    imgEffect->commands.push_back({ .cmd      = SceneImageEffect::CmdType::Copy,
-                                                    .dst      = fboMap[el.target],
-                                                    .src      = fboMap[el.source],
-                                                    .afterpos = el.afterpos });
+                    imgEffect->commands.push_back(
+                        { .cmd          = SceneImageEffect::CmdType::Copy,
+                          .authored_dst = fboMap[el.target],
+                          .authored_src = fboMap[el.source],
+                          .dst          = fboMap[el.target],
+                          .src          = fboMap[el.source],
+                          .afterpos     = el.afterpos });
                 }
             }
 
@@ -908,7 +903,10 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                 spEffNode->AddMesh(spMesh);
 
                 context.shader_updater->SetNodeData(spEffNode.get(), svData);
-                imgEffect->nodes.push_back({ matOutRT, spEffNode });
+                imgEffect->nodes.push_back({ .authored_output = matOutRT,
+                                             .output          = matOutRT,
+                                             .authored_textures = spMesh->Material()->textures,
+                                             .sceneNode       = spEffNode });
             }
 
             if (eff_mat_ok)

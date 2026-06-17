@@ -1,5 +1,6 @@
 #pragma once
 #include "VulkanPass.hpp"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,11 @@ public:
         SceneNode*               node { nullptr };
         std::vector<std::string> textures;
         std::string              output;
+        std::string              cameraOverride;
+        bool                     clearBeforeDraw { false };
+        bool                     forceAlphaWrite { false };
+        bool                     premultipliedSourceBlend { false };
+        std::function<bool()>    should_execute;
         sprite_map_t             sprites_map;
 
         // -----prepared
@@ -56,6 +62,7 @@ public:
     void prepare(Scene&, const Device&, RenderingResources&) override;
     void execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
+    const Desc& desc() const { return m_desc; }
 
 private:
     Desc m_desc;
