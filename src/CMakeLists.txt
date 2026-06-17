@@ -29,8 +29,8 @@ add_library(
   ${PROJECT_NAME} STATIC
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
-  backend/scene/compatibility/WESceneSource.cpp
-  backend/scene/compatibility/WESceneSession.cpp
+  api/scene/WEScene.cpp
+  api/scene/WESceneSource.cpp
   backend/web/WebBackend.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
