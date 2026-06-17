@@ -8,9 +8,9 @@ namespace wallpaper
 {
 namespace
 {
-class WESceneLegacyRenderPlan final : public RenderPlan {
+class LegacyWEScenePresentationPlan final : public RenderPlan {
 public:
-    explicit WESceneLegacyRenderPlan(WESceneRuntimeDriver& runtimeDriver)
+    explicit LegacyWEScenePresentationPlan(WESceneRuntimeDriver& runtimeDriver)
         : m_runtimeDriver(runtimeDriver) {}
 
     OutputTargetBindingKind requiredBindingKind() const override {
@@ -50,7 +50,7 @@ Result<void> unsupportedProperty(std::string_view name) {
 
 WESceneOutputSource::WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver)
     : m_runtimeDriver(runtimeDriver)
-    , m_renderPlan(std::make_shared<WESceneLegacyRenderPlan>(runtimeDriver)) {}
+    , m_renderPlan(std::make_shared<LegacyWEScenePresentationPlan>(runtimeDriver)) {}
 
 Result<RenderPlanPtr> WESceneOutputSource::currentRenderPlan() const {
     return Result<RenderPlanPtr>::success(m_renderPlan);

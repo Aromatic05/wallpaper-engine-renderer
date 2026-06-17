@@ -1,4 +1,5 @@
 #include "api/WallpaperSession.hpp"
+#include "backend/scene/CreateWESceneBackend.hpp"
 #include "host/HostServices.hpp"
 #include "runtime/backend/BackendContext.hpp"
 #include "runtime/backend/BackendFactory.hpp"
@@ -100,5 +101,16 @@ int main() {
     auto badLoadResult = badSession.load(source);
     assert(! badLoadResult);
     assert(publishedDiagnostics == 1);
+
+    wallpaper::BackendContext sceneContext;
+    auto partialSceneHostServices = std::make_shared<wallpaper::HostServices>();
+    sceneContext.hostServices = partialSceneHostServices;
+    auto sceneBackendResult   = wallpaper::CreateWESceneBackend(sceneContext);
+    assert(sceneBackendResult);
+    assert(partialSceneHostServices->audio.createSoundManager);
+    assert(partialSceneHostServices->timer.createLooper);
+    assert(partialSceneHostServices->fileSystem.createVfs);
+    assert(partialSceneHostServices->fileSystem.createPhysicalFs);
+    assert(partialSceneHostServices->fileSystem.createPackageFs);
     return 0;
 }
