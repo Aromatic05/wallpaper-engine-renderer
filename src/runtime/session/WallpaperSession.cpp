@@ -174,23 +174,27 @@ struct WallpaperSession::Impl {
         return result;
     }
 
-    Result<void> refreshOutputBinding(OutputSource& outputSource) {
+    Result<bool> refreshOutputBinding(OutputSource& outputSource) {
         if (! outputTarget.has_value()) {
-            return Result<void>::success();
+            return Result<bool>::success(false);
         }
 
         if (boundOutputSource != &outputSource) {
-            return activateOutputBinding(outputSource);
+            auto result = activateOutputBinding(outputSource);
+            if (! result) {
+                return Result<bool>(result.error());
+            }
+            return Result<bool>::success(true);
         }
 
         if (outputSource.type() != OutputSourceType::RenderPlan) {
-            return Result<void>::success();
+            return Result<bool>::success(false);
         }
 
         auto planResult = outputSource.renderPlan();
         if (! planResult) {
             recordError("runtime.output", planResult.error());
-            return Result<void>(planResult.error());
+            return Result<bool>(planResult.error());
         }
 
         const auto& plan = planResult.value();
@@ -198,7 +202,7 @@ struct WallpaperSession::Impl {
             auto result = Result<void>::failure(ResultCode::InvalidState,
                                                 "render plan source returned a null plan");
             recordError("runtime.output", result.error());
-            return result;
+            return Result<bool>(result.error());
         }
 
         const bool renderPlanChanged = outputController.boundRenderPlan() != plan.get()
@@ -206,10 +210,14 @@ struct WallpaperSession::Impl {
                                        || outputController.boundRenderPlanRevision().value()
                                               != plan->revision();
         if (! renderPlanChanged) {
-            return Result<void>::success();
+            return Result<bool>::success(false);
         }
 
-        return activateOutputBinding(outputSource, plan);
+        auto result = activateOutputBinding(outputSource, plan);
+        if (! result) {
+            return Result<bool>(result.error());
+        }
+        return Result<bool>::success(true);
     }
 
     Result<void> drainInputQueue() {
@@ -522,11 +530,12 @@ Result<FrameLifecycle> WallpaperSession::tick() {
     }
 
     if (outputResult.value()) {
-        auto bindResult = m_impl->refreshOutputBinding(*outputResult.value());
-        if (! bindResult) {
+        auto rebindResult = m_impl->refreshOutputBinding(*outputResult.value());
+        if (! rebindResult) {
             m_impl->setErrorState();
-            return Result<FrameLifecycle>(bindResult.error());
+            return Result<FrameLifecycle>(rebindResult.error());
         }
+        tickResult.value().outputStateChanged = tickResult.value().outputStateChanged || rebindResult.value();
     }
 
     auto lifecycle = tickResult.value();

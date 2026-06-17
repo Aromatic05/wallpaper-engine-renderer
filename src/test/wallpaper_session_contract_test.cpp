@@ -31,8 +31,9 @@ public:
 
 class FakeRenderPlan final : public wallpaper::RenderPlan {
 public:
-    explicit FakeRenderPlan(std::uint64_t revision = 1)
-        : m_revision(revision) {}
+    explicit FakeRenderPlan(std::uint64_t revision = 1, bool shouldFail = false)
+        : m_revision(revision)
+        , m_shouldFail(shouldFail) {}
 
     wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
         return wallpaper::OutputTargetBindingKind::Surface;
@@ -42,16 +43,22 @@ public:
 
     wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
         ++bindCalls;
-        return target.binding && target.binding->kind() == wallpaper::OutputTargetBindingKind::Surface
-                   ? wallpaper::Result<void>::success()
-                   : wallpaper::Result<void>::failure(wallpaper::ResultCode::InvalidArgument,
-                                                      "unexpected binding kind");
+        if (! target.binding || target.binding->kind() != wallpaper::OutputTargetBindingKind::Surface) {
+            return wallpaper::Result<void>::failure(wallpaper::ResultCode::InvalidArgument,
+                                                    "unexpected binding kind");
+        }
+        if (m_shouldFail) {
+            return wallpaper::Result<void>::failure(wallpaper::ResultCode::InternalError,
+                                                    "simulated bind failure");
+        }
+        return wallpaper::Result<void>::success();
     }
 
     int bindCalls { 0 };
 
 private:
     std::uint64_t m_revision { 1 };
+    bool          m_shouldFail { false };
 };
 
 class FakeOutputSource final : public wallpaper::RenderPlanSource {
@@ -205,6 +212,7 @@ int main() {
     assert(lifecycleResult);
     assert(lifecycleResult.value().contentStateChanged);
     assert(lifecycleResult.value().frameRequested);
+    assert(! lifecycleResult.value().outputStateChanged);
     assert(factory->lastBackend->updateCalls == 1);
     assert(factory->lastBackend->acquireOutputCalls == 1);
     assert(factory->lastBackend->tickCalls == 1);
@@ -238,7 +246,18 @@ int main() {
     assert(factory->lastBackend->acquireOutputCalls == 2);
     assert(factory->lastBackend->notifyOutputBoundCalls == 2);
     assert(replacementPlan->bindCalls == 1);
+    assert(rebindLifecycleResult.value().outputStateChanged);
     assert(session.state() == wallpaper::SessionState::Playing);
     assert(session.readyState() == wallpaper::BackendReadyState::OutputReady);
+
+    auto stableLifecycleResult = session.tick();
+    assert(stableLifecycleResult);
+    assert(! stableLifecycleResult.value().outputStateChanged);
+
+    auto failingPlan = std::make_shared<FakeRenderPlan>(3, true);
+    factory->lastBackend->setNextRenderPlan(failingPlan);
+    auto failingLifecycleResult = session.tick();
+    assert(! failingLifecycleResult);
+    assert(factory->lastBackend->notifyOutputBoundCalls == 2);
     return 0;
 }
