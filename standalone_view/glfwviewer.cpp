@@ -8,7 +8,6 @@
 #include "arg.hpp"
 #include "wallpaper/WallpaperRuntime.hpp"
 #include "wallpaper/scene/WEScene.hpp"
-#include "host/CachePath.hpp"
 
 using namespace std;
 
@@ -97,7 +96,6 @@ int main(int argc, char** argv) {
 
     wallpaper::WallpaperRuntime runtime;
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
-    if (cache_path.empty()) cache_path = wallpaper::host::GetCachePath("wescene-renderer");
 
     auto session = wallpaper::CreateWESceneSession(runtime, cache_path);
     data.session = session.get();

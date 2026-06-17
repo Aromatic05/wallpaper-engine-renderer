@@ -31,7 +31,6 @@ pkg_check_modules(GLFW REQUIRED glfw3)
 add_executable(${PROJECT_NAME}
     glfwviewer.cpp
 )
-target_include_directories(${PROJECT_NAME} PRIVATE ../src)
 target_link_libraries(${PROJECT_NAME}
     PUBLIC 
         ${GLFW_LIBRARIES}
