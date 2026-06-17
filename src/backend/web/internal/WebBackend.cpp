@@ -1,4 +1,4 @@
-#include "backend/web/WebBackend.hpp"
+#include "backend/web/internal/WebBackend.hpp"
 
 namespace wallpaper
 {

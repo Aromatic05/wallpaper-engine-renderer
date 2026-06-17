@@ -1,4 +1,4 @@
-#include "backend/scene/WESceneBackend.hpp"
+#include "backend/scene/internal/runtime/WESceneBackend.hpp"
 
 #include <utility>
 
@@ -158,14 +158,4 @@ void WESceneBackend::appendDiagnostic(DiagnosticSeverity severity, std::string m
     m_diagnostics.append(severity, "backend.scene", std::move(message));
 }
 
-Result<std::unique_ptr<ContentBackend>> WESceneBackendFactory::create(BackendType          type,
-                                                                      const BackendContext& context) {
-    if (type != BackendType::WEScene) {
-        return Result<std::unique_ptr<ContentBackend>>::failure(
-            ResultCode::NotSupported, "factory supports only WEScene backend");
-    }
-
-    std::unique_ptr<ContentBackend> backend = std::make_unique<WESceneBackend>(context);
-    return Result<std::unique_ptr<ContentBackend>>::success(std::move(backend));
-}
 } // namespace wallpaper

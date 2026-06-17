@@ -6,7 +6,6 @@
 #include "output/RenderPlanSource.hpp"
 #include "output/OutputTarget.hpp"
 #include "runtime/backend/BackendContext.hpp"
-#include "runtime/backend/BackendFactory.hpp"
 #include "runtime/backend/ContentBackend.hpp"
 
 #include <memory>
@@ -52,11 +51,5 @@ private:
     SceneWallpaper       m_wallpaper;
     WESceneOutputSource  m_outputSource;
     DiagnosticsSnapshot  m_diagnostics;
-};
-
-class WESceneBackendFactory final : public BackendFactory {
-public:
-    Result<std::unique_ptr<ContentBackend>> create(BackendType         type,
-                                                   const BackendContext& context) override;
 };
 } // namespace wallpaper

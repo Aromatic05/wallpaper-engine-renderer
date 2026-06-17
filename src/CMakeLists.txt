@@ -30,14 +30,16 @@ add_library(
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
   backend/BuiltinSessionFactory.cpp
+  backend/scene/CreateWESceneBackend.cpp
+  backend/web/CreateWebBackend.cpp
   api/scene/WEScene.cpp
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp
   api/web/Web.cpp
-  backend/web/WebBackend.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
-  backend/scene/WESceneBackend.cpp
+  backend/scene/internal/runtime/WESceneBackend.cpp
+  backend/web/internal/WebBackend.cpp
   backend/scene/internal/WPJson.cpp
   backend/scene/internal/WPPkgFs.cpp
   backend/scene/internal/wpscene/WPImageObject.cpp
