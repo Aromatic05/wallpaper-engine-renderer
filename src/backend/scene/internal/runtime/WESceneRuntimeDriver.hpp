@@ -7,6 +7,7 @@
 #include <string_view>
 #include <functional>
 #include "common/scene/WESceneContract.hpp"
+#include "host/HostServices.hpp"
 #include "Type.hpp"
 #include "output/swapchain/ExSwapchain.hpp"
 
@@ -30,7 +31,7 @@ struct RenderInitInfo;
 
 class WESceneRuntimeDriver : NoCopy {
 public:
-    WESceneRuntimeDriver();
+    explicit WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices = {});
     ~WESceneRuntimeDriver();
     bool init();
     bool inited() const;
@@ -56,6 +57,7 @@ private:
     friend class MainHandler;
 
     bool                         m_offscreen { false };
+    std::shared_ptr<HostServices> m_hostServices;
     std::shared_ptr<MainHandler> m_main_handler;
 };
 } // namespace wallpaper

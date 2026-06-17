@@ -8,6 +8,7 @@
 namespace wallpaper
 {
 class BackendFactory;
+struct HostServices;
 
 enum class BackendType
 {
@@ -25,6 +26,7 @@ struct WallpaperSource {
 
 struct SessionConfig {
     std::shared_ptr<BackendFactory> backendFactory;
+    std::shared_ptr<HostServices>   hostServices;
     std::string                     cachePath;
 };
 } // namespace wallpaper

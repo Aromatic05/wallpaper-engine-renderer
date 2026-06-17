@@ -128,6 +128,10 @@ int main(int argc, char** argv) {
     glfwSetCursorPosCallback(window, cursor_position_callback);
 
     while (! glfwWindowShouldClose(window)) {
+        if (auto tickResult = runtime.tick(*session); ! tickResult) {
+            std::cerr << "runtime.tick failed: " << tickResult.error().message << std::endl;
+            break;
+        }
         glfwPollEvents();
     }
     // wgl.Clear();

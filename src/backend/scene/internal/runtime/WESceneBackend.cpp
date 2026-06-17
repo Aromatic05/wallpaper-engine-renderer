@@ -45,6 +45,7 @@ Result<RenderPlanPtr> WESceneOutputSource::currentRenderPlan() const {
 WESceneBackend::WESceneBackend(const BackendContext& context)
     : m_context(context)
     , m_sharedState(std::make_shared<SharedState>())
+    , m_runtimeDriver(m_context.hostServices)
     , m_outputSource(m_runtimeDriver) {
     if (! m_context.cachePath.empty()) {
         m_runtimeDriver.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);
@@ -66,6 +67,19 @@ BackendCapabilities WESceneBackend::capabilities() const {
 Result<void> WESceneBackend::load(const WallpaperSource& source) {
     m_sharedState->readyState.store(BackendReadyState::Loading);
     m_sharedState->outputBound.store(false);
+    m_sharedState->contentStateChanged.store(true);
+    m_sharedState->outputStateChanged.store(false);
+    m_sharedState->frameRequested.store(false);
+
+    if (! m_context.cachePath.empty() && m_context.hostServices
+        && m_context.hostServices->fileSystem.createDirectories) {
+        const bool cacheReady =
+            m_context.hostServices->fileSystem.createDirectories(std::filesystem::path(m_context.cachePath));
+        if (! cacheReady) {
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "failed to prepare cache directory before loading scene");
+        }
+    }
 
     // The scene runtime driver routes source/assets through its looper-based command path.
     // Ensure the loopers are initialized before we post load properties, otherwise the
@@ -137,7 +151,11 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
 }
 
 Result<FrameLifecycle> WESceneBackend::tick() {
-    return Result<FrameLifecycle>::success(FrameLifecycle {});
+    FrameLifecycle lifecycle;
+    lifecycle.contentStateChanged = m_sharedState->contentStateChanged.exchange(false);
+    lifecycle.outputStateChanged  = m_sharedState->outputStateChanged.exchange(false);
+    lifecycle.frameRequested      = m_sharedState->frameRequested.exchange(false);
+    return Result<FrameLifecycle>::success(std::move(lifecycle));
 }
 
 bool WESceneBackend::loadsAsynchronously() const { return true; }
@@ -146,8 +164,10 @@ BackendReadyState WESceneBackend::readyState() const { return m_sharedState->rea
 
 void WESceneBackend::notifyOutputBound() {
     m_sharedState->outputBound.store(true);
+    m_sharedState->outputStateChanged.store(true);
     if (m_sharedState->readyState.load() == BackendReadyState::Loaded) {
         m_sharedState->readyState.store(BackendReadyState::OutputReady);
+        m_sharedState->contentStateChanged.store(true);
     }
 }
 
@@ -197,6 +217,9 @@ void WESceneBackend::installFirstFrameCallback() {
             const auto nextState =
                 state->outputBound.load() ? BackendReadyState::OutputReady : BackendReadyState::Loaded;
             state->readyState.store(nextState);
+            state->contentStateChanged.store(true);
+            state->outputStateChanged.store(state->outputBound.load());
+            state->frameRequested.store(true);
         }
     });
 

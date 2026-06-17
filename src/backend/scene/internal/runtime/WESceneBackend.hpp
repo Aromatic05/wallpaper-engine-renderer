@@ -55,6 +55,9 @@ private:
     struct SharedState {
         std::atomic<BackendReadyState> readyState { BackendReadyState::Idle };
         std::atomic<bool>              outputBound { false };
+        std::atomic<bool>              contentStateChanged { false };
+        std::atomic<bool>              outputStateChanged { false };
+        std::atomic<bool>              frameRequested { false };
     };
 
     Result<void> applyProperty(std::string_view name, const PropertyValue& value);

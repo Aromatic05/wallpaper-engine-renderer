@@ -1,6 +1,7 @@
 #include "api/WallpaperSession.hpp"
 
 #include "output/OutputController.hpp"
+#include "host/HostServices.hpp"
 #include "runtime/backend/BackendContext.hpp"
 #include "runtime/backend/BackendFactory.hpp"
 #include "runtime/backend/ContentBackend.hpp"
@@ -35,6 +36,16 @@ Result<void> missingFactory() {
     return Result<void>::failure(ResultCode::InvalidState, "session has no backend factory");
 }
 
+std::string resolveCachePath(const SessionConfig& config) {
+    if (! config.cachePath.empty()) {
+        return config.cachePath;
+    }
+    if (! config.hostServices || ! config.hostServices->cache.resolveCacheRoot) {
+        return {};
+    }
+    return config.hostServices->cache.resolveCacheRoot("wescene-renderer").string();
+}
+
 SessionState sessionStateFromReadyState(BackendReadyState readyState) {
     switch (readyState) {
     case BackendReadyState::Idle: return SessionState::Idle;
@@ -51,7 +62,12 @@ SessionState sessionStateFromReadyState(BackendReadyState readyState) {
 struct WallpaperSession::Impl {
     explicit Impl(SessionConfig sessionConfig)
         : config(std::move(sessionConfig)) {
-        backendContext.cachePath = config.cachePath;
+        if (! config.hostServices) {
+            config.hostServices = CreateDefaultHostServices();
+        }
+
+        backendContext.hostServices = config.hostServices;
+        backendContext.cachePath    = resolveCachePath(config);
     }
 
     Result<void> ensureBackend() const {
@@ -159,6 +175,9 @@ struct WallpaperSession::Impl {
     }
 
     void appendDiagnostic(DiagnosticSeverity severity, const char* source, std::string message) {
+        if (backendContext.hostServices && backendContext.hostServices->diagnostics.publish) {
+            backendContext.hostServices->diagnostics.publish(severity, source, message);
+        }
         diagnosticsHub.append(severity, source, std::move(message));
     }
 
@@ -366,6 +385,29 @@ Result<void> WallpaperSession::sendInput(const InputEvent& event) {
 
     m_impl->inputQueue.push_back(event);
     return m_impl->drainInputQueue();
+}
+
+Result<FrameLifecycle> WallpaperSession::tick() {
+    if (! m_impl->backend) {
+        return Result<FrameLifecycle>::success(FrameLifecycle {});
+    }
+
+    const auto diagnosticsCountBefore = m_impl->aggregateDiagnostics().entries.size();
+    auto tickResult = m_impl->backend->tick();
+    if (! tickResult) {
+        m_impl->recordError("runtime.tick", tickResult.error());
+        m_impl->state = SessionState::Error;
+        return Result<FrameLifecycle>(tickResult.error());
+    }
+
+    auto lifecycle = tickResult.value();
+    const auto previousState = m_impl->state;
+    m_impl->synchronizeSessionState();
+    lifecycle.contentStateChanged = lifecycle.contentStateChanged || (previousState != m_impl->state);
+    lifecycle.diagnosticsChanged =
+        lifecycle.diagnosticsChanged
+        || (diagnosticsCountBefore != m_impl->aggregateDiagnostics().entries.size());
+    return Result<FrameLifecycle>::success(std::move(lifecycle));
 }
 
 SessionState WallpaperSession::state() const {

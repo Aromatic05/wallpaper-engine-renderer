@@ -33,6 +33,7 @@ add_library(
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp
   api/web/Web.cpp
+  host/HostServices.cpp
   output/OutputController.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp)

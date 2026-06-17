@@ -6,6 +6,7 @@
 #include "../runtime/diagnostics/Diagnostics.hpp"
 #include "../runtime/input/InputEvent.hpp"
 #include "../runtime/property/PropertyValue.hpp"
+#include "../runtime/session/FrameLifecycle.hpp"
 #include "../runtime/session/SessionState.hpp"
 
 #include <memory>
@@ -28,6 +29,7 @@ public:
 
     Result<void> setProperty(std::string_view name, PropertyValue value);
     Result<void> sendInput(const InputEvent& event);
+    Result<FrameLifecycle> tick();
 
     SessionState        state() const;
     DiagnosticsSnapshot diagnostics() const;

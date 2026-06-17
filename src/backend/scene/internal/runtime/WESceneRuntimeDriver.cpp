@@ -65,7 +65,7 @@ public:
     };
 
 public:
-    MainHandler();
+    explicit MainHandler(std::shared_ptr<HostServices> hostServices);
     virtual ~MainHandler() {};
 
     bool init();
@@ -101,6 +101,7 @@ private:
 
 private:
     bool m_inited { false };
+    std::shared_ptr<HostServices> m_hostServices;
 
     std::string m_assets;
     std::string m_source;
@@ -244,7 +245,9 @@ private:
 };
 } // namespace wallpaper
 
-WESceneRuntimeDriver::WESceneRuntimeDriver(): m_main_handler(std::make_shared<MainHandler>()) {}
+WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices)
+    : m_hostServices(std::move(hostServices))
+    , m_main_handler(std::make_shared<MainHandler>(m_hostServices)) {}
 
 WESceneRuntimeDriver::~WESceneRuntimeDriver() {
     /*
@@ -424,6 +427,13 @@ void MainHandler::loadScene() {
         }
     }
     if (! m_cache_path.empty()) {
+        if (m_hostServices && m_hostServices->fileSystem.createDirectories) {
+            const bool ready =
+                m_hostServices->fileSystem.createDirectories(std::filesystem::path(m_cache_path));
+            if (! ready) {
+                LOG_ERROR("can't prepare cache folder: %s", m_cache_path.c_str());
+            }
+        }
         if (! vfs.Mount("/cache", fs::CreatePhysicalFs(m_cache_path, true), "cache")) {
             LOG_ERROR("can't load cache folder: %s", m_cache_path.c_str());
         } else {
@@ -494,8 +504,9 @@ bool MainHandler::init() {
     m_inited = true;
     return true;
 }
-MainHandler::MainHandler()
-    : m_sound_manager(std::make_unique<audio::SoundManager>()),
+MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices)
+    : m_hostServices(std::move(hostServices)),
+      m_sound_manager(std::make_unique<audio::SoundManager>()),
       m_main_loop(std::make_shared<looper::Looper>()),
       m_render_loop(std::make_shared<looper::Looper>()),
       m_render_handler(std::make_shared<RenderHandler>(*this)) {}
