@@ -1,6 +1,6 @@
 #pragma once
 
-#include "backend/scene/internal/runtime/SceneWallpaper.hpp"
+#include "backend/scene/internal/runtime/WESceneRuntimeDriver.hpp"
 #include "api/scene/WESceneOutput.hpp"
 #include "common/result/Result.hpp"
 #include "output/RenderPlanSource.hpp"
@@ -14,13 +14,13 @@ namespace wallpaper
 {
 class WESceneOutputSource final : public RenderPlanSource {
 public:
-    explicit WESceneOutputSource(SceneWallpaper& wallpaper);
+    explicit WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver);
 
     Result<void>     bind(const OutputTarget& target) override;
 
 private:
-    SceneWallpaper& m_wallpaper;
-    bool            m_initialized { false };
+    WESceneRuntimeDriver& m_runtimeDriver;
+    bool                  m_initialized { false };
 };
 
 class WESceneBackend final : public ContentBackend {
@@ -47,9 +47,9 @@ private:
     void         appendDiagnostic(DiagnosticSeverity severity, std::string message);
 
 private:
-    BackendContext       m_context;
-    SceneWallpaper       m_wallpaper;
-    WESceneOutputSource  m_outputSource;
-    DiagnosticsSnapshot  m_diagnostics;
+    BackendContext        m_context;
+    WESceneRuntimeDriver  m_runtimeDriver;
+    WESceneOutputSource   m_outputSource;
+    DiagnosticsSnapshot   m_diagnostics;
 };
 } // namespace wallpaper

@@ -1,5 +1,5 @@
-#include "SceneWallpaper.hpp"
-#include "SceneWallpaperSurface.hpp"
+#include "WESceneRuntimeDriver.hpp"
+#include "WESceneRuntimeSurface.hpp"
 
 #include "utils/Logging.h"
 #include "looper/Looper.hpp"
@@ -244,9 +244,9 @@ private:
 };
 } // namespace wallpaper
 
-SceneWallpaper::SceneWallpaper(): m_main_handler(std::make_shared<MainHandler>()) {}
+WESceneRuntimeDriver::WESceneRuntimeDriver(): m_main_handler(std::make_shared<MainHandler>()) {}
 
-SceneWallpaper::~SceneWallpaper() {
+WESceneRuntimeDriver::~WESceneRuntimeDriver() {
     /*
     if(m_offscreen) {
         // no wait
@@ -259,11 +259,11 @@ SceneWallpaper::~SceneWallpaper() {
     */
 }
 
-bool SceneWallpaper::inited() const { return m_main_handler->inited(); }
+bool WESceneRuntimeDriver::inited() const { return m_main_handler->inited(); }
 
-bool SceneWallpaper::init() { return m_main_handler->init(); }
+bool WESceneRuntimeDriver::init() { return m_main_handler->init(); }
 
-void SceneWallpaper::initVulkan(const RenderInitInfo& info) {
+void WESceneRuntimeDriver::initVulkan(const RenderInitInfo& info) {
     m_offscreen                             = info.offscreen;
     std::shared_ptr<RenderInitInfo> sp_info = std::make_shared<RenderInitInfo>(info);
     auto                            msg =
@@ -272,23 +272,23 @@ void SceneWallpaper::initVulkan(const RenderInitInfo& info) {
     msg->post();
 }
 
-void SceneWallpaper::play() {
+void WESceneRuntimeDriver::play() {
     auto msg = CreateMsgWithCmd(m_main_handler, MainHandler::CMD::CMD_STOP);
     msg->setBool("value", false);
     msg->post();
 }
-void SceneWallpaper::pause() {
+void WESceneRuntimeDriver::pause() {
     auto msg = CreateMsgWithCmd(m_main_handler, MainHandler::CMD::CMD_STOP);
     msg->setBool("value", true);
     msg->post();
 }
 
-void SceneWallpaper::mouseInput(double x, double y) {
+void WESceneRuntimeDriver::mouseInput(double x, double y) {
     m_main_handler->renderHandler()->setMousePos(x, y);
 }
 
 #define BASIC_TYPE(NAME, TYPENAME)                                                       \
-    void SceneWallpaper::setProperty##NAME(std::string_view name, TYPENAME value) {      \
+    void WESceneRuntimeDriver::setProperty##NAME(std::string_view name, TYPENAME value) { \
         auto msg = CreateMsgWithCmd(m_main_handler, MainHandler::CMD::CMD_SET_PROPERTY); \
         msg->setString("property", std::string(name));                                   \
         msg->set##NAME("value", value);                                                  \
@@ -301,7 +301,7 @@ BASIC_TYPE(Float, float);
 BASIC_TYPE(String, std::string);
 BASIC_TYPE(Object, std::shared_ptr<void>);
 
-ExSwapchain* SceneWallpaper::exSwapchain() const {
+ExSwapchain* WESceneRuntimeDriver::exSwapchain() const {
     return m_main_handler->renderHandler()->exSwapchain();
 }
 

@@ -12,8 +12,8 @@ Result<void> unsupportedProperty(std::string_view name) {
 }
 } // namespace
 
-WESceneOutputSource::WESceneOutputSource(SceneWallpaper& wallpaper)
-    : m_wallpaper(wallpaper) {}
+WESceneOutputSource::WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver)
+    : m_runtimeDriver(runtimeDriver) {}
 
 Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
     if (! target.valid()) {
@@ -27,22 +27,22 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
     }
 
     if (! m_initialized) {
-        if (! m_wallpaper.init()) {
+        if (! m_runtimeDriver.init()) {
             return Result<void>::failure(ResultCode::InternalError, "failed to initialize scene wallpaper");
         }
         m_initialized = true;
     }
 
-    m_wallpaper.initVulkan(binding->renderInitInfo());
-    binding->attachSwapchain(m_wallpaper.exSwapchain());
+    m_runtimeDriver.initVulkan(binding->renderInitInfo());
+    binding->attachSwapchain(m_runtimeDriver.exSwapchain());
     return Result<void>::success();
 }
 
 WESceneBackend::WESceneBackend(const BackendContext& context)
     : m_context(context)
-    , m_outputSource(m_wallpaper) {
+    , m_outputSource(m_runtimeDriver) {
     if (! m_context.cachePath.empty()) {
-        m_wallpaper.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);
+        m_runtimeDriver.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);
     }
 }
 
@@ -75,22 +75,22 @@ Result<void> WESceneBackend::load(const WallpaperSource& source) {
 }
 
 Result<void> WESceneBackend::start() {
-    m_wallpaper.play();
+    m_runtimeDriver.play();
     return Result<void>::success();
 }
 
 Result<void> WESceneBackend::pause() {
-    m_wallpaper.pause();
+    m_runtimeDriver.pause();
     return Result<void>::success();
 }
 
 Result<void> WESceneBackend::resume() {
-    m_wallpaper.play();
+    m_runtimeDriver.play();
     return Result<void>::success();
 }
 
 Result<void> WESceneBackend::stop() {
-    m_wallpaper.pause();
+    m_runtimeDriver.pause();
     return Result<void>::success();
 }
 
@@ -103,7 +103,7 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
     case InputEventType::PointerMove:
     case InputEventType::PointerDown:
     case InputEventType::PointerUp:
-        m_wallpaper.mouseInput(event.pointerX, event.pointerY);
+        m_runtimeDriver.mouseInput(event.pointerX, event.pointerY);
         return Result<void>::success();
     case InputEventType::KeyDown:
     case InputEventType::KeyUp:
@@ -121,27 +121,27 @@ DiagnosticsSnapshot WESceneBackend::diagnostics() const { return m_diagnostics; 
 
 Result<void> WESceneBackend::applyProperty(std::string_view name, const PropertyValue& value) {
     if (const auto* stringValue = std::get_if<std::string>(&value)) {
-        m_wallpaper.setPropertyString(name, *stringValue);
+        m_runtimeDriver.setPropertyString(name, *stringValue);
         return Result<void>::success();
     }
     if (const auto* boolValue = std::get_if<bool>(&value)) {
-        m_wallpaper.setPropertyBool(name, *boolValue);
+        m_runtimeDriver.setPropertyBool(name, *boolValue);
         return Result<void>::success();
     }
     if (const auto* intValue = std::get_if<std::int32_t>(&value)) {
-        m_wallpaper.setPropertyInt32(name, *intValue);
+        m_runtimeDriver.setPropertyInt32(name, *intValue);
         return Result<void>::success();
     }
     if (const auto* floatValue = std::get_if<float>(&value)) {
-        m_wallpaper.setPropertyFloat(name, *floatValue);
+        m_runtimeDriver.setPropertyFloat(name, *floatValue);
         return Result<void>::success();
     }
     if (const auto* doubleValue = std::get_if<double>(&value)) {
-        m_wallpaper.setPropertyFloat(name, static_cast<float>(*doubleValue));
+        m_runtimeDriver.setPropertyFloat(name, static_cast<float>(*doubleValue));
         return Result<void>::success();
     }
     if (const auto* objectValue = std::get_if<PropertyObject>(&value)) {
-        m_wallpaper.setPropertyObject(name, *objectValue);
+        m_runtimeDriver.setPropertyObject(name, *objectValue);
         return Result<void>::success();
     }
 

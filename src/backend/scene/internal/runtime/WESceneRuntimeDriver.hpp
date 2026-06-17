@@ -1,6 +1,6 @@
 #pragma once
 
-// Internal driver that isolates the older scene/render pipeline behind the backend interface.
+// Internal driver that isolates the older scene/render pipeline behind the scene backend interface.
 // New integrations should prefer WallpaperSession plus api/scene/WEScene.hpp helpers.
 
 #include <memory>
@@ -28,10 +28,10 @@ constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIR
 class MainHandler;
 struct RenderInitInfo;
 
-class SceneWallpaper : NoCopy {
+class WESceneRuntimeDriver : NoCopy {
 public:
-    SceneWallpaper();
-    ~SceneWallpaper();
+    WESceneRuntimeDriver();
+    ~WESceneRuntimeDriver();
     bool init();
     bool inited() const;
 
