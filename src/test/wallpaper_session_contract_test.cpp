@@ -1,5 +1,7 @@
 #include "api/WallpaperSession.hpp"
 #include "common/result/Result.hpp"
+#include "output/OutputTargetBinding.hpp"
+#include "output/RenderPlanSource.hpp"
 #include "output/OutputSource.hpp"
 #include "runtime/backend/BackendCapabilities.hpp"
 #include "runtime/backend/BackendContext.hpp"
@@ -13,18 +15,57 @@
 
 namespace
 {
-class NullOutputSource final : public wallpaper::OutputSource {
+class FakeBinding final : public wallpaper::OutputTargetBinding {
 public:
-    wallpaper::OutputSourceType type() const override {
-        return wallpaper::OutputSourceType::Surface;
+    wallpaper::OutputTargetBindingKind kind() const override {
+        return wallpaper::OutputTargetBindingKind::Surface;
     }
+};
+
+class FakeRenderPlan final : public wallpaper::RenderPlan {
+public:
+    wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
+        return wallpaper::OutputTargetBindingKind::Surface;
+    }
+
+    std::uint64_t revision() const override { return 1; }
+
+    wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
+        ++bindCalls;
+        return target.binding && target.binding->kind() == wallpaper::OutputTargetBindingKind::Surface
+                   ? wallpaper::Result<void>::success()
+                   : wallpaper::Result<void>::failure(wallpaper::ResultCode::InvalidArgument,
+                                                      "unexpected binding kind");
+    }
+
+    int bindCalls { 0 };
+};
+
+class FakeOutputSource final : public wallpaper::RenderPlanSource {
+public:
+    FakeOutputSource()
+        : plan(std::make_shared<FakeRenderPlan>()) {}
+
+    std::shared_ptr<FakeRenderPlan> renderPlanImpl() const { return plan; }
+
+protected:
+    wallpaper::Result<wallpaper::RenderPlanPtr> currentRenderPlan() const override {
+        return wallpaper::Result<wallpaper::RenderPlanPtr>::success(plan);
+    }
+
+private:
+    std::shared_ptr<FakeRenderPlan> plan;
 };
 
 class FakeBackend final : public wallpaper::ContentBackend {
 public:
     wallpaper::BackendType type() const override { return wallpaper::BackendType::WEScene; }
 
-    wallpaper::BackendCapabilities capabilities() const override { return {}; }
+    wallpaper::BackendCapabilities capabilities() const override {
+        wallpaper::BackendCapabilities capabilities;
+        capabilities.supportsRenderPlan = true;
+        return capabilities;
+    }
 
     wallpaper::Result<void> load(const wallpaper::WallpaperSource&) override {
         ready = wallpaper::BackendReadyState::Loading;
@@ -78,14 +119,24 @@ public:
 
     wallpaper::DiagnosticsSnapshot diagnostics() const override { return {}; }
 
+    std::shared_ptr<FakeRenderPlan> renderPlanImpl() const { return output.renderPlanImpl(); }
+
+    void notifyOutputBound() override {
+        ++notifyOutputBoundCalls;
+        if (ready == wallpaper::BackendReadyState::Loaded) {
+            ready = wallpaper::BackendReadyState::OutputReady;
+        }
+    }
+
     int updateCalls { 0 };
     int acquireOutputCalls { 0 };
     int tickCalls { 0 };
     int startCalls { 0 };
+    int notifyOutputBoundCalls { 0 };
 
 private:
     wallpaper::BackendReadyState ready { wallpaper::BackendReadyState::Idle };
-    NullOutputSource             output;
+    FakeOutputSource             output;
 };
 
 class FakeFactory final : public wallpaper::BackendFactory {
@@ -124,6 +175,15 @@ int main() {
     assert(factory->lastBackend->acquireOutputCalls == 1);
     assert(factory->lastBackend->tickCalls == 1);
     assert(session.state() == wallpaper::SessionState::Loaded);
+
+    wallpaper::OutputTarget target;
+    target.type    = wallpaper::OutputTargetType::Surface;
+    target.binding = std::make_shared<FakeBinding>();
+    auto bindResult = session.bindOutput(target);
+    assert(bindResult);
+    assert(factory->lastBackend->notifyOutputBoundCalls == 1);
+    assert(factory->lastBackend->renderPlanImpl()->bindCalls == 1);
+    assert(session.state() == wallpaper::SessionState::OutputReady);
 
     auto playResult = session.play();
     assert(playResult);
