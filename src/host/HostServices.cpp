@@ -2,6 +2,8 @@
 
 #include "host/audio/include/audio/SoundManager.h"
 #include "host/looper/include/looper/Looper.hpp"
+#include "common/fs/include/fs/PhysicalFs.h"
+#include "common/fs/include/fs/VFS.h"
 #include "utils/Platform.hpp"
 
 #include <chrono>
@@ -18,6 +20,12 @@ std::shared_ptr<HostServices> CreateDefaultHostServices() {
         std::error_code error;
         const bool      created = std::filesystem::create_directories(path, error);
         return ! error && (created || std::filesystem::exists(path));
+    };
+    services->fileSystem.createVfs = []() {
+        return std::make_unique<fs::VFS>();
+    };
+    services->fileSystem.createPhysicalFs = [](std::string_view path, bool create) {
+        return std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(path, create).release());
     };
 
     services->timer.monotonicMilliseconds = []() {

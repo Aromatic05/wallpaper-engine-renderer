@@ -401,10 +401,17 @@ void MainHandler::loadScene() {
     std::shared_ptr<Scene> scene { nullptr };
 
     // mount assets dir
-    std::unique_ptr<fs::VFS> pVfs = std::make_unique<fs::VFS>();
+    std::unique_ptr<fs::VFS> pVfs =
+        m_hostServices && m_hostServices->fileSystem.createVfs
+            ? m_hostServices->fileSystem.createVfs()
+            : std::make_unique<fs::VFS>();
     auto&                    vfs  = *pVfs;
     if (! vfs.IsMounted("assets")) {
-        bool sus = vfs.Mount("/assets", fs::CreatePhysicalFs(m_assets), "assets");
+        auto assetsFs =
+            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
+                ? m_hostServices->fileSystem.createPhysicalFs(m_assets, false)
+                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(m_assets).release());
+        bool sus = vfs.Mount("/assets", std::move(assetsFs), "assets");
         if (! sus) {
             LOG_ERROR("Mount assets dir failed");
             return;
@@ -418,10 +425,15 @@ void MainHandler::loadScene() {
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
 
     // load pkgfile
-    if (! vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(pkgPath))) {
+    auto pkgFs = std::unique_ptr<fs::Fs>(fs::WPPkgFs::CreatePkgFs(pkgPath).release());
+    if (! vfs.Mount("/assets", std::move(pkgFs))) {
         LOG_INFO("load pkg file %s failed, fallback to use dir", pkgPath.c_str());
         // load pkg dir
-        if (! vfs.Mount("/assets", fs::CreatePhysicalFs(pkgDir))) {
+        auto pkgDirFs =
+            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
+                ? m_hostServices->fileSystem.createPhysicalFs(pkgDir, false)
+                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(pkgDir).release());
+        if (! vfs.Mount("/assets", std::move(pkgDirFs))) {
             LOG_ERROR("can't load pkg directory: %s", pkgDir.c_str());
             return;
         }
@@ -434,7 +446,11 @@ void MainHandler::loadScene() {
                 LOG_ERROR("can't prepare cache folder: %s", m_cache_path.c_str());
             }
         }
-        if (! vfs.Mount("/cache", fs::CreatePhysicalFs(m_cache_path, true), "cache")) {
+        auto cacheFs =
+            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
+                ? m_hostServices->fileSystem.createPhysicalFs(m_cache_path, true)
+                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(m_cache_path, true).release());
+        if (! vfs.Mount("/cache", std::move(cacheFs), "cache")) {
             LOG_ERROR("can't load cache folder: %s", m_cache_path.c_str());
         } else {
             LOG_INFO("cache folder: %s", m_cache_path.c_str());

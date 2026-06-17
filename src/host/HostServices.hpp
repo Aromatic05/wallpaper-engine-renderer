@@ -14,6 +14,11 @@ namespace audio
 {
 class SoundManager;
 }
+namespace fs
+{
+class Fs;
+class VFS;
+}
 namespace looper
 {
 class Looper;
@@ -22,6 +27,8 @@ class Looper;
 struct FileSystemService {
     std::function<bool(const std::filesystem::path&)> exists;
     std::function<bool(const std::filesystem::path&)> createDirectories;
+    std::function<std::unique_ptr<fs::VFS>()> createVfs;
+    std::function<std::unique_ptr<fs::Fs>(std::string_view, bool)> createPhysicalFs;
 };
 
 struct AudioService {
