@@ -26,11 +26,10 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
                                      "scene backend requires a WE scene output binding");
     }
 
-    if (! m_initialized) {
+    if (! m_runtimeDriver.inited()) {
         if (! m_runtimeDriver.init()) {
             return Result<void>::failure(ResultCode::InternalError, "failed to initialize scene wallpaper");
         }
-        m_initialized = true;
     }
 
     m_runtimeDriver.initVulkan(binding->renderInitInfo());
@@ -59,6 +58,15 @@ BackendCapabilities WESceneBackend::capabilities() const {
 }
 
 Result<void> WESceneBackend::load(const WallpaperSource& source) {
+    // The scene runtime driver routes source/assets through its looper-based command path.
+    // Ensure the loopers are initialized before we post load properties, otherwise the
+    // early source messages can be dropped and the first frame never arrives.
+    if (! m_runtimeDriver.inited()) {
+        if (! m_runtimeDriver.init()) {
+            return Result<void>::failure(ResultCode::InternalError, "failed to initialize scene wallpaper");
+        }
+    }
+
     auto sourceResult = applyProperty(WE_SCENE_PROPERTY_SOURCE, source.uri);
     if (! sourceResult) {
         return sourceResult;

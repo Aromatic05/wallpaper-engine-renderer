@@ -14,6 +14,14 @@ using namespace std;
 
 atomic<bool> renderCall(false);
 
+namespace
+{
+void glfw_error_callback(int code, const char* description) {
+    std::cerr << "GLFW error [" << code << "]: "
+              << (description == nullptr ? "unknown" : description) << std::endl;
+}
+}
+
 struct UserData {
     wallpaper::WallpaperSession* session { nullptr };
 
@@ -51,6 +59,7 @@ int main(int argc, char** argv) {
     setAndParseArg(program, argc, argv);
     auto [w_width, w_height] = program.get<Resolution>(OPT_RESOLUTION);
 
+    glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
@@ -63,6 +72,7 @@ int main(int argc, char** argv) {
     info.enable_valid_layer = program.get<bool>(OPT_VALID_LAYER);
     info.width              = w_width;
     info.height             = w_height;
+    info.redraw_callback    = updateCallback;
 
     auto& sf_info = info.surface_info;
     {
@@ -83,11 +93,13 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    glfwShowWindow(window);
+
     wallpaper::WallpaperRuntime runtime;
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
     if (cache_path.empty()) cache_path = wallpaper::host::GetCachePath("wescene-renderer");
 
-    auto session = wallpaper::CreateBuiltinSession(runtime, cache_path);
+    auto session = wallpaper::CreateWESceneSession(runtime, cache_path);
     data.session = session.get();
 
     wallpaper::WESceneSourceConfig sourceConfig;
@@ -96,9 +108,18 @@ int main(int argc, char** argv) {
     sourceConfig.graphviz = program.get<bool>(OPT_GRAPHVIZ);
     sourceConfig.fps      = program.get<int32_t>(OPT_FPS);
 
-    wallpaper::LoadWEScene(*session, sourceConfig);
-    wallpaper::BindWESceneOutput(*session, info);
-    session->play();
+    if (auto result = wallpaper::LoadWEScene(*session, sourceConfig); ! result) {
+        std::cerr << "LoadWEScene failed: " << result.error().message << std::endl;
+        return -1;
+    }
+    if (auto result = wallpaper::BindWESceneOutput(*session, info); ! result) {
+        std::cerr << "BindWESceneOutput failed: " << result.error().message << std::endl;
+        return -1;
+    }
+    if (auto result = session->play(); ! result) {
+        std::cerr << "session->play failed: " << result.error().message << std::endl;
+        return -1;
+    }
 
     glfwSetWindowUserPointer(window, &data);
 
