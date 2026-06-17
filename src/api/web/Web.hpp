@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/WallpaperRuntime.hpp"
 #include "api/WallpaperSession.hpp"
 
 #include <string>
@@ -10,14 +11,9 @@ struct WebSourceConfig {
     std::string uri;
 };
 
-inline WallpaperSource MakeWebWallpaperSource(const WebSourceConfig& config) {
-    WallpaperSource source;
-    source.type = BackendType::Web;
-    source.uri  = config.uri;
-    return source;
-}
+std::unique_ptr<WallpaperSession> CreateWebSession(WallpaperRuntime& runtime,
+                                                   std::string       cachePath = {});
 
-inline Result<void> LoadWebWallpaper(WallpaperSession& session, const WebSourceConfig& sourceConfig) {
-    return session.load(MakeWebWallpaperSource(sourceConfig));
-}
+WallpaperSource MakeWebWallpaperSource(const WebSourceConfig& config);
+Result<void>    LoadWebWallpaper(WallpaperSession& session, const WebSourceConfig& sourceConfig);
 } // namespace wallpaper
