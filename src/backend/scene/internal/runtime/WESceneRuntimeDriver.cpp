@@ -506,7 +506,16 @@ bool MainHandler::init() {
 }
 MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices)
     : m_hostServices(std::move(hostServices)),
-      m_sound_manager(std::make_unique<audio::SoundManager>()),
-      m_main_loop(std::make_shared<looper::Looper>()),
-      m_render_loop(std::make_shared<looper::Looper>()),
+      m_sound_manager(
+          m_hostServices && m_hostServices->audio.createSoundManager
+              ? m_hostServices->audio.createSoundManager()
+              : std::make_unique<audio::SoundManager>()),
+      m_main_loop(
+          m_hostServices && m_hostServices->timer.createLooper
+              ? m_hostServices->timer.createLooper()
+              : std::make_shared<looper::Looper>()),
+      m_render_loop(
+          m_hostServices && m_hostServices->timer.createLooper
+              ? m_hostServices->timer.createLooper()
+              : std::make_shared<looper::Looper>()),
       m_render_handler(std::make_shared<RenderHandler>(*this)) {}

@@ -1,5 +1,7 @@
 #include "host/HostServices.hpp"
 
+#include "host/audio/include/audio/SoundManager.h"
+#include "host/looper/include/looper/Looper.hpp"
 #include "utils/Platform.hpp"
 
 #include <chrono>
@@ -22,6 +24,13 @@ std::shared_ptr<HostServices> CreateDefaultHostServices() {
         const auto now = std::chrono::steady_clock::now().time_since_epoch();
         return static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
+    };
+    services->timer.createLooper = []() {
+        return std::make_shared<looper::Looper>();
+    };
+
+    services->audio.createSoundManager = []() {
+        return std::make_unique<audio::SoundManager>();
     };
 
     services->platform.cachePathForApp = [](std::string_view appName) {

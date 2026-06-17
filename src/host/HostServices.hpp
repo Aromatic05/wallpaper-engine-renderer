@@ -10,6 +10,15 @@
 
 namespace wallpaper
 {
+namespace audio
+{
+class SoundManager;
+}
+namespace looper
+{
+class Looper;
+}
+
 struct FileSystemService {
     std::function<bool(const std::filesystem::path&)> exists;
     std::function<bool(const std::filesystem::path&)> createDirectories;
@@ -17,6 +26,7 @@ struct FileSystemService {
 
 struct AudioService {
     bool available { true };
+    std::function<std::unique_ptr<audio::SoundManager>()> createSoundManager;
 };
 
 struct MediaService {
@@ -25,6 +35,7 @@ struct MediaService {
 
 struct TimerService {
     std::function<std::uint64_t()> monotonicMilliseconds;
+    std::function<std::shared_ptr<looper::Looper>()> createLooper;
 };
 
 struct PlatformService {
