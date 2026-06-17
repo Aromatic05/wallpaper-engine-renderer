@@ -1,6 +1,6 @@
 #pragma once
 
-#include "backend/scene/legacy/SceneWallpaper.hpp"
+#include "backend/scene/internal/runtime/SceneWallpaper.hpp"
 #include "api/scene/WESceneOutput.hpp"
 #include "common/result/Result.hpp"
 #include "output/RenderPlanSource.hpp"

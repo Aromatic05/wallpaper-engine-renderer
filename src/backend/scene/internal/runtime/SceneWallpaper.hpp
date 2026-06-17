@@ -1,6 +1,6 @@
 #pragma once
 
-// Legacy scene wrapper kept for compatibility with the old Scene -> Renderer entrypoint.
+// Internal driver that isolates the older scene/render pipeline behind the backend interface.
 // New integrations should prefer WallpaperSession plus api/scene/WEScene.hpp helpers.
 
 #include <memory>
