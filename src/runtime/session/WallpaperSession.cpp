@@ -202,13 +202,8 @@ Result<void> WallpaperSession::sendInput(const InputEvent& event) {
         return stateResult;
     }
 
-    auto result = m_backend->sendInput(event);
-    if (! result) {
-        recordError("runtime.input", result.error());
-        return result;
-    }
-
-    return Result<void>::success();
+    m_inputQueue.push_back(event);
+    return drainInputQueue();
 }
 
 SessionState WallpaperSession::state() const { return m_state; }
@@ -261,8 +256,24 @@ Result<void> WallpaperSession::activateOutputBinding() {
     return result;
 }
 
+Result<void> WallpaperSession::drainInputQueue() {
+    while (! m_inputQueue.empty()) {
+        auto event = std::move(m_inputQueue.front());
+        m_inputQueue.pop_front();
+
+        auto result = m_backend->sendInput(event);
+        if (! result) {
+            recordError("runtime.input", result.error());
+            return result;
+        }
+    }
+
+    return Result<void>::success();
+}
+
 Result<void> WallpaperSession::resetBackendForLoad() {
     if (! m_backend) {
+        m_inputQueue.clear();
         m_state = SessionState::Idle;
         return Result<void>::success();
     }
@@ -278,6 +289,7 @@ Result<void> WallpaperSession::resetBackendForLoad() {
     }
 
     m_backend.reset();
+    m_inputQueue.clear();
     m_state = SessionState::Idle;
     return Result<void>::success();
 }

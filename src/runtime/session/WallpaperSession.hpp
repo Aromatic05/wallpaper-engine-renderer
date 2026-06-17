@@ -8,6 +8,7 @@
 #include "runtime/diagnostics/Diagnostics.hpp"
 #include "runtime/diagnostics/DiagnosticsHub.hpp"
 #include "runtime/input/InputEvent.hpp"
+#include "runtime/input/InputQueue.hpp"
 #include "runtime/property/PropertyValue.hpp"
 #include "runtime/session/SessionState.hpp"
 #include "runtime/session/WallpaperTypes.hpp"
@@ -47,6 +48,7 @@ private:
                              std::initializer_list<SessionState> allowedStates) const;
     Result<void> activateOutputBinding();
     DiagnosticsSnapshot aggregateDiagnostics() const;
+    Result<void> drainInputQueue();
     Result<void> resetBackendForLoad();
     void         recordError(const char* source, const Error& error);
     void         appendDiagnostic(DiagnosticSeverity severity, const char* source, std::string message);
@@ -59,6 +61,7 @@ private:
     std::optional<WallpaperSource>   m_loadedSource;
     std::optional<OutputTarget>      m_outputTarget;
     PropertyMap                      m_pendingProperties;
+    InputQueue                       m_inputQueue;
     SessionState                     m_state { SessionState::Idle };
     DiagnosticsHub                   m_diagnosticsHub;
 };
