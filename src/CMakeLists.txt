@@ -36,6 +36,9 @@ add_library(
   WPJson.cpp
   WPPkgFs.cpp
   Type.cpp
+  runtime/WallpaperRuntime.cpp
+  runtime/session/WallpaperSession.cpp
+  backend/scene/WESceneBackend.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPParticleObject.cpp
   wpscene/WPMaterial.cpp
