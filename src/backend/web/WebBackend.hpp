@@ -7,12 +7,6 @@
 
 namespace wallpaper
 {
-struct WebSourceConfig {
-    std::string uri;
-};
-
-WallpaperSource MakeWebWallpaperSource(const WebSourceConfig& config);
-
 class WebOutputSource final : public SurfaceSource {
 public:
     Result<void> bind(const OutputTarget& target) override;

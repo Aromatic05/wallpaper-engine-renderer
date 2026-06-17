@@ -1,4 +1,5 @@
 #include "backend/scene/compatibility/WESceneSession.hpp"
+#include "backend/scene/compatibility/WESceneSource.hpp"
 
 namespace wallpaper
 {

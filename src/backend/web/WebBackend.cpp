@@ -2,13 +2,6 @@
 
 namespace wallpaper
 {
-WallpaperSource MakeWebWallpaperSource(const WebSourceConfig& config) {
-    WallpaperSource source;
-    source.type = BackendType::Web;
-    source.uri  = config.uri;
-    return source;
-}
-
 Result<void> WebOutputSource::bind(const OutputTarget& target) {
     if (! target.valid()) {
         return Result<void>::failure(ResultCode::InvalidArgument, "web output target binding is null");
