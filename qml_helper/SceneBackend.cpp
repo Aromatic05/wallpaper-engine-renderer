@@ -21,8 +21,8 @@
 #include <functional>
 
 #include "glExtra.hpp"
-#include "backend/BuiltinBackendFactory.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "backend/scene/compatibility/WESceneSession.hpp"
 #include "backend/scene/compatibility/WESceneSource.hpp"
 #include "Type.hpp"
 #include "Utils/Platform.hpp"
@@ -132,7 +132,7 @@ public:
                                         std::static_pointer_cast<void>(cb));
         m_output_binding = wallpaper::MakeWESceneOutputBinding(info);
         m_owner->setOutputBinding(m_output_binding);
-        m_owner->session()->bindOutput(wallpaper::MakeWESceneOutputTarget(m_output_binding));
+        wallpaper::BindWESceneOutput(*m_owner->session(), m_output_binding);
     }
 
     void emitSceneFirstFrame() { Q_EMIT sceneFirstFrame(); }
@@ -204,8 +204,7 @@ private:
 } // namespace scenebackend
 
 SceneObject::SceneObject(QQuickItem* parent)
-    : QQuickItem(parent)
-    , m_backendFactory(wallpaper::CreateBuiltinBackendFactory()) {
+    : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
     ensureSession();
 }
@@ -397,11 +396,7 @@ void SceneObject::setOutputBinding(std::shared_ptr<wallpaper::WESceneOutputBindi
 
 void SceneObject::ensureSession() {
     if (m_session) return;
-
-    wallpaper::SessionConfig config;
-    config.backendFactory = m_backendFactory;
-    config.cachePath      = GetDefaultCachePath();
-    m_session             = m_runtime.createSession(config);
+    m_session = wallpaper::CreateWESceneSession(m_runtime, GetDefaultCachePath());
 }
 
 void SceneObject::ensureLoaded() {
@@ -419,14 +414,12 @@ void SceneObject::ensureLoaded() {
     sourceConfig.volume   = m_volume;
     sourceConfig.muted    = m_muted;
     sourceConfig.graphviz = m_genGraphviz;
-    wallpaper::WallpaperSource source = wallpaper::MakeWESceneWallpaperSource(sourceConfig);
-
-    auto result = m_session->load(source);
+    auto result = wallpaper::LoadWEScene(*m_session, sourceConfig);
     if (! result) return;
 
     m_loaded = true;
     if (m_outputBinding) {
-        m_session->bindOutput(wallpaper::MakeWESceneOutputTarget(m_outputBinding));
+        wallpaper::BindWESceneOutput(*m_session, m_outputBinding);
     }
 }
 

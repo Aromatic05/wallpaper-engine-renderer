@@ -7,9 +7,7 @@
 #include <atomic>
 #include "arg.hpp"
 #include "api/WallpaperRuntime.hpp"
-#include "backend/BuiltinBackendFactory.hpp"
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
-#include "backend/scene/compatibility/WESceneSource.hpp"
+#include "backend/scene/compatibility/WESceneSession.hpp"
 
 #include "Utils/Platform.hpp"
 
@@ -87,13 +85,10 @@ int main(int argc, char** argv) {
     }
 
     wallpaper::WallpaperRuntime runtime;
-    wallpaper::SessionConfig    config;
-    config.backendFactory = wallpaper::CreateBuiltinBackendFactory();
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
     if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
-    config.cachePath = cache_path;
 
-    auto session = runtime.createSession(config);
+    auto session = wallpaper::CreateWESceneSession(runtime, cache_path);
     data.session = session.get();
 
     wallpaper::WESceneSourceConfig sourceConfig;
@@ -102,8 +97,8 @@ int main(int argc, char** argv) {
     sourceConfig.graphviz = program.get<bool>(OPT_GRAPHVIZ);
     sourceConfig.fps      = program.get<int32_t>(OPT_FPS);
 
-    session->load(wallpaper::MakeWESceneWallpaperSource(sourceConfig));
-    session->bindOutput(wallpaper::MakeWESceneOutputTarget(info));
+    wallpaper::LoadWEScene(*session, sourceConfig);
+    wallpaper::BindWESceneOutput(*session, info);
     session->play();
 
     glfwSetWindowUserPointer(window, &data);

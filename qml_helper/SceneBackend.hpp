@@ -107,7 +107,6 @@ private:
     bool m_loaded { false };
 
     wallpaper::WallpaperRuntime                   m_runtime;
-    std::shared_ptr<wallpaper::BackendFactory>   m_backendFactory;
     std::unique_ptr<wallpaper::WallpaperSession> m_session;
     std::shared_ptr<wallpaper::WESceneOutputBinding> m_outputBinding;
 

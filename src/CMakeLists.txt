@@ -38,6 +38,7 @@ add_library(
   Type.cpp
   backend/BuiltinBackendFactory.cpp
   backend/scene/compatibility/WESceneSource.cpp
+  backend/scene/compatibility/WESceneSession.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
   backend/scene/compatibility/WESceneOutputTarget.cpp
