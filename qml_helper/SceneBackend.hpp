@@ -7,7 +7,6 @@
 #include <QtGui/QHoverEvent>
 
 #include "api/WallpaperRuntime.hpp"
-#include "backend/scene/WESceneBackend.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 
 Q_DECLARE_LOGGING_CATEGORY(wekdeScene)
@@ -107,9 +106,9 @@ private:
     bool m_enable_valid { false };
     bool m_loaded { false };
 
-    wallpaper::WallpaperRuntime                       m_runtime;
-    std::shared_ptr<wallpaper::BackendFactory>       m_backendFactory;
-    std::unique_ptr<wallpaper::WallpaperSession>     m_session;
+    wallpaper::WallpaperRuntime                   m_runtime;
+    std::shared_ptr<wallpaper::BackendFactory>   m_backendFactory;
+    std::unique_ptr<wallpaper::WallpaperSession> m_session;
     std::shared_ptr<wallpaper::WESceneOutputBinding> m_outputBinding;
 
 protected:

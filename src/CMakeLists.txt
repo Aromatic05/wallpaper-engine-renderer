@@ -36,6 +36,7 @@ add_library(
   WPJson.cpp
   WPPkgFs.cpp
   Type.cpp
+  backend/BuiltinBackendFactory.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
   backend/scene/compatibility/WESceneOutputTarget.cpp

@@ -21,6 +21,7 @@
 #include <functional>
 
 #include "glExtra.hpp"
+#include "backend/BuiltinBackendFactory.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 #include "Type.hpp"
 #include "Utils/Platform.hpp"
@@ -203,7 +204,7 @@ private:
 
 SceneObject::SceneObject(QQuickItem* parent)
     : QQuickItem(parent)
-    , m_backendFactory(std::make_shared<wallpaper::WESceneBackendFactory>()) {
+    , m_backendFactory(wallpaper::CreateBuiltinBackendFactory()) {
     setFlag(ItemHasContents, true);
     ensureSession();
 }

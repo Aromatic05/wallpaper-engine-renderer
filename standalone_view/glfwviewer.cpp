@@ -7,7 +7,7 @@
 #include <atomic>
 #include "arg.hpp"
 #include "api/WallpaperRuntime.hpp"
-#include "backend/scene/WESceneBackend.hpp"
+#include "backend/BuiltinBackendFactory.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 
 #include "Utils/Platform.hpp"
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
 
     wallpaper::WallpaperRuntime runtime;
     wallpaper::SessionConfig    config;
-    config.backendFactory = std::make_shared<wallpaper::WESceneBackendFactory>();
+    config.backendFactory = wallpaper::CreateBuiltinBackendFactory();
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
     if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
     config.cachePath = cache_path;
