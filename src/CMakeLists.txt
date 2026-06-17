@@ -18,14 +18,11 @@ set(warn_opts
     -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
     CACHE INTERNAL "")
 
-include_directories(.)
+include_directories(. common host)
 
-add_subdirectory(Fs)
-add_subdirectory(Utils)
-add_subdirectory(Timer)
-add_subdirectory(Audio)
+add_subdirectory(common)
+add_subdirectory(host)
 add_subdirectory(Scene)
-add_subdirectory(Looper)
 add_subdirectory(Vulkan)
 add_subdirectory(Particle)
 add_subdirectory(VulkanRender)
@@ -76,5 +73,5 @@ target_link_libraries(
   PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain)
+target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain common host)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
