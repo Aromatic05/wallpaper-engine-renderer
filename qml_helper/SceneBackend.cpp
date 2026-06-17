@@ -382,7 +382,7 @@ void SceneObject::setOutputBinding(std::shared_ptr<wallpaper::WESceneOutputBindi
 
 void SceneObject::ensureSession() {
     if (m_session) return;
-    m_session = wallpaper::CreateWESceneSession(m_runtime, GetDefaultCachePath());
+    m_session = wallpaper::CreateBuiltinSession(m_runtime, GetDefaultCachePath());
 }
 
 void SceneObject::ensureLoaded() {

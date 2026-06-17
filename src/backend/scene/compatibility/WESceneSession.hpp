@@ -10,8 +10,6 @@
 
 namespace wallpaper
 {
-SessionConfig MakeWESceneSessionConfig(std::string cachePath = {});
-
 std::unique_ptr<WallpaperSession> CreateWESceneSession(WallpaperRuntime& runtime,
                                                        std::string       cachePath = {});
 

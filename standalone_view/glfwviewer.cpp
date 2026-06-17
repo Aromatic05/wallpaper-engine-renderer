@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
     if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
 
-    auto session = wallpaper::CreateWESceneSession(runtime, cache_path);
+    auto session = wallpaper::CreateBuiltinSession(runtime, cache_path);
     data.session = session.get();
 
     wallpaper::WESceneSourceConfig sourceConfig;

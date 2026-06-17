@@ -1,19 +1,10 @@
 #include "backend/scene/compatibility/WESceneSession.hpp"
 
-#include "backend/BuiltinBackendFactory.hpp"
-
 namespace wallpaper
 {
-SessionConfig MakeWESceneSessionConfig(std::string cachePath) {
-    SessionConfig config;
-    config.backendFactory = CreateBuiltinBackendFactory();
-    config.cachePath      = std::move(cachePath);
-    return config;
-}
-
 std::unique_ptr<WallpaperSession> CreateWESceneSession(WallpaperRuntime& runtime,
                                                        std::string       cachePath) {
-    return runtime.createSession(MakeWESceneSessionConfig(std::move(cachePath)));
+    return CreateBuiltinSession(runtime, std::move(cachePath));
 }
 
 Result<void> LoadWEScene(WallpaperSession& session, const WESceneSourceConfig& sourceConfig) {
