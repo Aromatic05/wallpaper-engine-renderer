@@ -4,9 +4,11 @@
 #include "FrameLifecycle.hpp"
 #include "InputEvent.hpp"
 #include "OutputTarget.hpp"
+#include "PlaybackState.hpp"
 #include "PropertyValue.hpp"
 #include "Result.hpp"
 #include "SessionState.hpp"
+#include "BackendReadyState.hpp"
 #include "WallpaperTypes.hpp"
 
 #include <memory>
@@ -31,6 +33,8 @@ public:
     Result<void> sendInput(const InputEvent& event);
     Result<FrameLifecycle> tick();
 
+    BackendReadyState readyState() const;
+    PlaybackState     playbackState() const;
     SessionState        state() const;
     DiagnosticsSnapshot diagnostics() const;
 

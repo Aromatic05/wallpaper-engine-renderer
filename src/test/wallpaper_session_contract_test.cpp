@@ -24,11 +24,14 @@ public:
 
 class FakeRenderPlan final : public wallpaper::RenderPlan {
 public:
+    explicit FakeRenderPlan(std::uint64_t revision = 1)
+        : m_revision(revision) {}
+
     wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
         return wallpaper::OutputTargetBindingKind::Surface;
     }
 
-    std::uint64_t revision() const override { return 1; }
+    std::uint64_t revision() const override { return m_revision; }
 
     wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
         ++bindCalls;
@@ -39,6 +42,9 @@ public:
     }
 
     int bindCalls { 0 };
+
+private:
+    std::uint64_t m_revision { 1 };
 };
 
 class FakeOutputSource final : public wallpaper::RenderPlanSource {
@@ -47,6 +53,7 @@ public:
         : plan(std::make_shared<FakeRenderPlan>()) {}
 
     std::shared_ptr<FakeRenderPlan> renderPlanImpl() const { return plan; }
+    void setRenderPlan(std::shared_ptr<FakeRenderPlan> nextPlan) { plan = std::move(nextPlan); }
 
 protected:
     wallpaper::Result<wallpaper::RenderPlanPtr> currentRenderPlan() const override {
@@ -104,6 +111,10 @@ public:
     wallpaper::Result<wallpaper::FrameLifecycle> tick() override {
         ++tickCalls;
         ready = wallpaper::BackendReadyState::Loaded;
+        if (nextPlan) {
+            output.setRenderPlan(nextPlan);
+            nextPlan.reset();
+        }
 
         wallpaper::FrameLifecycle lifecycle;
         lifecycle.contentStateChanged = true;
@@ -120,6 +131,7 @@ public:
     wallpaper::DiagnosticsSnapshot diagnostics() const override { return {}; }
 
     std::shared_ptr<FakeRenderPlan> renderPlanImpl() const { return output.renderPlanImpl(); }
+    void setNextRenderPlan(std::shared_ptr<FakeRenderPlan> plan) { nextPlan = std::move(plan); }
 
     void notifyOutputBound() override {
         ++notifyOutputBoundCalls;
@@ -137,6 +149,7 @@ public:
 private:
     wallpaper::BackendReadyState ready { wallpaper::BackendReadyState::Idle };
     FakeOutputSource             output;
+    std::shared_ptr<FakeRenderPlan> nextPlan;
 };
 
 class FakeFactory final : public wallpaper::BackendFactory {
@@ -165,7 +178,16 @@ int main() {
     auto loadResult = session.load(source);
     assert(loadResult);
     assert(session.state() == wallpaper::SessionState::Loading);
+    assert(session.readyState() == wallpaper::BackendReadyState::Loading);
+    assert(session.playbackState() == wallpaper::PlaybackState::Idle);
     assert(factory->lastBackend != nullptr);
+
+    auto playWhileLoadingResult = session.play();
+    assert(playWhileLoadingResult);
+    assert(factory->lastBackend->startCalls == 1);
+    assert(session.state() == wallpaper::SessionState::Playing);
+    assert(session.readyState() == wallpaper::BackendReadyState::Loading);
+    assert(session.playbackState() == wallpaper::PlaybackState::Playing);
 
     auto lifecycleResult = session.tick();
     assert(lifecycleResult);
@@ -174,7 +196,9 @@ int main() {
     assert(factory->lastBackend->updateCalls == 1);
     assert(factory->lastBackend->acquireOutputCalls == 1);
     assert(factory->lastBackend->tickCalls == 1);
-    assert(session.state() == wallpaper::SessionState::Loaded);
+    assert(session.state() == wallpaper::SessionState::Playing);
+    assert(session.readyState() == wallpaper::BackendReadyState::Loaded);
+    assert(session.playbackState() == wallpaper::PlaybackState::Playing);
 
     wallpaper::OutputTarget target;
     target.type    = wallpaper::OutputTargetType::Surface;
@@ -183,11 +207,17 @@ int main() {
     assert(bindResult);
     assert(factory->lastBackend->notifyOutputBoundCalls == 1);
     assert(factory->lastBackend->renderPlanImpl()->bindCalls == 1);
-    assert(session.state() == wallpaper::SessionState::OutputReady);
-
-    auto playResult = session.play();
-    assert(playResult);
-    assert(factory->lastBackend->startCalls == 1);
     assert(session.state() == wallpaper::SessionState::Playing);
+    assert(session.readyState() == wallpaper::BackendReadyState::OutputReady);
+
+    auto replacementPlan = std::make_shared<FakeRenderPlan>(2);
+    factory->lastBackend->setNextRenderPlan(replacementPlan);
+    auto rebindLifecycleResult = session.tick();
+    assert(rebindLifecycleResult);
+    assert(factory->lastBackend->acquireOutputCalls == 2);
+    assert(factory->lastBackend->notifyOutputBoundCalls == 2);
+    assert(replacementPlan->bindCalls == 1);
+    assert(session.state() == wallpaper::SessionState::Playing);
+    assert(session.readyState() == wallpaper::BackendReadyState::OutputReady);
     return 0;
 }
