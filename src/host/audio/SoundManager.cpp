@@ -78,6 +78,10 @@ wallpaper::audio::CreateSoundStream(std::shared_ptr<wallpaper::fs::IBinaryStream
         LOG_ERROR("CreateSoundStream: stream is null");
         return nullptr;
     }
+    if (stream->Size() <= 0) {
+        LOG_ERROR("CreateSoundStream: stream is empty");
+        return nullptr;
+    }
 
     BStreamWrapper sw { stream };
     auto           decoder = std::make_unique<miniaudio::Decoder<BStreamWrapper>>(std::move(sw));

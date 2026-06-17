@@ -3,6 +3,7 @@
 #include "common/fs/include/fs/MemBinaryStream.h"
 #include "common/fs/include/fs/VFS.h"
 #include "common/fs/include/fs/Fs.h"
+#include "host/audio/include/audio/SoundManager.h"
 
 #include <cassert>
 #include <cstring>
@@ -22,6 +23,8 @@ using wallpaper::fs::VFS;
 using wallpaper::idx;
 using wallpaper::isize;
 using wallpaper::usize;
+using wallpaper::audio::CreateSoundStream;
+using wallpaper::audio::SoundStream;
 
 class ShortReadStream final : public IBinaryStream {
 public:
@@ -148,10 +151,19 @@ void TestVfsIdentityAndCacheIsolation() {
     vfs1.reset();
     assert(cache.at(key2) == "second");
 }
+
+void TestDecoderFailureHandling() {
+    const SoundStream::Desc desc { .channels = 2, .sampleRate = 44100 };
+    assert(CreateSoundStream(nullptr, desc) == nullptr);
+
+    auto empty = std::make_shared<MemBinaryStream>(std::vector<uint8_t> {});
+    assert(CreateSoundStream(empty, desc) == nullptr);
+}
 } // namespace
 
 int main() {
     TestLimitedBinaryStream();
     TestVfsIdentityAndCacheIsolation();
+    TestDecoderFailureHandling();
     return 0;
 }
