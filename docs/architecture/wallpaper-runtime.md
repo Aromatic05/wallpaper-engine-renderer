@@ -128,7 +128,9 @@ The current repository does not yet implement the full centralized frame pump. T
 This stage intentionally uses shim layers:
 
 - `backend/scene/WESceneBackend` wraps the existing `SceneWallpaper`
+- `backend/scene/compatibility/WESceneRenderInit.hpp` owns scene-output init types for new code
 - `output/OutputController` binds runtime sessions to backend-provided `OutputSource`
 - `api/WallpaperRuntime.hpp` becomes the top-level entry for new integrations
 
 The old `SceneWallpaper` API remains present for compatibility while the repository migrates callers to the new runtime entrypoint.
+`SceneWallpaperSurface.hpp` remains only as a compatibility forwarding header and should not be the preferred include for new code.

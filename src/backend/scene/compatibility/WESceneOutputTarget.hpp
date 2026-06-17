@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SceneWallpaperSurface.hpp"
+#include "backend/scene/compatibility/WESceneRenderInit.hpp"
 #include "Swapchain/ExSwapchain.hpp"
 #include "output/OutputTarget.hpp"
 
