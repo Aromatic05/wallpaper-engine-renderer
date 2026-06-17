@@ -1,4 +1,4 @@
-#include "SceneToRenderGraph.hpp"
+#include "WESceneRenderPlanBuilder.hpp"
 
 #include "scene/Scene.h"
 #include "rendergraph/RenderGraph.hpp"
@@ -195,7 +195,7 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     if (imgeff != nullptr) loadEffect(imgeff);
 }
 
-std::unique_ptr<rg::RenderGraph> wallpaper::sceneToRenderGraph(Scene& scene) {
+std::unique_ptr<rg::RenderGraph> wallpaper::BuildWESceneRenderPlan(Scene& scene) {
     std::unique_ptr<rg::RenderGraph> rgraph = std::make_unique<rg::RenderGraph>();
     ExtraInfo                        extra { .rgraph = rgraph.get(), .scene = &scene };
     TraverseNode(

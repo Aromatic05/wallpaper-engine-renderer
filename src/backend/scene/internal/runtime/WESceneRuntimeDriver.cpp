@@ -19,7 +19,7 @@
 
 #include "rendergraph/RenderGraph.hpp"
 
-#include "SceneToRenderGraph.hpp"
+#include "WESceneRenderPlanBuilder.hpp"
 #include "vulkanrender/VulkanRender.hpp"
 #include <atomic>
 
@@ -209,7 +209,7 @@ private:
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
             if (m_rg) m_render->clearLastRenderGraph();
-            m_rg = sceneToRenderGraph(*m_scene);
+            m_rg = BuildWESceneRenderPlan(*m_scene);
 
             if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
             m_render->compileRenderGraph(*m_scene, *m_rg);

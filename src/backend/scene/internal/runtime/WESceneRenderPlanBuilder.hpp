@@ -1,4 +1,5 @@
 #pragma once
+
 #include <memory>
 
 namespace wallpaper
@@ -10,5 +11,5 @@ namespace rg
 class RenderGraph;
 }
 
-std::unique_ptr<rg::RenderGraph> sceneToRenderGraph(Scene&);
+std::unique_ptr<rg::RenderGraph> BuildWESceneRenderPlan(Scene&);
 } // namespace wallpaper

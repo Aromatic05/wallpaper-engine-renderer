@@ -55,7 +55,7 @@ add_library(
   backend/scene/internal/WPSoundParser.cpp
   backend/scene/internal/WPMdlParser.cpp
   backend/scene/internal/WPPuppet.cpp
-  backend/scene/internal/runtime/SceneToRenderGraph.cpp
+  backend/scene/internal/runtime/WESceneRenderPlanBuilder.cpp
   backend/scene/internal/runtime/WESceneRuntimeDriver.cpp)
 
 set(InteralLib
