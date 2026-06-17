@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/scene/WESceneRenderInit.hpp"
+#include "output/VulkanOutputInit.hpp"
 #include "output/OutputTarget.hpp"
 #include "swapchain/ExSwapchain.hpp"
 

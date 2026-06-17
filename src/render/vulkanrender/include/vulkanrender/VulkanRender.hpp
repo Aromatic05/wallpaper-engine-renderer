@@ -1,7 +1,7 @@
 #pragma once
 
 #include "rendergraph/RenderGraph.hpp"
-#include "api/scene/WESceneRenderInit.hpp"
+#include "output/VulkanOutputInit.hpp"
 #include "swapchain/ExSwapchain.hpp"
 #include "Type.hpp"
 
