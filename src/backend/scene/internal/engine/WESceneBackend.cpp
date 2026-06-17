@@ -1,17 +1,31 @@
 #include "backend/scene/internal/engine/WESceneBackend.hpp"
 
+#include "api/scene/WESceneOutput.hpp"
+
 #include <utility>
 
 namespace wallpaper
 {
 namespace
 {
-class WESceneLegacyRenderPlan final : public WESceneRenderPlan {
+class WESceneLegacyRenderPlan final : public RenderPlan {
 public:
     explicit WESceneLegacyRenderPlan(WESceneRuntimeDriver& runtimeDriver)
         : m_runtimeDriver(runtimeDriver) {}
 
-    Result<void> prepareOutput(WESceneOutputBinding& binding) override {
+    OutputTargetBindingKind requiredBindingKind() const override {
+        return OutputTargetBindingKind::WESceneVulkan;
+    }
+
+    std::uint64_t revision() const override { return 1; }
+
+    Result<void> bindOutput(const OutputTarget& target) override {
+        auto binding = std::dynamic_pointer_cast<WESceneOutputBinding>(target.binding);
+        if (! binding) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "scene render plan requires a WE scene output binding");
+        }
+
         if (! m_runtimeDriver.inited()) {
             if (! m_runtimeDriver.init()) {
                 return Result<void>::failure(ResultCode::InternalError,
@@ -19,8 +33,8 @@ public:
             }
         }
 
-        m_runtimeDriver.initVulkan(binding.renderInitInfo());
-        binding.attachSwapchain(m_runtimeDriver.exSwapchain());
+        m_runtimeDriver.initVulkan(binding->renderInitInfo());
+        binding->attachSwapchain(m_runtimeDriver.exSwapchain());
         return Result<void>::success();
     }
 

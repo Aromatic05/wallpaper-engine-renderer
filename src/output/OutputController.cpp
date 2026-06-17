@@ -1,7 +1,6 @@
 #include "output/OutputController.hpp"
 
 #include "api/scene/WESceneOutput.hpp"
-#include "api/scene/WESceneRenderPlan.hpp"
 
 #include <memory>
 #include <string>
@@ -106,18 +105,16 @@ Result<void> OutputController::bindRenderPlan(const OutputTarget& target, const 
         return Result<void>(planResult.error());
     }
 
-    auto plan = std::dynamic_pointer_cast<WESceneRenderPlan>(planResult.value());
+    const auto& plan = planResult.value();
     if (! plan) {
-        return Result<void>::failure(ResultCode::NotSupported,
-                                     "output controller does not know how to consume this render plan");
+        return Result<void>::failure(ResultCode::InvalidState, "render plan source returned a null plan");
     }
 
-    auto binding = std::dynamic_pointer_cast<WESceneOutputBinding>(target.binding);
-    if (! binding) {
+    if (plan->requiredBindingKind() != target.binding->kind()) {
         return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "render plan output target binding is not a WE scene Vulkan binding");
+                                     "render plan binding kind does not match output target binding");
     }
 
-    return plan->prepareOutput(*binding);
+    return plan->bindOutput(target);
 }
 } // namespace wallpaper

@@ -1,5 +1,4 @@
 #include "api/scene/WESceneOutput.hpp"
-#include "api/scene/WESceneRenderPlan.hpp"
 #include "output/OutputController.hpp"
 #include "output/RenderPlanSource.hpp"
 
@@ -8,9 +7,17 @@
 
 namespace
 {
-class FakeSceneRenderPlan final : public wallpaper::WESceneRenderPlan {
+class FakeSceneRenderPlan final : public wallpaper::RenderPlan {
 public:
-    wallpaper::Result<void> prepareOutput(wallpaper::WESceneOutputBinding&) override {
+    wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
+        return wallpaper::OutputTargetBindingKind::WESceneVulkan;
+    }
+
+    std::uint64_t revision() const override { return 7; }
+
+    wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
+        auto binding = std::dynamic_pointer_cast<wallpaper::WESceneOutputBinding>(target.binding);
+        assert(binding);
         prepared = true;
         return wallpaper::Result<void>::success();
     }

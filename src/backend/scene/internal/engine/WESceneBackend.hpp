@@ -2,7 +2,6 @@
 
 #include "backend/scene/internal/engine/WESceneRuntimeDriver.hpp"
 #include "api/scene/WESceneOutput.hpp"
-#include "api/scene/WESceneRenderPlan.hpp"
 #include "common/result/Result.hpp"
 #include "output/OutputTarget.hpp"
 #include "output/RenderPlanSource.hpp"
@@ -25,7 +24,7 @@ protected:
 
 private:
     WESceneRuntimeDriver& m_runtimeDriver;
-    std::shared_ptr<WESceneRenderPlan> m_renderPlan;
+    RenderPlanPtr         m_renderPlan;
 };
 
 class WESceneBackend final : public ContentBackend {
