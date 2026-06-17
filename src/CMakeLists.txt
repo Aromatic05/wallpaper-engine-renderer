@@ -18,8 +18,6 @@ set(warn_opts
     -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
     CACHE INTERNAL "")
 
-include_directories(. common host backend/scene/internal render output)
-
 add_subdirectory(common)
 add_subdirectory(host)
 add_subdirectory(backend/scene/internal)

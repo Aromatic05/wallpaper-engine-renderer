@@ -1,5 +1,5 @@
 #pragma once
-#include "Image.hpp"
+#include "scene/Image.hpp"
 //#include "fs/VFS.h"
 #include <memory>
 #include <string>

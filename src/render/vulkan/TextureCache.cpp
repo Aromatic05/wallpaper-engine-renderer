@@ -5,7 +5,7 @@
 #include "Device.hpp"
 #include "Util.hpp"
 
-#include "Image.hpp"
+#include "scene/Image.hpp"
 #include "core/MapSet.hpp"
 #include "core/ArrayHelper.hpp"
 #include "utils/AutoDeletor.hpp"

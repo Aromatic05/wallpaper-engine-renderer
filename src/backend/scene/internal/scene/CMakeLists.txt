@@ -19,6 +19,9 @@ PRIVATE
     wpFs
     wpParticle
 )
-target_include_directories(${LIB_NAME} PUBLIC include PRIVATE include/scene)
+target_include_directories(
+  ${LIB_NAME}
+  PUBLIC include
+  PRIVATE include/scene ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
 set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

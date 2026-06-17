@@ -1,5 +1,5 @@
 #pragma once
-#include "SpriteAnimation.hpp"
+#include "scene/SpriteAnimation.hpp"
 #include <string>
 #include <vector>
 #include "Type.hpp"

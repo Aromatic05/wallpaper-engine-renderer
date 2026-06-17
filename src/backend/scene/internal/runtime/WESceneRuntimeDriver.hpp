@@ -8,7 +8,7 @@
 #include <functional>
 #include "common/scene/WESceneContract.hpp"
 #include "Type.hpp"
-#include "swapchain/ExSwapchain.hpp"
+#include "output/swapchain/ExSwapchain.hpp"
 
 namespace wallpaper
 {

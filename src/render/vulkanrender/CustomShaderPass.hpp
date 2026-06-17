@@ -7,7 +7,7 @@
 #include "scene/Scene.h"
 #include "vulkan/StagingBuffer.hpp"
 #include "vulkan/GraphicsPipeline.hpp"
-#include "SpriteAnimation.hpp"
+#include "scene/SpriteAnimation.hpp"
 #include "interface/IShaderValueUpdater.h"
 
 namespace wallpaper

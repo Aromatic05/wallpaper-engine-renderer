@@ -1,11 +1,10 @@
 #pragma once
-#include <cstdint>
-#include <vector>
-#include <iostream>
-#include <cstdint>
-#include <array>
 
 #include "core/Literals.hpp"
+
+#include <array>
+#include <cstdint>
+#include <vector>
 
 namespace wallpaper
 {
@@ -16,7 +15,7 @@ struct SpriteFrame {
     float y { 0 };
     float width { 1 };
     float height { 1 };
-    float rate { 1 }; // real h / w
+    float rate { 1 };
 
     std::array<float, 2> xAxis { 1, 0 };
     std::array<float, 2> yAxis { 0, 1 };
@@ -33,6 +32,7 @@ public:
         const auto& frame = m_frames.at((usize)m_curFrame);
         return frame;
     }
+
     const auto& GetCurFrame() const { return m_frames.at((usize)m_curFrame); }
     void        AppendFrame(const SpriteFrame& frame) { m_frames.push_back(frame); }
 
@@ -40,11 +40,13 @@ public:
 
 private:
     void SwitchToNext() {
-        if (m_curFrame >= std::ssize(m_frames) - 1)
+        if (m_curFrame >= std::ssize(m_frames) - 1) {
             m_curFrame = 0;
-        else
+        } else {
             m_curFrame++;
+        }
     }
+
     idx    m_curFrame { 0 };
     double m_remainTime { 0 };
 

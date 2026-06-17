@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <lz4.h>
 
-#include "SpriteAnimation.hpp"
+#include "scene/SpriteAnimation.hpp"
 #include "utils/Algorism.h"
 #include "fs/VFS.h"
 #include "utils/BitFlags.hpp"

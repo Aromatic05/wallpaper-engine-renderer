@@ -1,37 +1,34 @@
 #pragma once
-#include <cstdint>
-#include <vector>
-#include <memory>
-#include <unordered_map>
-#include <functional>
 
-#include "core/Literals.hpp"
 #include "Type.hpp"
-#include "SpriteAnimation.hpp"
-#include "scene/SceneTexture.h"
+#include "scene/SpriteAnimation.hpp"
+#include "core/Literals.hpp"
 #include "core/NoCopyMove.hpp"
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace wallpaper
 {
-
 union ImageExtra {
     int32_t val { 0 };
     char    str[125];
 };
 
-typedef std::unique_ptr<uint8_t, std::function<void(uint8_t*)>> ImageDataPtr;
+using ImageDataPtr = std::unique_ptr<uint8_t, std::function<void(uint8_t*)>>;
 
 struct ImageData {
     i32          width { 0 };
     i32          height { 0 };
     isize        size { 0 };
     ImageDataPtr data {};
-    ImageData() = default;
 };
 
 struct ImageHeader {
-    // these two size is not for tex, just come from we
-    // using Slot's size for tex
     i32 width { 0 };
     i32 height { 0 };
     i32 mapWidth { 0 };
@@ -47,12 +44,10 @@ struct ImageHeader {
     bool          isSprite { false };
     TextureSample sample;
 
-    SpriteAnimation spriteAnim;
-    // for specific property
+    SpriteAnimation                           spriteAnim;
     std::unordered_map<std::string, ImageExtra> extraHeader;
 };
 
-// slot is one singal image
 struct Image : NoCopy, NoMove {
     struct Slot {
         i32 width { 0 };
@@ -62,9 +57,9 @@ struct Image : NoCopy, NoMove {
 
         operator bool() { return width * height * std::ssize(mipmaps) > 0; }
     };
+
     ImageHeader       header;
     std::vector<Slot> slots;
     std::string       key;
 };
-
 } // namespace wallpaper

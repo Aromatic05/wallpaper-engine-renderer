@@ -11,7 +11,7 @@
 #include "core/Core.hpp"
 #include "interface/IShaderValueUpdater.h"
 #include "core/MapSet.hpp"
-#include "SpriteAnimation.hpp"
+#include "scene/SpriteAnimation.hpp"
 #include "WPPuppet.hpp"
 
 namespace wallpaper
