@@ -6,6 +6,7 @@
 #include "runtime/backend/BackendContext.hpp"
 #include "runtime/backend/BackendFactory.hpp"
 #include "runtime/diagnostics/Diagnostics.hpp"
+#include "runtime/diagnostics/DiagnosticsHub.hpp"
 #include "runtime/input/InputEvent.hpp"
 #include "runtime/property/PropertyValue.hpp"
 #include "runtime/session/SessionState.hpp"
@@ -45,6 +46,7 @@ private:
     Result<void> ensureState(std::string_view action,
                              std::initializer_list<SessionState> allowedStates) const;
     Result<void> activateOutputBinding();
+    DiagnosticsSnapshot aggregateDiagnostics() const;
     Result<void> resetBackendForLoad();
     void         recordError(const char* source, const Error& error);
     void         appendDiagnostic(DiagnosticSeverity severity, const char* source, std::string message);
@@ -58,6 +60,6 @@ private:
     std::optional<OutputTarget>      m_outputTarget;
     PropertyMap                      m_pendingProperties;
     SessionState                     m_state { SessionState::Idle };
-    DiagnosticsSnapshot              m_diagnostics;
+    DiagnosticsHub                   m_diagnosticsHub;
 };
 } // namespace wallpaper

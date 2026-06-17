@@ -214,14 +214,16 @@ Result<void> WallpaperSession::sendInput(const InputEvent& event) {
 SessionState WallpaperSession::state() const { return m_state; }
 
 DiagnosticsSnapshot WallpaperSession::diagnostics() const {
-    DiagnosticsSnapshot snapshot = m_diagnostics;
+    return aggregateDiagnostics();
+}
+
+DiagnosticsSnapshot WallpaperSession::aggregateDiagnostics() const {
+    DiagnosticsHub aggregatedDiagnostics;
+    aggregatedDiagnostics.merge(m_diagnosticsHub.snapshot());
     if (m_backend) {
-        auto backendDiagnostics = m_backend->diagnostics();
-        snapshot.entries.insert(snapshot.entries.end(),
-                                backendDiagnostics.entries.begin(),
-                                backendDiagnostics.entries.end());
+        aggregatedDiagnostics.merge(m_backend->diagnostics());
     }
-    return snapshot;
+    return aggregatedDiagnostics.snapshot();
 }
 
 Result<void> WallpaperSession::ensureBackend() const {
@@ -287,6 +289,6 @@ void WallpaperSession::recordError(const char* source, const Error& error) {
 void WallpaperSession::appendDiagnostic(DiagnosticSeverity severity,
                                         const char*        source,
                                         std::string        message) {
-    m_diagnostics.append(severity, source, std::move(message));
+    m_diagnosticsHub.append(severity, source, std::move(message));
 }
 } // namespace wallpaper
