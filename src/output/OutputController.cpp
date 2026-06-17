@@ -61,11 +61,6 @@ Result<void> OutputController::validate(const OutputTarget&        target,
         if (! capabilities.supportsRenderPlan) {
             return unsupportedBinding("render plan", target.type);
         }
-        if (target.binding->kind() != OutputTargetBindingKind::WESceneVulkan) {
-            return Result<void>::failure(
-                ResultCode::InvalidArgument,
-                "render plan output currently requires a WE scene Vulkan target binding");
-        }
         return Result<void>::success();
     case OutputSourceType::Texture:
         if (! capabilities.supportsTextureOutput) {

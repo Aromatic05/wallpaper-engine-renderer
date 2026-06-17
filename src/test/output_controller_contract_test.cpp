@@ -45,6 +45,37 @@ public:
         return wallpaper::OutputTargetBindingKind::Surface;
     }
 };
+
+class SurfaceRenderPlan final : public wallpaper::RenderPlan {
+public:
+    wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
+        return wallpaper::OutputTargetBindingKind::Surface;
+    }
+
+    std::uint64_t revision() const override { return 3; }
+
+    wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
+        assert(target.binding->kind() == wallpaper::OutputTargetBindingKind::Surface);
+        prepared = true;
+        return wallpaper::Result<void>::success();
+    }
+
+    bool prepared { false };
+};
+
+class SurfaceRenderPlanSource final : public wallpaper::RenderPlanSource {
+public:
+    explicit SurfaceRenderPlanSource(std::shared_ptr<SurfaceRenderPlan> plan)
+        : plan(std::move(plan)) {}
+
+protected:
+    wallpaper::Result<wallpaper::RenderPlanPtr> currentRenderPlan() const override {
+        return wallpaper::Result<wallpaper::RenderPlanPtr>::success(plan);
+    }
+
+private:
+    std::shared_ptr<SurfaceRenderPlan> plan;
+};
 } // namespace
 
 int main() {
@@ -69,5 +100,15 @@ int main() {
     auto                      goodResult   = controller.bind(goodTarget, source, capabilities);
     assert(goodResult);
     assert(plan->prepared);
+
+    auto genericPlan   = std::make_shared<SurfaceRenderPlan>();
+    auto genericSource = SurfaceRenderPlanSource(genericPlan);
+    auto genericTargetBinding = std::make_shared<WrongBinding>();
+    wallpaper::OutputTarget genericTarget;
+    genericTarget.type    = wallpaper::OutputTargetType::Surface;
+    genericTarget.binding = genericTargetBinding;
+    auto genericResult    = controller.bind(genericTarget, genericSource, capabilities);
+    assert(genericResult);
+    assert(genericPlan->prepared);
     return 0;
 }
