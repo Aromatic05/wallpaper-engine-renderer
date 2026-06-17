@@ -75,5 +75,8 @@ target_link_libraries(
   PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-target_include_directories(${PROJECT_NAME} PUBLIC . common host backend/scene/internal render output)
+target_include_directories(
+  ${PROJECT_NAME}
+  PUBLIC . common common/utils/include
+  PRIVATE common host backend/scene/internal render output)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
