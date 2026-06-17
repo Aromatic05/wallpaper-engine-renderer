@@ -9,6 +9,8 @@
 #include "runtime/backend/BackendReadyState.hpp"
 #include "runtime/backend/ContentBackend.hpp"
 
+#include "../../../../../include/wallpaper/scene/WESceneEngineServices.hpp"
+
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -29,7 +31,7 @@ private:
 
 class WESceneBackend final : public ContentBackend {
 public:
-    explicit WESceneBackend(const BackendContext& context);
+    WESceneBackend(const BackendContext& context, std::shared_ptr<WESceneEngineServices> engineServices);
 
     BackendType         type() const override;
     BackendCapabilities capabilities() const override;
@@ -70,6 +72,7 @@ private:
     BackendContext               m_context;
     std::shared_ptr<SharedState> m_sharedState;
     WESceneRuntimeDriver         m_runtimeDriver;
+    std::shared_ptr<WESceneEngineServices> m_engineServices;
     WESceneOutputSource          m_outputSource;
     DiagnosticsSnapshot          m_diagnostics;
 };

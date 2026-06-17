@@ -56,10 +56,12 @@ Result<RenderPlanPtr> WESceneOutputSource::currentRenderPlan() const {
     return Result<RenderPlanPtr>::success(m_renderPlan);
 }
 
-WESceneBackend::WESceneBackend(const BackendContext& context)
+WESceneBackend::WESceneBackend(const BackendContext& context,
+                               std::shared_ptr<WESceneEngineServices> engineServices)
     : m_context(context)
     , m_sharedState(std::make_shared<SharedState>())
-    , m_runtimeDriver(m_context.hostServices)
+    , m_runtimeDriver(m_context.hostServices, engineServices)
+    , m_engineServices(std::move(engineServices))
     , m_outputSource(m_runtimeDriver) {
     if (! m_context.cachePath.empty()) {
         m_runtimeDriver.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);

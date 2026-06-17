@@ -10,32 +10,9 @@
 
 namespace wallpaper
 {
-class FrameTimer;
-namespace audio
-{
-class SoundManager;
-}
-namespace fs
-{
-class Fs;
-class VFS;
-}
-namespace looper
-{
-class Looper;
-}
-
 struct FileSystemService {
     std::function<bool(const std::filesystem::path&)> exists;
     std::function<bool(const std::filesystem::path&)> createDirectories;
-    std::function<std::unique_ptr<fs::VFS>()> createVfs;
-    std::function<std::unique_ptr<fs::Fs>(std::string_view, bool)> createPhysicalFs;
-    std::function<std::unique_ptr<fs::Fs>(std::string_view)> createPackageFs;
-};
-
-struct AudioService {
-    bool available { true };
-    std::function<std::unique_ptr<audio::SoundManager>()> createSoundManager;
 };
 
 struct MediaService {
@@ -44,8 +21,6 @@ struct MediaService {
 
 struct TimerService {
     std::function<std::uint64_t()> monotonicMilliseconds;
-    std::function<std::shared_ptr<looper::Looper>()> createLooper;
-    std::function<std::unique_ptr<FrameTimer>()> createFrameTimer;
 };
 
 struct PlatformService {
@@ -62,7 +37,6 @@ struct DiagnosticsService {
 
 struct HostServices {
     FileSystemService fileSystem;
-    AudioService audio;
     MediaService media;
     TimerService timer;
     PlatformService platform;

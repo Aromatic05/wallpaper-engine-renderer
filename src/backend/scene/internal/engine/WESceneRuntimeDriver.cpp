@@ -65,7 +65,8 @@ public:
     };
 
 public:
-    explicit MainHandler(std::shared_ptr<HostServices> hostServices);
+    MainHandler(std::shared_ptr<HostServices> hostServices,
+                std::shared_ptr<WESceneEngineServices> engineServices);
     virtual ~MainHandler() {};
 
     bool init();
@@ -101,7 +102,8 @@ private:
 
 private:
     bool m_inited { false };
-    std::shared_ptr<HostServices> m_hostServices;
+    std::shared_ptr<HostServices>          m_hostServices;
+    std::shared_ptr<WESceneEngineServices> m_engineServices;
 
     std::string m_assets;
     std::string m_source;
@@ -133,10 +135,10 @@ public:
         CMD_NO
     };
     MainHandler& main_handler;
-    RenderHandler(MainHandler& m, std::shared_ptr<HostServices> hostServices)
+    RenderHandler(MainHandler& m, std::shared_ptr<WESceneEngineServices> engineServices)
         : main_handler(m)
-        , m_frameTimer(hostServices && hostServices->timer.createFrameTimer
-                           ? hostServices->timer.createFrameTimer()
+        , m_frameTimer(engineServices && engineServices->createFrameTimer
+                           ? engineServices->createFrameTimer()
                            : std::make_unique<FrameTimer>())
         , m_render(std::make_unique<vulkan::VulkanRender>()) {}
     virtual ~RenderHandler() {
@@ -250,9 +252,11 @@ private:
 };
 } // namespace wallpaper
 
-WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices)
+WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices,
+                                           std::shared_ptr<WESceneEngineServices> engineServices)
     : m_hostServices(hostServices ? std::move(hostServices) : CreateDefaultHostServices())
-    , m_main_handler(std::make_shared<MainHandler>(m_hostServices)) {}
+    , m_engineServices(std::move(engineServices))
+    , m_main_handler(std::make_shared<MainHandler>(m_hostServices, m_engineServices)) {}
 
 WESceneRuntimeDriver::~WESceneRuntimeDriver() {
     /*
@@ -406,16 +410,15 @@ void MainHandler::loadScene() {
     std::shared_ptr<Scene> scene { nullptr };
 
     // mount assets dir
-    if (! m_hostServices || ! m_hostServices->fileSystem.createVfs
-        || ! m_hostServices->fileSystem.createPhysicalFs) {
-        LOG_ERROR("host file system services are incomplete");
+    if (! m_engineServices || ! m_engineServices->createVfs || ! m_engineServices->createPhysicalFs) {
+        LOG_ERROR("scene engine services are incomplete");
         return;
     }
 
-    std::unique_ptr<fs::VFS> pVfs = m_hostServices->fileSystem.createVfs();
+    std::unique_ptr<fs::VFS> pVfs = m_engineServices->createVfs();
     auto&                    vfs  = *pVfs;
     if (! vfs.IsMounted("assets")) {
-        auto assetsFs = m_hostServices->fileSystem.createPhysicalFs(m_assets, false);
+        auto assetsFs = m_engineServices->createPhysicalFs(m_assets, false);
         bool sus = vfs.Mount("/assets", std::move(assetsFs), "assets");
         if (! sus) {
             LOG_ERROR("Mount assets dir failed");
@@ -431,13 +434,13 @@ void MainHandler::loadScene() {
 
     // load pkgfile
     std::unique_ptr<fs::Fs> pkgFs;
-    if (m_hostServices->fileSystem.createPackageFs) {
-        pkgFs = m_hostServices->fileSystem.createPackageFs(pkgPath);
+    if (m_engineServices->createPackageFs) {
+        pkgFs = m_engineServices->createPackageFs(pkgPath);
     }
     if (! pkgFs || ! vfs.Mount("/assets", std::move(pkgFs))) {
         LOG_INFO("load pkg file %s failed, fallback to use dir", pkgPath.c_str());
         // load pkg dir
-        auto pkgDirFs = m_hostServices->fileSystem.createPhysicalFs(pkgDir, false);
+        auto pkgDirFs = m_engineServices->createPhysicalFs(pkgDir, false);
         if (! vfs.Mount("/assets", std::move(pkgDirFs))) {
             LOG_ERROR("can't load pkg directory: %s", pkgDir.c_str());
             return;
@@ -451,8 +454,7 @@ void MainHandler::loadScene() {
                 LOG_ERROR("can't prepare cache folder: %s", m_cache_path.c_str());
             }
         }
-        auto cacheFs =
-            m_hostServices->fileSystem.createPhysicalFs(m_cache_path, true);
+        auto cacheFs = m_engineServices->createPhysicalFs(m_cache_path, true);
         if (! vfs.Mount("/cache", std::move(cacheFs), "cache")) {
             LOG_ERROR("can't load cache folder: %s", m_cache_path.c_str());
         } else {
@@ -523,9 +525,11 @@ bool MainHandler::init() {
     m_inited = true;
     return true;
 }
-MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices)
+MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices,
+                         std::shared_ptr<WESceneEngineServices> engineServices)
     : m_hostServices(std::move(hostServices)),
-      m_sound_manager(m_hostServices->audio.createSoundManager()),
-      m_main_loop(m_hostServices->timer.createLooper()),
-      m_render_loop(m_hostServices->timer.createLooper()),
-      m_render_handler(std::make_shared<RenderHandler>(*this, m_hostServices)) {}
+      m_engineServices(std::move(engineServices)),
+      m_sound_manager(m_engineServices->createSoundManager()),
+      m_main_loop(m_engineServices->createLooper()),
+      m_render_loop(m_engineServices->createLooper()),
+      m_render_handler(std::make_shared<RenderHandler>(*this, m_engineServices)) {}

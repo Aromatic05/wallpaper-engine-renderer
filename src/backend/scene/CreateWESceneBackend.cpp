@@ -3,12 +3,40 @@
 #include "backend/scene/internal/CreateScenePackageFs.hpp"
 #include "backend/scene/internal/engine/WESceneBackend.hpp"
 #include "common/fs/include/fs/Fs.h"
+#include "common/fs/include/fs/PhysicalFs.h"
+#include "common/fs/include/fs/VFS.h"
 #include "host/HostServices.hpp"
+#include "host/audio/include/audio/SoundManager.h"
+#include "host/looper/include/looper/Looper.hpp"
+#include "host/timer/include/timer/FrameTimer.hpp"
 
 namespace wallpaper
 {
 namespace
 {
+std::shared_ptr<WESceneEngineServices> CreateDefaultWESceneEngineServices() {
+    auto services = std::make_shared<WESceneEngineServices>();
+    services->createVfs = []() {
+        return std::make_unique<fs::VFS>();
+    };
+    services->createPhysicalFs = [](std::string_view path, bool create) {
+        return std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(path, create).release());
+    };
+    services->createPackageFs = [](std::string_view pkgPath) {
+        return CreateScenePackageFs(pkgPath);
+    };
+    services->createSoundManager = []() {
+        return std::make_unique<audio::SoundManager>();
+    };
+    services->createLooper = []() {
+        return std::make_shared<looper::Looper>();
+    };
+    services->createFrameTimer = []() {
+        return std::make_unique<FrameTimer>();
+    };
+    return services;
+}
+
 void mergeMissingHostServices(const std::shared_ptr<HostServices>& target,
                               const std::shared_ptr<HostServices>& defaults) {
     if (! target || ! defaults) {
@@ -21,26 +49,8 @@ void mergeMissingHostServices(const std::shared_ptr<HostServices>& target,
     if (! target->fileSystem.createDirectories) {
         target->fileSystem.createDirectories = defaults->fileSystem.createDirectories;
     }
-    if (! target->fileSystem.createVfs) {
-        target->fileSystem.createVfs = defaults->fileSystem.createVfs;
-    }
-    if (! target->fileSystem.createPhysicalFs) {
-        target->fileSystem.createPhysicalFs = defaults->fileSystem.createPhysicalFs;
-    }
-    if (! target->fileSystem.createPackageFs) {
-        target->fileSystem.createPackageFs = defaults->fileSystem.createPackageFs;
-    }
-    if (! target->audio.createSoundManager) {
-        target->audio.createSoundManager = defaults->audio.createSoundManager;
-    }
     if (! target->timer.monotonicMilliseconds) {
         target->timer.monotonicMilliseconds = defaults->timer.monotonicMilliseconds;
-    }
-    if (! target->timer.createLooper) {
-        target->timer.createLooper = defaults->timer.createLooper;
-    }
-    if (! target->timer.createFrameTimer) {
-        target->timer.createFrameTimer = defaults->timer.createFrameTimer;
     }
     if (! target->platform.cachePathForApp) {
         target->platform.cachePathForApp = defaults->platform.cachePathForApp;
@@ -53,36 +63,66 @@ void mergeMissingHostServices(const std::shared_ptr<HostServices>& target,
     }
 }
 
-Result<void> validateSceneHostServices(const std::shared_ptr<HostServices>& hostServices) {
-    if (! hostServices) {
-        return Result<void>::failure(ResultCode::InvalidArgument, "scene backend requires host services");
+void mergeMissingWESceneEngineServices(const std::shared_ptr<WESceneEngineServices>& target,
+                                       const std::shared_ptr<WESceneEngineServices>& defaults) {
+    if (! target || ! defaults) {
+        return;
     }
-    if (! hostServices->audio.createSoundManager) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires audio.createSoundManager");
+
+    if (! target->createVfs) {
+        target->createVfs = defaults->createVfs;
     }
-    if (! hostServices->timer.createLooper) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires timer.createLooper");
+    if (! target->createPhysicalFs) {
+        target->createPhysicalFs = defaults->createPhysicalFs;
     }
-    if (! hostServices->fileSystem.createVfs) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires fileSystem.createVfs");
+    if (! target->createPackageFs) {
+        target->createPackageFs = defaults->createPackageFs;
     }
-    if (! hostServices->fileSystem.createPhysicalFs) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires fileSystem.createPhysicalFs");
+    if (! target->createSoundManager) {
+        target->createSoundManager = defaults->createSoundManager;
     }
-    if (! hostServices->fileSystem.createPackageFs) {
+    if (! target->createLooper) {
+        target->createLooper = defaults->createLooper;
+    }
+    if (! target->createFrameTimer) {
+        target->createFrameTimer = defaults->createFrameTimer;
+    }
+}
+
+Result<void> validateSceneEngineServices(
+    const std::shared_ptr<WESceneEngineServices>& engineServices) {
+    if (! engineServices) {
         return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires fileSystem.createPackageFs");
+                                     "scene backend requires engine services");
+    }
+    if (! engineServices->createSoundManager) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires createSoundManager");
+    }
+    if (! engineServices->createLooper) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires createLooper");
+    }
+    if (! engineServices->createVfs) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires createVfs");
+    }
+    if (! engineServices->createPhysicalFs) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires createPhysicalFs");
+    }
+    if (! engineServices->createPackageFs) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires createPackageFs");
     }
 
     return Result<void>::success();
 }
 } // namespace
 
-Result<std::unique_ptr<ContentBackend>> CreateWESceneBackend(const BackendContext& context) {
+Result<std::unique_ptr<ContentBackend>> CreateWESceneBackend(
+    const BackendContext&                 context,
+    std::shared_ptr<WESceneEngineServices> engineServices) {
     BackendContext effectiveContext = context;
 
     if (! effectiveContext.hostServices) {
@@ -91,18 +131,19 @@ Result<std::unique_ptr<ContentBackend>> CreateWESceneBackend(const BackendContex
         mergeMissingHostServices(effectiveContext.hostServices, CreateDefaultHostServices());
     }
 
-    if (effectiveContext.hostServices && ! effectiveContext.hostServices->fileSystem.createPackageFs) {
-        effectiveContext.hostServices->fileSystem.createPackageFs = [](std::string_view pkgPath) {
-            return CreateScenePackageFs(pkgPath);
-        };
+    if (! engineServices) {
+        engineServices = CreateDefaultWESceneEngineServices();
+    } else {
+        mergeMissingWESceneEngineServices(engineServices, CreateDefaultWESceneEngineServices());
     }
 
-    auto validationResult = validateSceneHostServices(effectiveContext.hostServices);
+    auto validationResult = validateSceneEngineServices(engineServices);
     if (! validationResult) {
         return Result<std::unique_ptr<ContentBackend>>(validationResult.error());
     }
 
-    std::unique_ptr<ContentBackend> backend = std::make_unique<WESceneBackend>(effectiveContext);
+    std::unique_ptr<ContentBackend> backend =
+        std::make_unique<WESceneBackend>(effectiveContext, std::move(engineServices));
     return Result<std::unique_ptr<ContentBackend>>::success(std::move(backend));
 }
 } // namespace wallpaper

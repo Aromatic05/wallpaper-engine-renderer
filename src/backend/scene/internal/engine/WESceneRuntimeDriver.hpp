@@ -11,6 +11,8 @@
 #include "Type.hpp"
 #include "output/swapchain/ExSwapchain.hpp"
 
+#include "../../../../../include/wallpaper/scene/WESceneEngineServices.hpp"
+
 namespace wallpaper
 {
 
@@ -31,7 +33,8 @@ struct RenderInitInfo;
 
 class WESceneRuntimeDriver : NoCopy {
 public:
-    explicit WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices = {});
+    explicit WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices = {},
+                                  std::shared_ptr<WESceneEngineServices> engineServices = {});
     ~WESceneRuntimeDriver();
     bool init();
     bool inited() const;
@@ -56,8 +59,9 @@ private:
 private:
     friend class MainHandler;
 
-    bool                         m_offscreen { false };
-    std::shared_ptr<HostServices> m_hostServices;
-    std::shared_ptr<MainHandler> m_main_handler;
+    bool                                  m_offscreen { false };
+    std::shared_ptr<HostServices>         m_hostServices;
+    std::shared_ptr<WESceneEngineServices> m_engineServices;
+    std::shared_ptr<MainHandler>          m_main_handler;
 };
 } // namespace wallpaper

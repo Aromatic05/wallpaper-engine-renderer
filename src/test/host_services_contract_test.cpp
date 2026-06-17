@@ -4,6 +4,7 @@
 #include "runtime/backend/BackendContext.hpp"
 #include "runtime/backend/BackendFactory.hpp"
 #include "runtime/backend/ContentBackend.hpp"
+#include <wallpaper/scene/WESceneEngineServices.hpp>
 
 #include <cassert>
 #include <filesystem>
@@ -63,12 +64,7 @@ int main() {
     assert(defaults);
     assert(defaults->fileSystem.exists);
     assert(defaults->fileSystem.createDirectories);
-    assert(defaults->fileSystem.createVfs);
-    assert(defaults->fileSystem.createPhysicalFs);
-    assert(defaults->audio.createSoundManager);
     assert(defaults->timer.monotonicMilliseconds);
-    assert(defaults->timer.createLooper);
-    assert(defaults->timer.createFrameTimer);
     assert(defaults->cache.resolveCacheRoot);
     assert(defaults->diagnostics.publish);
 
@@ -103,14 +99,15 @@ int main() {
     assert(publishedDiagnostics == 1);
 
     wallpaper::BackendContext sceneContext;
-    auto partialSceneHostServices = std::make_shared<wallpaper::HostServices>();
-    sceneContext.hostServices = partialSceneHostServices;
-    auto sceneBackendResult   = wallpaper::CreateWESceneBackend(sceneContext);
+    auto genericHostServices = std::make_shared<wallpaper::HostServices>();
+    sceneContext.hostServices = genericHostServices;
+    auto partialSceneServices = std::make_shared<wallpaper::WESceneEngineServices>();
+    auto sceneBackendResult   = wallpaper::CreateWESceneBackend(sceneContext, partialSceneServices);
     assert(sceneBackendResult);
-    assert(partialSceneHostServices->audio.createSoundManager);
-    assert(partialSceneHostServices->timer.createLooper);
-    assert(partialSceneHostServices->fileSystem.createVfs);
-    assert(partialSceneHostServices->fileSystem.createPhysicalFs);
-    assert(partialSceneHostServices->fileSystem.createPackageFs);
+    assert(partialSceneServices->createSoundManager);
+    assert(partialSceneServices->createLooper);
+    assert(partialSceneServices->createVfs);
+    assert(partialSceneServices->createPhysicalFs);
+    assert(partialSceneServices->createPackageFs);
     return 0;
 }
