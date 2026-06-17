@@ -21,18 +21,7 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
     }
 
     std::shared_ptr<WESceneOutputBinding> binding = std::static_pointer_cast<WESceneOutputBinding>(target.binding);
-    std::shared_ptr<RenderInitInfo>       legacyInitInfo;
-    const RenderInitInfo*                 initInfo = nullptr;
-
-    if (binding) {
-        initInfo = &binding->renderInitInfo();
-    } else {
-        legacyInitInfo = std::static_pointer_cast<RenderInitInfo>(target.binding);
-        if (legacyInitInfo) {
-            initInfo = legacyInitInfo.get();
-        }
-    }
-    if (! initInfo) {
+    if (! binding) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "scene backend requires a WE scene output binding");
     }
@@ -44,10 +33,8 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
         m_initialized = true;
     }
 
-    m_wallpaper.initVulkan(*initInfo);
-    if (binding) {
-        binding->attachSwapchain(m_wallpaper.exSwapchain());
-    }
+    m_wallpaper.initVulkan(binding->renderInitInfo());
+    binding->attachSwapchain(m_wallpaper.exSwapchain());
     return Result<void>::success();
 }
 

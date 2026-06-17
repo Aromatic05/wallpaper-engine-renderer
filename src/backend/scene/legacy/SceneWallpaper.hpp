@@ -6,7 +6,7 @@
 #include <memory>
 #include <string_view>
 #include <functional>
-#include "api/scene/WEScene.hpp"
+#include "common/scene/WESceneContract.hpp"
 #include "Type.hpp"
 #include "swapchain/ExSwapchain.hpp"
 
