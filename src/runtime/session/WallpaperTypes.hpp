@@ -18,7 +18,7 @@ enum class BackendType
 };
 
 struct WallpaperSource {
-    BackendType type { BackendType::WEScene };
+    BackendType type;
     std::string uri;
     PropertyMap initialProperties;
 };
