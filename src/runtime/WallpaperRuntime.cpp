@@ -1,4 +1,4 @@
-#include "runtime/WallpaperRuntime.hpp"
+#include "api/WallpaperRuntime.hpp"
 
 namespace wallpaper
 {

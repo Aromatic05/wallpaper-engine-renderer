@@ -1,4 +1,4 @@
-#include "runtime/session/WallpaperSession.hpp"
+#include "api/WallpaperSession.hpp"
 
 #include "runtime/backend/ContentBackend.hpp"
 
