@@ -1,6 +1,7 @@
 #include "backend/BuiltinBackendFactory.hpp"
 
 #include "backend/scene/WESceneBackend.hpp"
+#include "backend/web/WebBackend.hpp"
 
 namespace wallpaper
 {
@@ -11,7 +12,10 @@ Result<std::unique_ptr<ContentBackend>> BuiltinBackendFactory::create(BackendTyp
         std::unique_ptr<ContentBackend> backend = std::make_unique<WESceneBackend>(context);
         return Result<std::unique_ptr<ContentBackend>>::success(std::move(backend));
     }
-    case BackendType::Web:
+    case BackendType::Web: {
+        std::unique_ptr<ContentBackend> backend = std::make_unique<WebBackend>(context);
+        return Result<std::unique_ptr<ContentBackend>>::success(std::move(backend));
+    }
     case BackendType::Image:
     case BackendType::Video:
         return Result<std::unique_ptr<ContentBackend>>::failure(
