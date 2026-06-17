@@ -44,6 +44,9 @@ public:
     Result<void> setProperty(std::string_view name, PropertyValue value) override;
     Result<void> sendInput(const InputEvent& event) override;
 
+    Result<void>           update() override;
+    Result<bool>           produceFrame() override;
+    Result<OutputSource*>  acquireOutput() override;
     Result<FrameLifecycle> tick() override;
     bool                   loadsAsynchronously() const override;
     BackendReadyState      readyState() const override;

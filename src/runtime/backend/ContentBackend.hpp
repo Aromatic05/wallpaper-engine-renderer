@@ -30,6 +30,9 @@ public:
     virtual Result<void> setProperty(std::string_view, PropertyValue) = 0;
     virtual Result<void> sendInput(const InputEvent&) = 0;
 
+    virtual Result<void> update() { return Result<void>::success(); }
+    virtual Result<bool> produceFrame() { return Result<bool>::success(false); }
+    virtual Result<OutputSource*> acquireOutput() { return Result<OutputSource*>::success(&outputSource()); }
     virtual Result<FrameLifecycle> tick() {
         return Result<FrameLifecycle>::success(FrameLifecycle {});
     }

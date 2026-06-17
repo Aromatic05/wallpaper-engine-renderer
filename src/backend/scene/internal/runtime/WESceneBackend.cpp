@@ -150,11 +150,28 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
     return Result<void>::failure(ResultCode::NotSupported, "unknown input event type");
 }
 
+Result<void> WESceneBackend::update() {
+    return Result<void>::success();
+}
+
+Result<bool> WESceneBackend::produceFrame() {
+    const bool requested = m_sharedState->frameRequested.exchange(false);
+    return Result<bool>::success(requested);
+}
+
+Result<OutputSource*> WESceneBackend::acquireOutput() {
+    return Result<OutputSource*>::success(&m_outputSource);
+}
+
 Result<FrameLifecycle> WESceneBackend::tick() {
     FrameLifecycle lifecycle;
     lifecycle.contentStateChanged = m_sharedState->contentStateChanged.exchange(false);
     lifecycle.outputStateChanged  = m_sharedState->outputStateChanged.exchange(false);
-    lifecycle.frameRequested      = m_sharedState->frameRequested.exchange(false);
+    auto frameResult = produceFrame();
+    if (! frameResult) {
+        return Result<FrameLifecycle>(frameResult.error());
+    }
+    lifecycle.frameRequested = frameResult.value();
     return Result<FrameLifecycle>::success(std::move(lifecycle));
 }
 

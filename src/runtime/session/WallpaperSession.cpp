@@ -393,6 +393,20 @@ Result<FrameLifecycle> WallpaperSession::tick() {
     }
 
     const auto diagnosticsCountBefore = m_impl->aggregateDiagnostics().entries.size();
+    auto updateResult = m_impl->backend->update();
+    if (! updateResult) {
+        m_impl->recordError("runtime.update", updateResult.error());
+        m_impl->state = SessionState::Error;
+        return Result<FrameLifecycle>(updateResult.error());
+    }
+
+    auto outputResult = m_impl->backend->acquireOutput();
+    if (! outputResult) {
+        m_impl->recordError("runtime.output", outputResult.error());
+        m_impl->state = SessionState::Error;
+        return Result<FrameLifecycle>(outputResult.error());
+    }
+
     auto tickResult = m_impl->backend->tick();
     if (! tickResult) {
         m_impl->recordError("runtime.tick", tickResult.error());

@@ -75,8 +75,26 @@ Result<void> WebBackend::sendInput(const InputEvent&) {
                                  "web backend input routing is not implemented yet");
 }
 
+Result<void> WebBackend::update() {
+    return Result<void>::success();
+}
+
+Result<bool> WebBackend::produceFrame() {
+    return Result<bool>::success(false);
+}
+
+Result<OutputSource*> WebBackend::acquireOutput() {
+    return Result<OutputSource*>::success(&m_outputSource);
+}
+
 Result<FrameLifecycle> WebBackend::tick() {
-    return Result<FrameLifecycle>::success(FrameLifecycle {});
+    auto frameResult = produceFrame();
+    if (! frameResult) {
+        return Result<FrameLifecycle>(frameResult.error());
+    }
+    FrameLifecycle lifecycle;
+    lifecycle.frameRequested = frameResult.value();
+    return Result<FrameLifecycle>::success(std::move(lifecycle));
 }
 
 BackendReadyState WebBackend::readyState() const {
