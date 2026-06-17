@@ -1,7 +1,5 @@
 #include "backend/scene/WESceneBackend.hpp"
 
-#include "SceneWallpaper.hpp"
-
 #include <utility>
 
 namespace wallpaper
@@ -57,7 +55,7 @@ WESceneBackend::WESceneBackend(const BackendContext& context)
     : m_context(context)
     , m_outputSource(m_wallpaper) {
     if (! m_context.cachePath.empty()) {
-        m_wallpaper.setPropertyString(PROPERTY_CACHE_PATH, m_context.cachePath);
+        m_wallpaper.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);
     }
 }
 
@@ -74,7 +72,7 @@ BackendCapabilities WESceneBackend::capabilities() const {
 }
 
 Result<void> WESceneBackend::load(const WallpaperSource& source) {
-    auto sourceResult = applyProperty(PROPERTY_SOURCE, source.uri);
+    auto sourceResult = applyProperty(WE_SCENE_PROPERTY_SOURCE, source.uri);
     if (! sourceResult) {
         return sourceResult;
     }
@@ -160,7 +158,8 @@ Result<void> WESceneBackend::applyProperty(std::string_view name, const Property
         return Result<void>::success();
     }
 
-    if (name == PROPERTY_SOURCE || name == PROPERTY_ASSETS || name == PROPERTY_CACHE_PATH) {
+    if (name == WE_SCENE_PROPERTY_SOURCE || name == WE_SCENE_PROPERTY_ASSETS
+        || name == WE_SCENE_PROPERTY_CACHE_PATH) {
         return unsupportedProperty(name);
     }
 

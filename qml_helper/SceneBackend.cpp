@@ -23,6 +23,7 @@
 #include "glExtra.hpp"
 #include "backend/BuiltinBackendFactory.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "backend/scene/compatibility/WESceneSource.hpp"
 #include "Type.hpp"
 #include "Utils/Platform.hpp"
 #include <cstdio>
@@ -127,7 +128,7 @@ public:
         });
         m_owner->ensureSession();
         m_owner->ensureLoaded();
-        m_owner->session()->setProperty(wallpaper::PROPERTY_FIRST_FRAME_CALLBACK,
+        m_owner->session()->setProperty(wallpaper::WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK,
                                         std::static_pointer_cast<void>(cb));
         m_output_binding = wallpaper::MakeWESceneOutputBinding(info);
         m_owner->setOutputBinding(m_output_binding);
@@ -246,14 +247,14 @@ void SceneObject::setScenePropertyQurl(std::string_view name, QUrl value) {
     auto str_value = QDir::toNativeSeparators(value.toLocalFile()).toStdString();
     ensureSession();
 
-    if (name == wallpaper::PROPERTY_SOURCE) {
+    if (name == wallpaper::WE_SCENE_PROPERTY_SOURCE) {
         m_source = value;
         m_loaded = false;
         ensureLoaded();
         return;
     }
 
-    if (name == wallpaper::PROPERTY_ASSETS) {
+    if (name == wallpaper::WE_SCENE_PROPERTY_ASSETS) {
         m_assets = value;
         if (! m_loaded) return;
     }
@@ -274,21 +275,21 @@ bool  SceneObject::muted() const { return m_muted; }
 void SceneObject::setSource(const QUrl& source) {
     if (source == m_source) return;
     m_source = source;
-    setScenePropertyQurl(wallpaper::PROPERTY_SOURCE, m_source);
+    setScenePropertyQurl(wallpaper::WE_SCENE_PROPERTY_SOURCE, m_source);
     Q_EMIT sourceChanged();
 }
 
 void SceneObject::setAssets(const QUrl& assets) {
     if (m_assets == assets) return;
     m_assets = assets;
-    setScenePropertyQurl(wallpaper::PROPERTY_ASSETS, m_assets);
+    setScenePropertyQurl(wallpaper::WE_SCENE_PROPERTY_ASSETS, m_assets);
 }
 
 void SceneObject::setFps(int value) {
     if (m_fps == value) return;
     m_fps = value;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_FPS, static_cast<std::int32_t>(value));
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(value));
     }
     Q_EMIT fpsChanged();
 }
@@ -296,7 +297,7 @@ void SceneObject::setFillMode(int value) {
     if (m_fillMode == value) return;
     m_fillMode = value;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
     }
     Q_EMIT fillModeChanged();
 }
@@ -304,7 +305,7 @@ void SceneObject::setSpeed(float value) {
     if (m_speed == value) return;
     m_speed = value;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_SPEED, value);
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_SPEED, value);
     }
     Q_EMIT speedChanged();
 }
@@ -312,7 +313,7 @@ void SceneObject::setVolume(float value) {
     if (m_volume == value) return;
     m_volume = value;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_VOLUME, value);
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, value);
     }
     Q_EMIT volumeChanged();
 }
@@ -320,7 +321,7 @@ void SceneObject::setMuted(bool value) {
     if (m_muted == value) return;
     m_muted = value;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_MUTED, value);
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, value);
     }
 }
 
@@ -338,7 +339,7 @@ void SceneObject::enableVulkanValid() { m_enable_valid = true; }
 void SceneObject::enableGenGraphviz() {
     m_genGraphviz = true;
     if (m_loaded) {
-        m_session->setProperty(wallpaper::PROPERTY_GRAPHIVZ, true);
+        m_session->setProperty(wallpaper::WE_SCENE_PROPERTY_GRAPHIVZ, true);
     }
 }
 
@@ -407,20 +408,18 @@ void SceneObject::ensureLoaded() {
     ensureSession();
     if (m_loaded || ! m_source.isValid() || m_source.isEmpty()) return;
 
-    wallpaper::WallpaperSource source;
-    source.type = wallpaper::BackendType::WEScene;
-    source.uri  = QDir::toNativeSeparators(m_source.toLocalFile()).toStdString();
-    if (m_assets.isValid() && ! m_assets.isEmpty()) {
-        source.initialProperties.emplace(std::string(wallpaper::PROPERTY_ASSETS),
-                                         QDir::toNativeSeparators(m_assets.toLocalFile()).toStdString());
-    }
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FPS), static_cast<std::int32_t>(m_fps));
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FILLMODE),
-                                     static_cast<std::int32_t>(ToWPFillMode(m_fillMode)));
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_SPEED), m_speed);
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_VOLUME), m_volume);
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_MUTED), m_muted);
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_GRAPHIVZ), m_genGraphviz);
+    wallpaper::WESceneSourceConfig sourceConfig;
+    sourceConfig.uri      = QDir::toNativeSeparators(m_source.toLocalFile()).toStdString();
+    sourceConfig.assets   = m_assets.isValid() && ! m_assets.isEmpty()
+                                ? QDir::toNativeSeparators(m_assets.toLocalFile()).toStdString()
+                                : std::string {};
+    sourceConfig.fps      = static_cast<std::int32_t>(m_fps);
+    sourceConfig.fillMode = static_cast<std::int32_t>(ToWPFillMode(m_fillMode));
+    sourceConfig.speed    = m_speed;
+    sourceConfig.volume   = m_volume;
+    sourceConfig.muted    = m_muted;
+    sourceConfig.graphviz = m_genGraphviz;
+    wallpaper::WallpaperSource source = wallpaper::MakeWESceneWallpaperSource(sourceConfig);
 
     auto result = m_session->load(source);
     if (! result) return;

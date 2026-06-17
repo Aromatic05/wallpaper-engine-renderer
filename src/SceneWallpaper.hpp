@@ -2,24 +2,23 @@
 #include <memory>
 #include <string_view>
 #include <functional>
+#include "backend/scene/compatibility/WESceneSource.hpp"
 #include "Type.hpp"
 #include "Swapchain/ExSwapchain.hpp"
 
 namespace wallpaper
 {
 
-using FirstFrameCallback = std::function<void()>;
-
-constexpr std::string_view PROPERTY_SOURCE               = "source";
-constexpr std::string_view PROPERTY_ASSETS               = "assets";
-constexpr std::string_view PROPERTY_FPS                  = "fps";
-constexpr std::string_view PROPERTY_FILLMODE             = "fillmode";
-constexpr std::string_view PROPERTY_SPEED                = "speed";
-constexpr std::string_view PROPERTY_GRAPHIVZ             = "graphivz";
-constexpr std::string_view PROPERTY_VOLUME               = "volume";
-constexpr std::string_view PROPERTY_MUTED                = "muted";
-constexpr std::string_view PROPERTY_CACHE_PATH           = "cache_path";
-constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = "first_frame_callback";
+constexpr std::string_view PROPERTY_SOURCE               = WE_SCENE_PROPERTY_SOURCE;
+constexpr std::string_view PROPERTY_ASSETS               = WE_SCENE_PROPERTY_ASSETS;
+constexpr std::string_view PROPERTY_FPS                  = WE_SCENE_PROPERTY_FPS;
+constexpr std::string_view PROPERTY_FILLMODE             = WE_SCENE_PROPERTY_FILLMODE;
+constexpr std::string_view PROPERTY_SPEED                = WE_SCENE_PROPERTY_SPEED;
+constexpr std::string_view PROPERTY_GRAPHIVZ             = WE_SCENE_PROPERTY_GRAPHIVZ;
+constexpr std::string_view PROPERTY_VOLUME               = WE_SCENE_PROPERTY_VOLUME;
+constexpr std::string_view PROPERTY_MUTED                = WE_SCENE_PROPERTY_MUTED;
+constexpr std::string_view PROPERTY_CACHE_PATH           = WE_SCENE_PROPERTY_CACHE_PATH;
+constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
 
 #include "Core/NoCopyMove.hpp"
 class MainHandler;

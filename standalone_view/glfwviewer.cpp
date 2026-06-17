@@ -9,6 +9,7 @@
 #include "api/WallpaperRuntime.hpp"
 #include "backend/BuiltinBackendFactory.hpp"
 #include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "backend/scene/compatibility/WESceneSource.hpp"
 
 #include "Utils/Platform.hpp"
 
@@ -29,7 +30,7 @@ void framebuffer_size_callback(GLFWwindow*, int width, int height) {}
 void mouse_button_callback(GLFWwindow* win, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
         UserData* data = static_cast<UserData*>(glfwGetWindowUserPointer(win));
-        // data->psw->setPropertyString(wallpaper::PROPERTY_SOURCE,
+        // source changes should be routed through WallpaperSession reload/load.
     }
 }
 
@@ -95,17 +96,13 @@ int main(int argc, char** argv) {
     auto session = runtime.createSession(config);
     data.session = session.get();
 
-    wallpaper::WallpaperSource source;
-    source.type = wallpaper::BackendType::WEScene;
-    source.uri  = program.get<std::string>(ARG_SCENE);
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_ASSETS),
-                                     program.get<std::string>(ARG_ASSETS));
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_GRAPHIVZ),
-                                     program.get<bool>(OPT_GRAPHVIZ));
-    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FPS),
-                                     program.get<int32_t>(OPT_FPS));
+    wallpaper::WESceneSourceConfig sourceConfig;
+    sourceConfig.uri      = program.get<std::string>(ARG_SCENE);
+    sourceConfig.assets   = program.get<std::string>(ARG_ASSETS);
+    sourceConfig.graphviz = program.get<bool>(OPT_GRAPHVIZ);
+    sourceConfig.fps      = program.get<int32_t>(OPT_FPS);
 
-    session->load(source);
+    session->load(wallpaper::MakeWESceneWallpaperSource(sourceConfig));
     session->bindOutput(wallpaper::MakeWESceneOutputTarget(info));
     session->play();
 
