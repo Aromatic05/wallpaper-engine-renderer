@@ -1,11 +1,13 @@
 #pragma once
 
-#include "api/WallpaperSession.hpp"
+#include "api/WallpaperTypes.hpp"
 
 #include <memory>
 
 namespace wallpaper
 {
+class WallpaperSession;
+
 class WallpaperRuntime {
 public:
     std::unique_ptr<WallpaperSession> createSession(const SessionConfig& config);

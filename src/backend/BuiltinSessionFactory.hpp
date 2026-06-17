@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/WallpaperRuntime.hpp"
+#include "api/WallpaperRuntime.hpp"
 
 #include <memory>
 #include <string>

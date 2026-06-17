@@ -1,5 +1,7 @@
 #include "api/WallpaperRuntime.hpp"
 
+#include "api/WallpaperSession.hpp"
+
 namespace wallpaper
 {
 std::unique_ptr<WallpaperSession> WallpaperRuntime::createSession(const SessionConfig& config) {

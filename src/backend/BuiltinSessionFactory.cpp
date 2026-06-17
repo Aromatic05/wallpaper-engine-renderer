@@ -1,5 +1,6 @@
 #include "backend/BuiltinSessionFactory.hpp"
 
+#include "api/WallpaperSession.hpp"
 #include "backend/BuiltinBackendFactory.hpp"
 
 namespace wallpaper
