@@ -1,3 +1,8 @@
 #pragma once
 
-#include "../../../src/api/scene/WESceneSource.hpp"
+#include "WEScene.hpp"
+
+namespace wallpaper
+{
+WallpaperSource MakeWESceneWallpaperSource(const WESceneSourceConfig& config);
+} // namespace wallpaper
