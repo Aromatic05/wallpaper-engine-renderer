@@ -1,7 +1,7 @@
 #pragma once
 
 #include "SceneWallpaper.hpp"
-#include "SceneWallpaperSurface.hpp"
+#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 #include "common/result/Result.hpp"
 #include "output/RenderPlanSource.hpp"
 #include "output/OutputTarget.hpp"
@@ -13,8 +13,6 @@
 
 namespace wallpaper
 {
-OutputTarget MakeWESceneOutputTarget(const RenderInitInfo& info);
-
 class WESceneOutputSource final : public RenderPlanSource {
 public:
     explicit WESceneOutputSource(SceneWallpaper& wallpaper);

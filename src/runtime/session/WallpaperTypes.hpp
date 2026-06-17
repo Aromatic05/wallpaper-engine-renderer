@@ -25,5 +25,6 @@ struct WallpaperSource {
 
 struct SessionConfig {
     std::shared_ptr<BackendFactory> backendFactory;
+    std::string                     cachePath;
 };
 } // namespace wallpaper

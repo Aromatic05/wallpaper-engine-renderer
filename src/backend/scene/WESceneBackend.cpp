@@ -14,16 +14,6 @@ Result<void> unsupportedProperty(std::string_view name) {
 }
 } // namespace
 
-OutputTarget MakeWESceneOutputTarget(const RenderInitInfo& info) {
-    auto payload = std::make_shared<RenderInitInfo>(info);
-    OutputTarget target;
-    target.type    = info.offscreen ? OutputTargetType::Offscreen : OutputTargetType::Surface;
-    target.binding = std::static_pointer_cast<void>(payload);
-    target.width   = info.width;
-    target.height  = info.height;
-    return target;
-}
-
 WESceneOutputSource::WESceneOutputSource(SceneWallpaper& wallpaper)
     : m_wallpaper(wallpaper) {}
 
@@ -32,9 +22,21 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
         return Result<void>::failure(ResultCode::InvalidArgument, "output target binding is null");
     }
 
-    auto initInfo = std::static_pointer_cast<RenderInitInfo>(target.binding);
+    std::shared_ptr<WESceneOutputBinding> binding = std::static_pointer_cast<WESceneOutputBinding>(target.binding);
+    std::shared_ptr<RenderInitInfo>       legacyInitInfo;
+    const RenderInitInfo*                 initInfo = nullptr;
+
+    if (binding) {
+        initInfo = &binding->renderInitInfo();
+    } else {
+        legacyInitInfo = std::static_pointer_cast<RenderInitInfo>(target.binding);
+        if (legacyInitInfo) {
+            initInfo = legacyInitInfo.get();
+        }
+    }
     if (! initInfo) {
-        return Result<void>::failure(ResultCode::InvalidArgument, "scene backend requires render init info");
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "scene backend requires a WE scene output binding");
     }
 
     if (! m_initialized) {
@@ -45,6 +47,9 @@ Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
     }
 
     m_wallpaper.initVulkan(*initInfo);
+    if (binding) {
+        binding->attachSwapchain(m_wallpaper.exSwapchain());
+    }
     return Result<void>::success();
 }
 
@@ -148,6 +153,10 @@ Result<void> WESceneBackend::applyProperty(std::string_view name, const Property
     }
     if (const auto* doubleValue = std::get_if<double>(&value)) {
         m_wallpaper.setPropertyFloat(name, static_cast<float>(*doubleValue));
+        return Result<void>::success();
+    }
+    if (const auto* objectValue = std::get_if<PropertyObject>(&value)) {
+        m_wallpaper.setPropertyObject(name, *objectValue);
         return Result<void>::success();
     }
 

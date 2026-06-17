@@ -38,6 +38,7 @@ add_library(
   Type.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
+  backend/scene/compatibility/WESceneOutputTarget.cpp
   backend/scene/WESceneBackend.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPParticleObject.cpp

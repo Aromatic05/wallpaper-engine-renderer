@@ -12,7 +12,9 @@ Result<void> missingFactory() {
 } // namespace
 
 WallpaperSession::WallpaperSession(SessionConfig config)
-    : m_config(std::move(config)) {}
+    : m_config(std::move(config)) {
+    m_backendContext.cachePath = m_config.cachePath;
+}
 
 WallpaperSession::~WallpaperSession() = default;
 
