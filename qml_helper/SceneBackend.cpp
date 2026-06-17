@@ -22,8 +22,8 @@
 
 #include "glExtra.hpp"
 #include "api/scene/WEScene.hpp"
+#include "host/CachePath.hpp"
 #include "Type.hpp"
-#include "Utils/Platform.hpp"
 #include <cstdio>
 #include <qobjectdefs.h>
 #include <unistd.h>
@@ -367,7 +367,7 @@ void SceneObject::hoverMoveEvent(QHoverEvent* event) {
 }
 
 std::string SceneObject::GetDefaultCachePath() {
-    return wallpaper::platform::GetCachePath(CACHE_DIR);
+    return wallpaper::host::GetCachePath(CACHE_DIR);
 }
 
 wallpaper::WallpaperSession* SceneObject::session() const { return m_session.get(); }
