@@ -6,7 +6,7 @@
 #include "utils/Logging.h"
 #include "core/MapSet.hpp"
 
-#include "vulkanrender/AllPasses.hpp"
+#include "render/vulkanrender/AllPasses.hpp"
 
 using namespace wallpaper;
 namespace wallpaper::rg

@@ -36,29 +36,12 @@ add_library(
   api/web/Web.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp
-  backend/scene/internal/runtime/WESceneBackend.cpp
-  backend/web/internal/WebBackend.cpp
-  backend/scene/internal/WPJson.cpp
-  backend/scene/internal/WPPkgFs.cpp
-  backend/scene/internal/wpscene/WPImageObject.cpp
-  backend/scene/internal/wpscene/WPParticleObject.cpp
-  backend/scene/internal/wpscene/WPMaterial.cpp
-  backend/scene/internal/wpscene/WPScene.cpp
-  backend/scene/internal/wpscene/WPLightObject.cpp
-  backend/scene/internal/WPParticleParser.cpp
-  backend/scene/internal/WPShaderParser.cpp
-  backend/scene/internal/WPSceneParser.cpp
-  backend/scene/internal/WPShaderValueUpdater.cpp
-  backend/scene/internal/WPTexImageParser.cpp
-  backend/scene/internal/WPSoundParser.cpp
-  backend/scene/internal/WPMdlParser.cpp
-  backend/scene/internal/WPPuppet.cpp
-  backend/scene/internal/runtime/WESceneRenderPlanBuilder.cpp
-  backend/scene/internal/runtime/WESceneRuntimeDriver.cpp)
+  backend/web/internal/WebBackend.cpp)
 
 set(InteralLib
     wpAudio
     wpLooper
+    wpSceneBackend
     wpVulkanRender
     wpFs
     wpScene
@@ -73,8 +56,5 @@ target_link_libraries(
   PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-target_include_directories(
-  ${PROJECT_NAME}
-  PUBLIC . common common/utils/include
-  PRIVATE common host backend/scene/internal render output)
+target_include_directories(${PROJECT_NAME} PUBLIC . common common/utils/include)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

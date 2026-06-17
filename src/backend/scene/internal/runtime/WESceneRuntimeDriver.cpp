@@ -20,7 +20,7 @@
 #include "rendergraph/RenderGraph.hpp"
 
 #include "WESceneRenderPlanBuilder.hpp"
-#include "vulkanrender/VulkanRender.hpp"
+#include "render/vulkanrender/VulkanRender.hpp"
 #include <atomic>
 
 using namespace wallpaper;
