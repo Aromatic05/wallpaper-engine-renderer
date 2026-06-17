@@ -6,6 +6,7 @@
 #include "host/audio/include/audio/SoundManager.h"
 
 #include <cassert>
+#include <cctype>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -65,6 +66,74 @@ private:
     std::vector<uint8_t> m_data;
 };
 
+class TrackingStream final : public IBinaryStream {
+public:
+    enum class OpKind {
+        Read,
+        SeekSet,
+        SeekCur,
+        SeekEnd,
+    };
+
+    struct Op {
+        OpKind kind;
+        idx    before;
+        idx    after;
+        idx    offset;
+        usize  requested;
+        usize  actual;
+    };
+
+    explicit TrackingStream(std::shared_ptr<IBinaryStream> inner): m_inner(std::move(inner)) {}
+
+    usize Read(void* buffer, usize sizeInByte) override {
+        const idx   before = m_inner->Tell();
+        const usize actual = m_inner->Read(buffer, sizeInByte);
+        m_ops.push_back(
+            { OpKind::Read, before, m_inner->Tell(), 0, sizeInByte, actual });
+        return actual;
+    }
+
+    char* Gets(char* buffer, usize sizeStr) override {
+        Read(buffer, sizeStr);
+        return buffer;
+    }
+
+    idx Tell() const override { return m_inner->Tell(); }
+
+    bool SeekSet(idx offset) override {
+        const idx before = m_inner->Tell();
+        const bool ok    = m_inner->SeekSet(offset);
+        m_ops.push_back({ OpKind::SeekSet, before, m_inner->Tell(), offset, 0, 0 });
+        return ok;
+    }
+
+    bool SeekCur(idx offset) override {
+        const idx before = m_inner->Tell();
+        const bool ok    = m_inner->SeekCur(offset);
+        m_ops.push_back({ OpKind::SeekCur, before, m_inner->Tell(), offset, 0, 0 });
+        return ok;
+    }
+
+    bool SeekEnd(idx offset) override {
+        const idx before = m_inner->Tell();
+        const bool ok    = m_inner->SeekEnd(offset);
+        m_ops.push_back({ OpKind::SeekEnd, before, m_inner->Tell(), offset, 0, 0 });
+        return ok;
+    }
+
+    isize Size() const override { return m_inner->Size(); }
+
+    const std::vector<Op>& Ops() const { return m_ops; }
+
+protected:
+    usize Write_impl(const void*, usize) override { return 0; }
+
+private:
+    std::shared_ptr<IBinaryStream> m_inner;
+    std::vector<Op>                m_ops;
+};
+
 class MemoryFs final : public Fs {
 public:
     explicit MemoryFs(std::unordered_map<std::string, std::string> files)
@@ -88,6 +157,35 @@ public:
 private:
     std::unordered_map<std::string, std::string> m_files;
 };
+
+std::vector<uint8_t> DecodeBase64(std::string_view input) {
+    auto decodeChar = [](char c) -> int {
+        if (c >= 'A' && c <= 'Z') return c - 'A';
+        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+        if (c >= '0' && c <= '9') return c - '0' + 52;
+        if (c == '+') return 62;
+        if (c == '/') return 63;
+        return -1;
+    };
+
+    std::vector<uint8_t> output;
+    int                  bits  = 0;
+    int                  value = 0;
+    for (const char c : input) {
+        if (std::isspace(static_cast<unsigned char>(c))) continue;
+        if (c == '=') break;
+
+        const int decoded = decodeChar(c);
+        assert(decoded >= 0);
+        value = (value << 6) | decoded;
+        bits += 6;
+        if (bits < 8) continue;
+
+        bits -= 8;
+        output.push_back(static_cast<uint8_t>((value >> bits) & 0xFF));
+    }
+    return output;
+}
 
 void TestLimitedBinaryStream() {
     auto base = std::make_shared<ShortReadStream>(std::vector<uint8_t> { 1, 2, 3, 4, 5, 6 });
@@ -159,11 +257,97 @@ void TestDecoderFailureHandling() {
     auto empty = std::make_shared<MemBinaryStream>(std::vector<uint8_t> {});
     assert(CreateSoundStream(empty, desc) == nullptr);
 }
+
+void TestDecoderProbeAndRewind() {
+    constexpr std::string_view tinyVorbisBase64 =
+        "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"
+        "dVeWdV22bd2XNM00NVFUVU0UVddUVds2VdW2NVF0XVFVZVlUVVl2XVnXVVfWfU0UVdVTTdkVVVWWVdnVZVWWdV90Vd1WXdnXVVnW"
+        "fdvWhV/WfcKoqrpuyq6uq7Ks+7Iu+7rt65RJ00xTE0VV1URRVU1XtW1TdW1bE0XXFVXVlkVTdWVVln1fdWXZ10TRdUVVlWVRVWVZ"
+        "lWVdd2VXt0VV1W1Vdn3fdF1dl3VdWGZb94XTdXVdlWXfV2VZ92Vdx9Z13/dM07ZN19V101V139Z15Zlt2/hFVdV1VZaFX5Vl39eF"
+        "4Xlu3ReeUVV13ZRdX1dlWRduXzfavm48r21j2z6yryMMR76wLF3bNrq+TZh13egbQ+E3hjTTtG3TVXXddF1fl3XdaOu6UFRVXVdl"
+        "2fdVV/Z9W/eF4fZ93xhV1/dVWRaG1ZadYfd9pe4LlVW2hd/WdeeYbV1YfuPo/L4ydHVbaOu6scy+rjy7cXSGPgIAAAYcAAACTCgD"
+        "hYasCADiBAAYhJxDTEGIFIMQQkgphJBSxBiEzDkpGXNSQimphVJSixiDkDkmJXNOSiihpVBKS6GE1kIpsYVSWmyt1ZpaizWE0loo"
+        "pbVQSouppRpbazVGjEHInJOSOSellNJaKKW1zDkqnYOUOggppZRaLCnFWDknJYOOSgchpZJKTCWlGEMqsZWUYiwpxdhabLnFmHMo"
+        "pcWSSmwlpVhbTDm2GHOOGIOQOSclc05KKKW1UlJrlXNSOggpZQ5KKinFWEpKMXNOSgchpQ5CSiWlGFNKsYVSYisp1VhKarHFmHNL"
+        "MdZQUoslpRhLSjG2GHNuseXWQWgtpBJjKCXGFmOurbUaQymxlZRiLCnVFmOtvcWYcyglxpJKjSWlWFuNucYYc06x5ZparLnF2Gtt"
+        "ufWac9CptVpTTLm2GHOOuQVZc+69g9BaKKXFUEqMrbVaW4w5h1JiKynVWEqKtcWYc2ux9lBKjCWlWEtKNbYYa4419ppaq7XFmGtq"
+        "seaac+8x5thTazW3GGtOseVac+695tZjAQAAAw4AAAEmlIFCQ1YCAFEAAAQhSjEGoUGIMeekNAgx5pyUijHnIKRSMeYchFIy5yCU"
+        "klLmHIRSUgqlpJJSa6GUUlJqrQAAgAIHAIAAGzQlFgcoNGQlAJAKAGBwHMvyPFE0Vdl2LMnzRNE0VdW2HcvyPFE0TVW1bcvzRNE0"
+        "VdV1dd3yPFE0VVV1XV33RFE1VdV1ZVn3PVE0VVV1XVn2fdNUVdV1ZVm2hV80VVd1XVmWZd9YXdV1ZVm2dVsYVtV1XVmWbVs3hlvX"
+        "dd33hWE5Ordu67rv+8LxO8cAAPAEBwCgAhtWRzgpGgssNGQlAJABAEAYg5BBSCGDEFJIIaUQUkoJAAAYcAAACDChDBQashIAiAIA"
+        "AAiRUkopjZRSSimlkVJKKaWUEkIIIYQQQgghhBBCCCGEEEIIIYQQQgghhBBCCCGEEEIIBQD4TzgA+D/YoCmxOEChISsBgHAAAMAY"
+        "pZhyDDoJKTWMOQahlJRSaq1hjDEIpaTUWkuVcxBKSam12GKsnINQUkqtxRpjByGl1lqssdaaOwgppRZrrDnYHEppLcZYc86995BS"
+        "azHWWnPvvZfWYqw159yDEMK0FGOuufbge+8ptlprzT34IIRQsdVac/BBCCGEizH33IPwPQghXIw55x6E8MEHYQAAd4MDAESCjTOs"
+        "JJ0VjgYXGrISAAgJACAQYoox55yDEEIIkVKMOecchBBCKCVSijHnnIMOQgglZIw55xyEEEIopZSMMeecgxBCCaWUkjnnHIQQQiil"
+        "lFIy56CDEEIJpZRSSucchBBCCKWUUkrpoIMQQgmllFJKKSGEEEIJpZRSSiklhBBCCaWUUkoppYQQSiillFJKKaWUEEIppZRSSiml"
+        "lBJCKKWUUkoppZSSQimllFJKKaWUUlIopZRSSimllFJKCaWUUkoppZSUUkkFAAAcOAAABBhBJxlVFmGjCRcegEJDVgIAQAAAFMRW"
+        "U4mdQcwxZ6khCDGoqUJKKYYxQ8ogpilTCiGFIXOKIQKhxVZLxQAAABAEAAgICQAwQFAwAwAMDhA+B0EnQHC0AQAIQmSGSDQsBIcH"
+        "lQARMRUAJCYo5AJAhcVF2sUFdBnggi7uOhBCEIIQxOIACkjAwQk3PPGGJ9zgBJ2iUgcBAAAAAHAAAA8AAMcFEBHRHEaGxgZHh8cH"
+        "SEgAAAAAAMgAwAcAwCECREQ0h5GhscHR4fEBEhIAAAAAAAAAAAAEBAQAAAAAAAIAAAAEBE9nZ1MABHIDAAAAAAAAairP2AIAAADr"
+        "7KLRAx5EddReKOewyiUahvNTQAABgHHsxcvruq7ruq7ruiIUADq4ncrD7/AQd7xJW7hM5bDqyPLmZkxOjoa+zhJAEAAAAAAAAAAA"
+        "kOdN1rvTdbbh9sg2VpIkWarH6V7fBCtWHMt2lrkA/pWs7kOE/3Ur3pwNHGPnGLlzj9yA6GEOICojKAEAAAAAoM2aZJ/DNJXkn4e+"
+        "v6vNqUdtzV22Wlkio5rq94W1hOX3hbWE5Pf5dJLf59NJ/lh66bOvVr5MtK9W5iKkpjKX2Lr21UukdU31srDmJL/P6pTvDccE";
+
+    auto tracking = std::make_shared<TrackingStream>(
+        std::make_shared<MemBinaryStream>(DecodeBase64(tinyVorbisBase64)));
+    auto limited = std::make_shared<LimitedBinaryStream>(tracking, 0, tracking->Size());
+
+    const SoundStream::Desc desc { .channels = 2, .sampleRate = 44100 };
+    auto                    stream = CreateSoundStream(limited, desc);
+    assert(stream != nullptr);
+
+    bool sawProbeRead   = false;
+    bool sawRewind      = false;
+    bool sawRestartRead = false;
+    for (const auto& op : tracking->Ops()) {
+        if (! sawProbeRead && op.kind == TrackingStream::OpKind::Read && op.before == 0 &&
+            op.actual == static_cast<usize>(limited->Size())) {
+            sawProbeRead = true;
+            continue;
+        }
+        if (sawProbeRead && ! sawRewind && op.kind == TrackingStream::OpKind::SeekSet &&
+            op.offset == 0 && op.after == 0) {
+            sawRewind = true;
+            continue;
+        }
+        if (sawRewind && op.kind == TrackingStream::OpKind::Read && op.before == 0 &&
+            op.actual > 0) {
+            sawRestartRead = true;
+            break;
+        }
+    }
+
+    assert(sawProbeRead);
+    assert(sawRewind);
+    assert(sawRestartRead);
+}
 } // namespace
 
 int main() {
     TestLimitedBinaryStream();
     TestVfsIdentityAndCacheIsolation();
     TestDecoderFailureHandling();
+    TestDecoderProbeAndRewind();
     return 0;
 }
