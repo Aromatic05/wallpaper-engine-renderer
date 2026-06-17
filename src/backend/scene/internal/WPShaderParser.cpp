@@ -1,16 +1,16 @@
 #include "WPShaderParser.hpp"
 
-#include "Fs/IBinaryStream.h"
-#include "Utils/Logging.h"
+#include "fs/IBinaryStream.h"
+#include "utils/Logging.h"
 #include "WPJson.hpp"
 
 #include "wpscene/WPUniform.h"
-#include "Fs/VFS.h"
-#include "Utils/Sha.hpp"
-#include "Utils/String.h"
+#include "fs/VFS.h"
+#include "utils/Sha.hpp"
+#include "utils/String.h"
 #include "WPCommon.hpp"
 
-#include "Vulkan/ShaderComp.hpp"
+#include "vulkan/ShaderComp.hpp"
 
 #include <regex>
 #include <stack>

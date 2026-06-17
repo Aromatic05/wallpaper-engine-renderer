@@ -1,26 +1,26 @@
 #include "SceneWallpaper.hpp"
 #include "SceneWallpaperSurface.hpp"
 
-#include "Utils/Logging.h"
-#include "Looper/Looper.hpp"
+#include "utils/Logging.h"
+#include "looper/Looper.hpp"
 
-#include "Timer/FrameTimer.hpp"
-#include "Utils/FpsCounter.h"
+#include "timer/FrameTimer.hpp"
+#include "utils/FpsCounter.h"
 #include "WPSceneParser.hpp"
-#include "Scene/Scene.h"
-#include "Particle/ParticleSystem.h"
-#include "Interface/IShaderValueUpdater.h"
+#include "scene/Scene.h"
+#include "particle/ParticleSystem.h"
+#include "interface/IShaderValueUpdater.h"
 
-#include "Fs/VFS.h"
-#include "Fs/PhysicalFs.h"
+#include "fs/VFS.h"
+#include "fs/PhysicalFs.h"
 #include "WPPkgFs.hpp"
 
-#include "Audio/SoundManager.h"
+#include "audio/SoundManager.h"
 
-#include "RenderGraph/RenderGraph.hpp"
+#include "rendergraph/RenderGraph.hpp"
 
-#include "VulkanRender/SceneToRenderGraph.hpp"
-#include "VulkanRender/VulkanRender.hpp"
+#include "vulkanrender/SceneToRenderGraph.hpp"
+#include "vulkanrender/VulkanRender.hpp"
 #include <atomic>
 
 using namespace wallpaper;

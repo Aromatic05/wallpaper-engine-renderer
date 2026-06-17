@@ -1,6 +1,6 @@
 #pragma once
-#include "Interface/IImageParser.h"
-#include "Fs/VFS.h"
+#include "interface/IImageParser.h"
+#include "fs/VFS.h"
 
 namespace wallpaper
 {

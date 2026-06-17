@@ -1,3 +1,3 @@
-add_subdirectory(Audio)
-add_subdirectory(Looper)
-add_subdirectory(Timer)
+add_subdirectory(audio)
+add_subdirectory(looper)
+add_subdirectory(timer)

@@ -6,7 +6,7 @@
 #include <span>
 #include <Eigen/Geometry>
 
-#include "Core/Literals.hpp"
+#include "core/Literals.hpp"
 
 namespace wallpaper
 {

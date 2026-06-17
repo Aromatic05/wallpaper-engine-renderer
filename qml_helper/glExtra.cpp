@@ -2,7 +2,7 @@
 #include <glad/glad.h>
 #include <stdio.h>
 #include <vector>
-#include "Utils/Logging.h"
+#include "utils/Logging.h"
 
 using namespace wallpaper;
 

@@ -1,6 +1,6 @@
 #include "Type.hpp"
 
-#include "Utils/Logging.h"
+#include "utils/Logging.h"
 
 std::string wallpaper::ToString(const ImageType& type) {
 #define IMG(str) \

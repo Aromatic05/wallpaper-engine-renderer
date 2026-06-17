@@ -1,5 +1,5 @@
 #pragma once
-#include "Particle/ParticleEmitter.h"
+#include "particle/ParticleEmitter.h"
 #include "wpscene/WPParticleObject.h"
 
 namespace wallpaper

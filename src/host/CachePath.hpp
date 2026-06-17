@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Utils/Platform.hpp"
+#include "utils/Platform.hpp"
 
 #include <string>
 #include <string_view>

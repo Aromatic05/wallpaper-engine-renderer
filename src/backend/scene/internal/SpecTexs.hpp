@@ -1,9 +1,9 @@
 #pragma once
 #include <string_view>
 #include <cstdint>
-#include "Core/Literals.hpp"
-#include "Core/StringHelper.hpp"
-#include "Utils/String.h"
+#include "core/Literals.hpp"
+#include "core/StringHelper.hpp"
+#include "utils/String.h"
 
 namespace wallpaper
 {

@@ -1,6 +1,6 @@
 #include "WPImageObject.h"
-#include "Utils/Logging.h"
-#include "Fs/VFS.h"
+#include "utils/Logging.h"
+#include "fs/VFS.h"
 
 using namespace wallpaper::wpscene;
 

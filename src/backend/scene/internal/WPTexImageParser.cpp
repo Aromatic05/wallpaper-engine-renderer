@@ -6,9 +6,9 @@
 #include <lz4.h>
 
 #include "SpriteAnimation.hpp"
-#include "Utils/Algorism.h"
-#include "Fs/VFS.h"
-#include "Utils/BitFlags.hpp"
+#include "utils/Algorism.h"
+#include "fs/VFS.h"
+#include "utils/BitFlags.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>

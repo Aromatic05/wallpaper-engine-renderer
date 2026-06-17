@@ -1,6 +1,6 @@
 #include "WPPuppet.hpp"
 #include <cmath>
-#include "Utils/Logging.h"
+#include "utils/Logging.h"
 
 using namespace wallpaper;
 using namespace Eigen;

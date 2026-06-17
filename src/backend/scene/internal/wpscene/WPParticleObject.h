@@ -4,8 +4,8 @@
 #include <nlohmann/json.hpp>
 #include <vector>
 #include <array>
-#include "Utils/BitFlags.hpp"
-#include "Core/Literals.hpp"
+#include "utils/BitFlags.hpp"
+#include "core/Literals.hpp"
 
 namespace wallpaper
 {

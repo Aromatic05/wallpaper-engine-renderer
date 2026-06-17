@@ -1,8 +1,8 @@
 #include "WPParticleObject.h"
 
-#include "Utils/Logging.h"
-#include "Fs/VFS.h"
-#include "Core/StringHelper.hpp"
+#include "utils/Logging.h"
+#include "fs/VFS.h"
+#include "core/StringHelper.hpp"
 
 using namespace wallpaper::wpscene;
 

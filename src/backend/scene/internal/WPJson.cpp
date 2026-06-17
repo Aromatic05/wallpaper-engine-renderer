@@ -1,8 +1,8 @@
 #include "WPJson.hpp"
 #include <nlohmann/json.hpp>
 
-#include "Utils/Identity.hpp"
-#include "Utils/String.h"
+#include "utils/Identity.hpp"
+#include "utils/String.h"
 
 namespace wallpaper
 {

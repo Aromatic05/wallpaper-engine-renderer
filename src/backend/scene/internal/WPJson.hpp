@@ -4,7 +4,7 @@
 #include <string_view>
 #include <type_traits>
 
-#include "Utils/Logging.h"
+#include "utils/Logging.h"
 
 #define GET_JSON_VALUE(json, value) \
     wallpaper::GetJsonValue(        \

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <span>
-#include "Scene/Scene.h"
-#include "Scene/SceneShader.h"
+#include "scene/Scene.h"
+#include "scene/SceneShader.h"
 #include "Type.hpp"
 
 namespace wallpaper

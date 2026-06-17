@@ -8,7 +8,7 @@
 #include <functional>
 #include "backend/scene/compatibility/WESceneSource.hpp"
 #include "Type.hpp"
-#include "Swapchain/ExSwapchain.hpp"
+#include "swapchain/ExSwapchain.hpp"
 
 namespace wallpaper
 {
@@ -24,7 +24,7 @@ constexpr std::string_view PROPERTY_MUTED                = WE_SCENE_PROPERTY_MUT
 constexpr std::string_view PROPERTY_CACHE_PATH           = WE_SCENE_PROPERTY_CACHE_PATH;
 constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
 
-#include "Core/NoCopyMove.hpp"
+#include "core/NoCopyMove.hpp"
 class MainHandler;
 struct RenderInitInfo;
 

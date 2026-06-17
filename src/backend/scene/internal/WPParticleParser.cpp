@@ -1,7 +1,7 @@
 #include "WPParticleParser.hpp"
-#include "Particle/ParticleEmitter.h"
-#include "Particle/ParticleModify.h"
-#include "Particle/ParticleSystem.h"
+#include "particle/ParticleEmitter.h"
+#include "particle/ParticleModify.h"
+#include "particle/ParticleSystem.h"
 #include <random>
 #include <memory>
 #include <algorithm>
@@ -10,9 +10,9 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
-#include "Utils/Logging.h"
-#include "Utils/Algorism.h"
-#include "Core/Random.hpp"
+#include "utils/Logging.h"
+#include "utils/Algorism.h"
+#include "core/Random.hpp"
 
 using namespace wallpaper;
 using namespace Eigen;

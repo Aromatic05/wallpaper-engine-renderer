@@ -8,9 +8,9 @@
 
 #include <Eigen/Dense>
 
-#include "Core/Core.hpp"
-#include "Interface/IShaderValueUpdater.h"
-#include "Core/MapSet.hpp"
+#include "core/Core.hpp"
+#include "interface/IShaderValueUpdater.h"
+#include "core/MapSet.hpp"
 #include "SpriteAnimation.hpp"
 #include "WPPuppet.hpp"
 

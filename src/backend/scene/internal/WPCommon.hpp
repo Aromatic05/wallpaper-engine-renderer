@@ -1,9 +1,9 @@
 #pragma once
 #include <string_view>
 #include <charconv>
-#include "Fs/IBinaryStream.h"
-#include "Utils/Logging.h"
-#include "Core/StringHelper.hpp"
+#include "fs/IBinaryStream.h"
+#include "utils/Logging.h"
+#include "core/StringHelper.hpp"
 
 namespace wallpaper
 {

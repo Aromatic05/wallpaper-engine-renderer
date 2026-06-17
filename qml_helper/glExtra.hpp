@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include <span>
-#include "output/Swapchain/ExSwapchain.hpp"
+#include "output/swapchain/ExSwapchain.hpp"
 
 class GlExtra {
 public:

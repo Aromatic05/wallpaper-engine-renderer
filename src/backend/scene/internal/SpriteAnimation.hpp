@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <array>
 
-#include "Core/Literals.hpp"
+#include "core/Literals.hpp"
 
 namespace wallpaper
 {

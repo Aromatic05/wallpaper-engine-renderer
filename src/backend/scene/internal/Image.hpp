@@ -5,11 +5,11 @@
 #include <unordered_map>
 #include <functional>
 
-#include "Core/Literals.hpp"
+#include "core/Literals.hpp"
 #include "Type.hpp"
 #include "SpriteAnimation.hpp"
-#include "Scene/SceneTexture.h"
-#include "Core/NoCopyMove.hpp"
+#include "scene/SceneTexture.h"
+#include "core/NoCopyMove.hpp"
 
 namespace wallpaper
 {

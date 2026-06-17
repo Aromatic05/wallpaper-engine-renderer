@@ -1,2 +1,2 @@
-add_subdirectory(Fs)
-add_subdirectory(Utils)
+add_subdirectory(fs)
+add_subdirectory(utils)

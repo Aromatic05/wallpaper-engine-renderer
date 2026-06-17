@@ -1,12 +1,12 @@
 #include "WPSceneParser.hpp"
 #include "WPJson.hpp"
 
-#include "Utils/String.h"
-#include "Utils/Logging.h"
-#include "Utils/Algorism.h"
-#include "Core/Visitors.hpp"
-#include "Core/StringHelper.hpp"
-#include "Core/ArrayHelper.hpp"
+#include "utils/String.h"
+#include "utils/Logging.h"
+#include "utils/Algorism.h"
+#include "core/Visitors.hpp"
+#include "core/StringHelper.hpp"
+#include "core/ArrayHelper.hpp"
 #include "SpecTexs.hpp"
 
 #include "WPShaderParser.hpp"
@@ -15,8 +15,8 @@
 #include "WPSoundParser.hpp"
 #include "WPMdlParser.hpp"
 
-#include "Particle/WPParticleRawGener.h"
-#include "Particle/ParticleSystem.h"
+#include "particle/WPParticleRawGener.h"
+#include "particle/ParticleSystem.h"
 
 #include "WPShaderValueUpdater.hpp"
 #include "wpscene/WPImageObject.h"
@@ -25,7 +25,7 @@
 #include "wpscene/WPLightObject.hpp"
 #include "wpscene/WPScene.h"
 
-#include "Fs/VFS.h"
+#include "fs/VFS.h"
 
 #include <algorithm>
 #include <iostream>

@@ -1,2 +1,2 @@
-add_subdirectory(Scene)
-add_subdirectory(Particle)
+add_subdirectory(scene)
+add_subdirectory(particle)

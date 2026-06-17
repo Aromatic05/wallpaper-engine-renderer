@@ -1,11 +1,11 @@
 #include "WPShaderValueUpdater.hpp"
 #include "Eigen/src/Core/Matrix.h"
 #include "Eigen/src/Geometry/Transform.h"
-#include "Scene/Scene.h"
+#include "scene/Scene.h"
 #include "SpriteAnimation.hpp"
 #include "SpecTexs.hpp"
-#include "Core/ArrayHelper.hpp"
-#include "Utils/Algorism.h"
+#include "core/ArrayHelper.hpp"
+#include "utils/Algorism.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>

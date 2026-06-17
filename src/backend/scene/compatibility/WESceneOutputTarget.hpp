@@ -1,7 +1,7 @@
 #pragma once
 
 #include "backend/scene/compatibility/WESceneRenderInit.hpp"
-#include "Swapchain/ExSwapchain.hpp"
+#include "swapchain/ExSwapchain.hpp"
 #include "output/OutputTarget.hpp"
 
 #include <memory>

@@ -1,3 +1,3 @@
-add_subdirectory(RenderGraph)
-add_subdirectory(Vulkan)
-add_subdirectory(VulkanRender)
+add_subdirectory(rendergraph)
+add_subdirectory(vulkan)
+add_subdirectory(vulkanrender)
