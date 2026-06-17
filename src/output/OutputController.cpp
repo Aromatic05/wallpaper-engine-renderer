@@ -1,7 +1,5 @@
 #include "output/OutputController.hpp"
 
-#include "api/scene/WESceneOutput.hpp"
-
 #include <memory>
 #include <string>
 #include <string_view>
@@ -29,31 +27,65 @@ Result<void> unsupportedBinding(std::string_view sourceType, OutputTargetType ta
 Result<void> OutputController::bind(const OutputTarget&        target,
                                     OutputSource&              source,
                                     const BackendCapabilities& capabilities) {
+    if (source.type() == OutputSourceType::RenderPlan) {
+        auto planResult = source.renderPlan();
+        if (! planResult) {
+            return Result<void>(planResult.error());
+        }
+        return bind(target, source, capabilities, planResult.value());
+    }
+
     auto validationResult = validate(target, source, capabilities);
     if (! validationResult) {
         return validationResult;
     }
 
-    m_target = target;
     switch (source.type()) {
     case OutputSourceType::RenderPlan:
-        {
-            auto result = bindRenderPlan(target, source);
-            if (result) {
-                auto planResult = source.renderPlan();
-                if (! planResult) {
-                    return Result<void>(planResult.error());
-                }
-                m_boundRenderPlanRevision = planResult.value()->revision();
-            }
-            return result;
-        }
+        break;
     case OutputSourceType::Texture:
-        m_boundRenderPlanRevision.reset();
         return Result<void>::failure(ResultCode::NotSupported,
                                      "texture output controller is not implemented yet");
     case OutputSourceType::Surface:
-        m_boundRenderPlanRevision.reset();
+        return Result<void>::failure(ResultCode::NotSupported,
+                                     "surface output controller is not implemented yet");
+    }
+
+    return Result<void>::failure(ResultCode::NotSupported, "unknown output source type");
+}
+
+Result<void> OutputController::bind(const OutputTarget&        target,
+                                    OutputSource&              source,
+                                    const BackendCapabilities& capabilities,
+                                    const RenderPlanPtr&       resolvedPlan) {
+    auto validationResult = validate(target, source, capabilities);
+    if (! validationResult) {
+        return validationResult;
+    }
+
+    switch (source.type()) {
+    case OutputSourceType::RenderPlan:
+        {
+            const auto& plan = resolvedPlan;
+            if (! plan) {
+                return Result<void>::failure(ResultCode::InvalidState,
+                                             "render plan source returned a null plan");
+            }
+
+            auto result = bindRenderPlan(target, plan);
+            if (! result) {
+                return result;
+            }
+
+            m_target                  = target;
+            m_boundRenderPlanRevision = plan->revision();
+            m_boundRenderPlan         = plan.get();
+            return Result<void>::success();
+        }
+    case OutputSourceType::Texture:
+        return Result<void>::failure(ResultCode::NotSupported,
+                                     "texture output controller is not implemented yet");
+    case OutputSourceType::Surface:
         return Result<void>::failure(ResultCode::NotSupported,
                                      "surface output controller is not implemented yet");
     }
@@ -106,17 +138,7 @@ std::string OutputController::targetTypeName(OutputTargetType type) {
     return "unknown";
 }
 
-Result<void> OutputController::bindRenderPlan(const OutputTarget& target, const OutputSource& source) {
-    auto planResult = source.renderPlan();
-    if (! planResult) {
-        return Result<void>(planResult.error());
-    }
-
-    const auto& plan = planResult.value();
-    if (! plan) {
-        return Result<void>::failure(ResultCode::InvalidState, "render plan source returned a null plan");
-    }
-
+Result<void> OutputController::bindRenderPlan(const OutputTarget& target, const RenderPlanPtr& plan) {
     if (plan->requiredBindingKind() != target.binding->kind()) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "render plan binding kind does not match output target binding");

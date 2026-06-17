@@ -9,20 +9,34 @@ namespace
 {
 class FakeSceneRenderPlan final : public wallpaper::RenderPlan {
 public:
+    explicit FakeSceneRenderPlan(std::uint64_t revision, bool shouldFail = false)
+        : m_revision(revision)
+        , m_shouldFail(shouldFail) {}
+
     wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
         return wallpaper::OutputTargetBindingKind::WESceneVulkan;
     }
 
-    std::uint64_t revision() const override { return 7; }
+    std::uint64_t revision() const override { return m_revision; }
 
     wallpaper::Result<void> bindOutput(const wallpaper::OutputTarget& target) override {
         auto binding = std::dynamic_pointer_cast<wallpaper::WESceneOutputBinding>(target.binding);
         assert(binding);
+        ++bindCalls;
         prepared = true;
+        if (m_shouldFail) {
+            return wallpaper::Result<void>::failure(wallpaper::ResultCode::InternalError,
+                                                    "bind failed");
+        }
         return wallpaper::Result<void>::success();
     }
 
+    int  bindCalls { 0 };
     bool prepared { false };
+
+private:
+    std::uint64_t m_revision { 0 };
+    bool          m_shouldFail { false };
 };
 
 class FakeRenderPlanSource final : public wallpaper::RenderPlanSource {
@@ -37,6 +51,28 @@ protected:
 
 private:
     std::shared_ptr<FakeSceneRenderPlan> plan;
+};
+
+class SequentialRenderPlanSource final : public wallpaper::RenderPlanSource {
+public:
+    SequentialRenderPlanSource(std::shared_ptr<FakeSceneRenderPlan> firstPlan,
+                               std::shared_ptr<FakeSceneRenderPlan> secondPlan)
+        : m_firstPlan(std::move(firstPlan))
+        , m_secondPlan(std::move(secondPlan)) {}
+
+protected:
+    wallpaper::Result<wallpaper::RenderPlanPtr> currentRenderPlan() const override {
+        ++calls;
+        if (calls == 1) {
+            return wallpaper::Result<wallpaper::RenderPlanPtr>::success(m_firstPlan);
+        }
+        return wallpaper::Result<wallpaper::RenderPlanPtr>::success(m_secondPlan);
+    }
+
+private:
+    mutable int                            calls { 0 };
+    std::shared_ptr<FakeSceneRenderPlan> m_firstPlan;
+    std::shared_ptr<FakeSceneRenderPlan> m_secondPlan;
 };
 
 class WrongBinding final : public wallpaper::OutputTargetBinding {
@@ -82,7 +118,7 @@ int main() {
     wallpaper::BackendCapabilities capabilities;
     capabilities.supportsRenderPlan = true;
 
-    auto plan   = std::make_shared<FakeSceneRenderPlan>();
+    auto plan   = std::make_shared<FakeSceneRenderPlan>(7);
     auto source = FakeRenderPlanSource(plan);
 
     wallpaper::OutputController controller;
@@ -102,6 +138,26 @@ int main() {
     assert(plan->prepared);
     assert(controller.boundRenderPlanRevision().has_value());
     assert(controller.boundRenderPlanRevision().value() == 7);
+
+    auto failingPlan   = std::make_shared<FakeSceneRenderPlan>(9, true);
+    auto failingSource = FakeRenderPlanSource(failingPlan);
+    auto failingResult = controller.bind(goodTarget, failingSource, capabilities);
+    assert(! failingResult);
+    assert(failingPlan->prepared);
+    assert(controller.boundRenderPlanRevision().has_value());
+    assert(controller.boundRenderPlanRevision().value() == 7);
+    assert(controller.target().binding == goodTarget.binding);
+
+    wallpaper::OutputController unstableController;
+    auto unstablePlanA = std::make_shared<FakeSceneRenderPlan>(13);
+    auto unstablePlanB = std::make_shared<FakeSceneRenderPlan>(17);
+    auto unstableSource = SequentialRenderPlanSource(unstablePlanA, unstablePlanB);
+    auto unstableResult = unstableController.bind(goodTarget, unstableSource, capabilities);
+    assert(unstableResult);
+    assert(unstablePlanA->bindCalls == 1);
+    assert(unstablePlanB->bindCalls == 0);
+    assert(unstableController.boundRenderPlanRevision().has_value());
+    assert(unstableController.boundRenderPlanRevision().value() == 13);
 
     auto genericPlan   = std::make_shared<SurfaceRenderPlan>();
     auto genericSource = SurfaceRenderPlanSource(genericPlan);
