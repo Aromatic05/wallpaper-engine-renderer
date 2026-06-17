@@ -3,9 +3,11 @@
 #include "common/result/Result.hpp"
 #include "output/OutputSource.hpp"
 #include "runtime/backend/BackendCapabilities.hpp"
+#include "runtime/backend/BackendReadyState.hpp"
 #include "runtime/diagnostics/Diagnostics.hpp"
 #include "runtime/input/InputEvent.hpp"
 #include "runtime/property/PropertyValue.hpp"
+#include "runtime/session/FrameLifecycle.hpp"
 #include "runtime/session/WallpaperTypes.hpp"
 
 #include <string_view>
@@ -28,6 +30,12 @@ public:
     virtual Result<void> setProperty(std::string_view, PropertyValue) = 0;
     virtual Result<void> sendInput(const InputEvent&) = 0;
 
+    virtual Result<FrameLifecycle> tick() {
+        return Result<FrameLifecycle>::success(FrameLifecycle {});
+    }
+    virtual bool loadsAsynchronously() const { return false; }
+    virtual BackendReadyState readyState() const { return BackendReadyState::Loaded; }
+    virtual void notifyOutputBound() {}
     virtual OutputSource& outputSource() = 0;
     virtual DiagnosticsSnapshot diagnostics() const = 0;
 };

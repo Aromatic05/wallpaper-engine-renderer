@@ -2,15 +2,12 @@
 
 namespace wallpaper
 {
-enum class SessionState
+enum class BackendReadyState
 {
     Idle,
     Loading,
     Loaded,
     OutputReady,
-    Playing,
-    Paused,
-    Stopped,
     Error
 };
 } // namespace wallpaper

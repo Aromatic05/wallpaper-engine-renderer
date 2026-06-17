@@ -2,6 +2,7 @@
 
 #include "common/result/Result.hpp"
 #include "output/OutputTarget.hpp"
+#include "output/RenderPlan.hpp"
 
 namespace wallpaper
 {
@@ -18,8 +19,9 @@ public:
 
     virtual OutputSourceType type() const = 0;
 
-    virtual Result<void> bind(const OutputTarget&) {
-        return Result<void>::failure(ResultCode::NotSupported, "output source cannot bind target");
+    virtual Result<RenderPlanPtr> renderPlan() const {
+        return Result<RenderPlanPtr>::failure(ResultCode::NotSupported,
+                                              "output source does not expose a render plan");
     }
 };
 } // namespace wallpaper

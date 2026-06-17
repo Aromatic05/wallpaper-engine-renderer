@@ -2,15 +2,6 @@
 
 namespace wallpaper
 {
-Result<void> WebOutputSource::bind(const OutputTarget& target) {
-    if (! target.valid()) {
-        return Result<void>::failure(ResultCode::InvalidArgument, "web output target binding is null");
-    }
-
-    return Result<void>::failure(ResultCode::NotSupported,
-                                 "web backend output binding is not implemented yet");
-}
-
 WebBackend::WebBackend(const BackendContext& context)
     : m_context(context) {}
 
@@ -22,7 +13,7 @@ BackendCapabilities WebBackend::capabilities() const {
     capabilities.supportsInput         = false;
     capabilities.supportsRenderPlan    = false;
     capabilities.supportsTextureOutput = false;
-    capabilities.supportsSurfaceOutput = true;
+    capabilities.supportsSurfaceOutput = false;
     return capabilities;
 }
 
@@ -44,10 +35,10 @@ Result<void> WebBackend::start() {
         return Result<void>::failure(ResultCode::InvalidState, "web backend has no loaded source");
     }
 
-    m_started = true;
-    appendDiagnostic(DiagnosticSeverity::Warning,
-                     "web backend start is a placeholder and does not drive a real web runtime yet");
-    return Result<void>::success();
+    appendDiagnostic(DiagnosticSeverity::Error,
+                     "web backend cannot start because no real web runtime is implemented yet");
+    return Result<void>::failure(ResultCode::NotSupported,
+                                 "web backend runtime is not implemented yet");
 }
 
 Result<void> WebBackend::pause() {
@@ -82,6 +73,17 @@ Result<void> WebBackend::sendInput(const InputEvent&) {
                      "web backend ignored input because input routing is not implemented yet");
     return Result<void>::failure(ResultCode::NotSupported,
                                  "web backend input routing is not implemented yet");
+}
+
+Result<FrameLifecycle> WebBackend::tick() {
+    return Result<FrameLifecycle>::success(FrameLifecycle {});
+}
+
+BackendReadyState WebBackend::readyState() const {
+    if (! m_loaded) {
+        return BackendReadyState::Idle;
+    }
+    return BackendReadyState::Loaded;
 }
 
 OutputSource& WebBackend::outputSource() { return m_outputSource; }

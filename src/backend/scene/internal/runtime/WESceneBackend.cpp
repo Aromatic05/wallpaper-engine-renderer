@@ -6,6 +6,28 @@ namespace wallpaper
 {
 namespace
 {
+class WESceneLegacyRenderPlan final : public WESceneRenderPlan {
+public:
+    explicit WESceneLegacyRenderPlan(WESceneRuntimeDriver& runtimeDriver)
+        : m_runtimeDriver(runtimeDriver) {}
+
+    Result<void> prepareOutput(WESceneOutputBinding& binding) override {
+        if (! m_runtimeDriver.inited()) {
+            if (! m_runtimeDriver.init()) {
+                return Result<void>::failure(ResultCode::InternalError,
+                                             "failed to initialize scene wallpaper");
+            }
+        }
+
+        m_runtimeDriver.initVulkan(binding.renderInitInfo());
+        binding.attachSwapchain(m_runtimeDriver.exSwapchain());
+        return Result<void>::success();
+    }
+
+private:
+    WESceneRuntimeDriver& m_runtimeDriver;
+};
+
 Result<void> unsupportedProperty(std::string_view name) {
     return Result<void>::failure(ResultCode::NotSupported,
                                  "unsupported scene property: " + std::string(name));
@@ -13,32 +35,16 @@ Result<void> unsupportedProperty(std::string_view name) {
 } // namespace
 
 WESceneOutputSource::WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver)
-    : m_runtimeDriver(runtimeDriver) {}
+    : m_runtimeDriver(runtimeDriver)
+    , m_renderPlan(std::make_shared<WESceneLegacyRenderPlan>(runtimeDriver)) {}
 
-Result<void> WESceneOutputSource::bind(const OutputTarget& target) {
-    if (! target.valid()) {
-        return Result<void>::failure(ResultCode::InvalidArgument, "output target binding is null");
-    }
-
-    std::shared_ptr<WESceneOutputBinding> binding = std::static_pointer_cast<WESceneOutputBinding>(target.binding);
-    if (! binding) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "scene backend requires a WE scene output binding");
-    }
-
-    if (! m_runtimeDriver.inited()) {
-        if (! m_runtimeDriver.init()) {
-            return Result<void>::failure(ResultCode::InternalError, "failed to initialize scene wallpaper");
-        }
-    }
-
-    m_runtimeDriver.initVulkan(binding->renderInitInfo());
-    binding->attachSwapchain(m_runtimeDriver.exSwapchain());
-    return Result<void>::success();
+Result<RenderPlanPtr> WESceneOutputSource::currentRenderPlan() const {
+    return Result<RenderPlanPtr>::success(m_renderPlan);
 }
 
 WESceneBackend::WESceneBackend(const BackendContext& context)
     : m_context(context)
+    , m_sharedState(std::make_shared<SharedState>())
     , m_outputSource(m_runtimeDriver) {
     if (! m_context.cachePath.empty()) {
         m_runtimeDriver.setPropertyString(WE_SCENE_PROPERTY_CACHE_PATH, m_context.cachePath);
@@ -58,6 +64,9 @@ BackendCapabilities WESceneBackend::capabilities() const {
 }
 
 Result<void> WESceneBackend::load(const WallpaperSource& source) {
+    m_sharedState->readyState.store(BackendReadyState::Loading);
+    m_sharedState->outputBound.store(false);
+
     // The scene runtime driver routes source/assets through its looper-based command path.
     // Ensure the loopers are initialized before we post load properties, otherwise the
     // early source messages can be dropped and the first frame never arrives.
@@ -67,14 +76,18 @@ Result<void> WESceneBackend::load(const WallpaperSource& source) {
         }
     }
 
+    installFirstFrameCallback();
+
     auto sourceResult = applyProperty(WE_SCENE_PROPERTY_SOURCE, source.uri);
     if (! sourceResult) {
+        m_sharedState->readyState.store(BackendReadyState::Error);
         return sourceResult;
     }
 
     for (const auto& [name, value] : source.initialProperties) {
         auto propertyResult = applyProperty(name, value);
         if (! propertyResult) {
+            m_sharedState->readyState.store(BackendReadyState::Error);
             return propertyResult;
         }
     }
@@ -123,6 +136,21 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
     return Result<void>::failure(ResultCode::NotSupported, "unknown input event type");
 }
 
+Result<FrameLifecycle> WESceneBackend::tick() {
+    return Result<FrameLifecycle>::success(FrameLifecycle {});
+}
+
+bool WESceneBackend::loadsAsynchronously() const { return true; }
+
+BackendReadyState WESceneBackend::readyState() const { return m_sharedState->readyState.load(); }
+
+void WESceneBackend::notifyOutputBound() {
+    m_sharedState->outputBound.store(true);
+    if (m_sharedState->readyState.load() == BackendReadyState::Loaded) {
+        m_sharedState->readyState.store(BackendReadyState::OutputReady);
+    }
+}
+
 OutputSource& WESceneBackend::outputSource() { return m_outputSource; }
 
 DiagnosticsSnapshot WESceneBackend::diagnostics() const { return m_diagnostics; }
@@ -160,6 +188,19 @@ Result<void> WESceneBackend::applyProperty(std::string_view name, const Property
 
     return Result<void>::failure(ResultCode::NotSupported,
                                  "property value type is not supported by scene backend");
+}
+
+void WESceneBackend::installFirstFrameCallback() {
+    auto weakState = std::weak_ptr<SharedState>(m_sharedState);
+    auto callback  = std::make_shared<FirstFrameCallback>([weakState]() {
+        if (auto state = weakState.lock()) {
+            const auto nextState =
+                state->outputBound.load() ? BackendReadyState::OutputReady : BackendReadyState::Loaded;
+            state->readyState.store(nextState);
+        }
+    });
+
+    m_runtimeDriver.setPropertyObject(WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK, callback);
 }
 
 void WESceneBackend::appendDiagnostic(DiagnosticSeverity severity, std::string message) {

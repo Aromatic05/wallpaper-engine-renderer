@@ -2,12 +2,16 @@
 
 #include "backend/scene/internal/runtime/WESceneRuntimeDriver.hpp"
 #include "api/scene/WESceneOutput.hpp"
+#include "api/scene/WESceneRenderPlan.hpp"
 #include "common/result/Result.hpp"
-#include "output/RenderPlanSource.hpp"
 #include "output/OutputTarget.hpp"
+#include "output/RenderPlanSource.hpp"
 #include "runtime/backend/BackendContext.hpp"
+#include "runtime/backend/BackendReadyState.hpp"
 #include "runtime/backend/ContentBackend.hpp"
 
+#include <atomic>
+#include <functional>
 #include <memory>
 
 namespace wallpaper
@@ -16,11 +20,12 @@ class WESceneOutputSource final : public RenderPlanSource {
 public:
     explicit WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver);
 
-    Result<void>     bind(const OutputTarget& target) override;
+protected:
+    Result<RenderPlanPtr> currentRenderPlan() const override;
 
 private:
     WESceneRuntimeDriver& m_runtimeDriver;
-    bool                  m_initialized { false };
+    std::shared_ptr<WESceneRenderPlan> m_renderPlan;
 };
 
 class WESceneBackend final : public ContentBackend {
@@ -39,17 +44,28 @@ public:
     Result<void> setProperty(std::string_view name, PropertyValue value) override;
     Result<void> sendInput(const InputEvent& event) override;
 
-    OutputSource&        outputSource() override;
-    DiagnosticsSnapshot  diagnostics() const override;
+    Result<FrameLifecycle> tick() override;
+    bool                   loadsAsynchronously() const override;
+    BackendReadyState      readyState() const override;
+    void                   notifyOutputBound() override;
+    OutputSource&          outputSource() override;
+    DiagnosticsSnapshot    diagnostics() const override;
 
 private:
+    struct SharedState {
+        std::atomic<BackendReadyState> readyState { BackendReadyState::Idle };
+        std::atomic<bool>              outputBound { false };
+    };
+
     Result<void> applyProperty(std::string_view name, const PropertyValue& value);
+    void         installFirstFrameCallback();
     void         appendDiagnostic(DiagnosticSeverity severity, std::string message);
 
 private:
-    BackendContext        m_context;
-    WESceneRuntimeDriver  m_runtimeDriver;
-    WESceneOutputSource   m_outputSource;
-    DiagnosticsSnapshot   m_diagnostics;
+    BackendContext               m_context;
+    std::shared_ptr<SharedState> m_sharedState;
+    WESceneRuntimeDriver         m_runtimeDriver;
+    WESceneOutputSource          m_outputSource;
+    DiagnosticsSnapshot          m_diagnostics;
 };
 } // namespace wallpaper

@@ -1,17 +1,19 @@
 #pragma once
 
-#include "output/VulkanOutputInit.hpp"
-#include "output/OutputTarget.hpp"
-#include "output/swapchain/ExSwapchain.hpp"
+#include "../../output/VulkanOutputInit.hpp"
+#include "../../output/OutputTarget.hpp"
+#include "../../output/OutputTargetBinding.hpp"
+#include "../../output/swapchain/ExSwapchain.hpp"
 
 #include <memory>
 
 namespace wallpaper
 {
-class WESceneOutputBinding {
+class WESceneOutputBinding : public OutputTargetBinding {
 public:
     explicit WESceneOutputBinding(RenderInitInfo renderInitInfo);
 
+    OutputTargetBindingKind kind() const override;
     const RenderInitInfo& renderInitInfo() const;
     void                  attachSwapchain(ExSwapchain* swapchain);
     ExSwapchain*          swapchain() const;

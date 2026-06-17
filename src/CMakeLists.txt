@@ -33,6 +33,7 @@ add_library(
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp
   api/web/Web.cpp
+  output/OutputController.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp)
 
@@ -46,5 +47,8 @@ target_link_libraries(
   PUBLIC wpUtils
   PRIVATE ${InteralLib})
 
-target_include_directories(${PROJECT_NAME} PUBLIC . common common/utils/include)
+target_include_directories(
+  ${PROJECT_NAME}
+  PUBLIC ../include common/utils/include
+  PRIVATE . common)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

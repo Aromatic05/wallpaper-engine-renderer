@@ -1,7 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
+
+#include "OutputTargetBinding.hpp"
 
 namespace wallpaper
 {
@@ -13,9 +14,9 @@ enum class OutputTargetType
 
 struct OutputTarget {
     OutputTargetType      type { OutputTargetType::Surface };
-    std::shared_ptr<void> binding;
-    std::uint16_t         width { 0 };
-    std::uint16_t         height { 0 };
+    OutputTargetBindingPtr binding;
+    std::uint16_t          width { 0 };
+    std::uint16_t          height { 0 };
 
     bool valid() const { return binding != nullptr; }
 };
