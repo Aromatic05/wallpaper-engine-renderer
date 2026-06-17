@@ -10,6 +10,7 @@
 
 namespace wallpaper
 {
+class FrameTimer;
 namespace audio
 {
 class SoundManager;
@@ -29,6 +30,7 @@ struct FileSystemService {
     std::function<bool(const std::filesystem::path&)> createDirectories;
     std::function<std::unique_ptr<fs::VFS>()> createVfs;
     std::function<std::unique_ptr<fs::Fs>(std::string_view, bool)> createPhysicalFs;
+    std::function<std::unique_ptr<fs::Fs>(std::string_view)> createPackageFs;
 };
 
 struct AudioService {
@@ -43,6 +45,7 @@ struct MediaService {
 struct TimerService {
     std::function<std::uint64_t()> monotonicMilliseconds;
     std::function<std::shared_ptr<looper::Looper>()> createLooper;
+    std::function<std::unique_ptr<FrameTimer>()> createFrameTimer;
 };
 
 struct PlatformService {

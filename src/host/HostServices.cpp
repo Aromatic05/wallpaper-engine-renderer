@@ -2,6 +2,7 @@
 
 #include "host/audio/include/audio/SoundManager.h"
 #include "host/looper/include/looper/Looper.hpp"
+#include "host/timer/include/timer/FrameTimer.hpp"
 #include "common/fs/include/fs/PhysicalFs.h"
 #include "common/fs/include/fs/VFS.h"
 #include "utils/Platform.hpp"
@@ -35,6 +36,9 @@ std::shared_ptr<HostServices> CreateDefaultHostServices() {
     };
     services->timer.createLooper = []() {
         return std::make_shared<looper::Looper>();
+    };
+    services->timer.createFrameTimer = []() {
+        return std::make_unique<FrameTimer>();
     };
 
     services->audio.createSoundManager = []() {

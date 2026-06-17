@@ -2,6 +2,7 @@ set(LIB_NAME wpSceneBackend)
 
 add_library(
   ${LIB_NAME} STATIC
+  CreateScenePackageFs.cpp
   WPJson.cpp
   WPPkgFs.cpp
   WPParticleParser.cpp
@@ -17,9 +18,9 @@ add_library(
   wpscene/WPMaterial.cpp
   wpscene/WPScene.cpp
   wpscene/WPLightObject.cpp
-  runtime/WESceneBackend.cpp
-  runtime/WESceneRenderPlanBuilder.cpp
-  runtime/WESceneRuntimeDriver.cpp)
+  engine/WESceneBackend.cpp
+  engine/WESceneRenderPlanBuilder.cpp
+  engine/WESceneRuntimeDriver.cpp)
 
 target_link_libraries(
   ${LIB_NAME}

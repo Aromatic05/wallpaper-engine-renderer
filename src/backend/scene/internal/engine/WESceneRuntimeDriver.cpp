@@ -133,10 +133,14 @@ public:
         CMD_NO
     };
     MainHandler& main_handler;
-    RenderHandler(MainHandler& m)
-        : main_handler(m), m_render(std::make_unique<vulkan::VulkanRender>()) {}
+    RenderHandler(MainHandler& m, std::shared_ptr<HostServices> hostServices)
+        : main_handler(m)
+        , m_frameTimer(hostServices && hostServices->timer.createFrameTimer
+                           ? hostServices->timer.createFrameTimer()
+                           : std::make_unique<FrameTimer>())
+        , m_render(std::make_unique<vulkan::VulkanRender>()) {}
     virtual ~RenderHandler() {
-        frame_timer.Stop();
+        m_frameTimer->Stop();
         m_render->destroy();
         LOG_INFO("render handler deleted");
     }
@@ -168,13 +172,13 @@ private:
         bool stop { false };
         if (msg->findBool("value", &stop)) {
             if (stop)
-                frame_timer.Stop();
+                m_frameTimer->Stop();
             else
-                frame_timer.Run();
+                m_frameTimer->Run();
         }
     }
     MHANDLER_CMD(DRAW) {
-        frame_timer.FrameBegin();
+        m_frameTimer->FrameBegin();
         if (m_rg) {
             // LOG_INFO("frame info, fps: %.1f, frametime: %.1f", 1.0f, 1000.0f*m_scene->frameTime);
             m_scene->shaderValueUpdater->FrameBegin();
@@ -186,7 +190,7 @@ private:
 
             m_render->drawFrame(*m_scene);
 
-            m_scene->PassFrameTime(frame_timer.IdeaTime() * m_speed);
+            m_scene->PassFrameTime(m_frameTimer->IdeaTime() * m_speed);
 
             m_scene->shaderValueUpdater->FrameEnd();
             // fps_counter.RegisterFrame();
@@ -196,7 +200,7 @@ private:
                 main_handler.sendFirstFrameOk();
             }
         }
-        frame_timer.FrameEnd();
+        m_frameTimer->FrameEnd();
     }
     MHANDLER_CMD(SET_FILLMODE) {
         int32_t value;
@@ -229,10 +233,11 @@ private:
     }
 
 public:
-    FrameTimer frame_timer;
-    FpsCounter fps_counter;
+    FrameTimer& frameTimer() { return *m_frameTimer; }
+    FpsCounter  fps_counter;
 
 private:
+    std::unique_ptr<FrameTimer> m_frameTimer;
     std::shared_ptr<Scene> m_scene { nullptr };
     float                  m_speed { 1.0f };
 
@@ -246,7 +251,7 @@ private:
 } // namespace wallpaper
 
 WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices)
-    : m_hostServices(std::move(hostServices))
+    : m_hostServices(hostServices ? std::move(hostServices) : CreateDefaultHostServices())
     , m_main_handler(std::make_shared<MainHandler>(m_hostServices)) {}
 
 WESceneRuntimeDriver::~WESceneRuntimeDriver() {
@@ -328,7 +333,7 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             int32_t fps { 15 };
             msg->findInt32("value", &fps);
             if (fps >= 5) {
-                m_render_handler->frame_timer.SetRequiredFps((uint8_t)fps);
+                m_render_handler->frameTimer().SetRequiredFps((uint8_t)fps);
             }
         } else if (property == PROPERTY_FILLMODE) {
             int32_t value;
@@ -401,16 +406,16 @@ void MainHandler::loadScene() {
     std::shared_ptr<Scene> scene { nullptr };
 
     // mount assets dir
-    std::unique_ptr<fs::VFS> pVfs =
-        m_hostServices && m_hostServices->fileSystem.createVfs
-            ? m_hostServices->fileSystem.createVfs()
-            : std::make_unique<fs::VFS>();
+    if (! m_hostServices || ! m_hostServices->fileSystem.createVfs
+        || ! m_hostServices->fileSystem.createPhysicalFs) {
+        LOG_ERROR("host file system services are incomplete");
+        return;
+    }
+
+    std::unique_ptr<fs::VFS> pVfs = m_hostServices->fileSystem.createVfs();
     auto&                    vfs  = *pVfs;
     if (! vfs.IsMounted("assets")) {
-        auto assetsFs =
-            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
-                ? m_hostServices->fileSystem.createPhysicalFs(m_assets, false)
-                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(m_assets).release());
+        auto assetsFs = m_hostServices->fileSystem.createPhysicalFs(m_assets, false);
         bool sus = vfs.Mount("/assets", std::move(assetsFs), "assets");
         if (! sus) {
             LOG_ERROR("Mount assets dir failed");
@@ -425,14 +430,14 @@ void MainHandler::loadScene() {
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
 
     // load pkgfile
-    auto pkgFs = std::unique_ptr<fs::Fs>(fs::WPPkgFs::CreatePkgFs(pkgPath).release());
-    if (! vfs.Mount("/assets", std::move(pkgFs))) {
+    std::unique_ptr<fs::Fs> pkgFs;
+    if (m_hostServices->fileSystem.createPackageFs) {
+        pkgFs = m_hostServices->fileSystem.createPackageFs(pkgPath);
+    }
+    if (! pkgFs || ! vfs.Mount("/assets", std::move(pkgFs))) {
         LOG_INFO("load pkg file %s failed, fallback to use dir", pkgPath.c_str());
         // load pkg dir
-        auto pkgDirFs =
-            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
-                ? m_hostServices->fileSystem.createPhysicalFs(pkgDir, false)
-                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(pkgDir).release());
+        auto pkgDirFs = m_hostServices->fileSystem.createPhysicalFs(pkgDir, false);
         if (! vfs.Mount("/assets", std::move(pkgDirFs))) {
             LOG_ERROR("can't load pkg directory: %s", pkgDir.c_str());
             return;
@@ -447,9 +452,7 @@ void MainHandler::loadScene() {
             }
         }
         auto cacheFs =
-            m_hostServices && m_hostServices->fileSystem.createPhysicalFs
-                ? m_hostServices->fileSystem.createPhysicalFs(m_cache_path, true)
-                : std::unique_ptr<fs::Fs>(fs::CreatePhysicalFs(m_cache_path, true).release());
+            m_hostServices->fileSystem.createPhysicalFs(m_cache_path, true);
         if (! vfs.Mount("/cache", std::move(cacheFs), "cache")) {
             LOG_ERROR("can't load cache folder: %s", m_cache_path.c_str());
         } else {
@@ -509,7 +512,7 @@ bool MainHandler::init() {
 
     {
         auto  msg        = CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_DRAW);
-        auto& frameTimer = m_render_handler->frame_timer;
+        auto& frameTimer = m_render_handler->frameTimer();
         frameTimer.SetCallback([msg]() {
             msg->post();
         });
@@ -522,16 +525,7 @@ bool MainHandler::init() {
 }
 MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices)
     : m_hostServices(std::move(hostServices)),
-      m_sound_manager(
-          m_hostServices && m_hostServices->audio.createSoundManager
-              ? m_hostServices->audio.createSoundManager()
-              : std::make_unique<audio::SoundManager>()),
-      m_main_loop(
-          m_hostServices && m_hostServices->timer.createLooper
-              ? m_hostServices->timer.createLooper()
-              : std::make_shared<looper::Looper>()),
-      m_render_loop(
-          m_hostServices && m_hostServices->timer.createLooper
-              ? m_hostServices->timer.createLooper()
-              : std::make_shared<looper::Looper>()),
-      m_render_handler(std::make_shared<RenderHandler>(*this)) {}
+      m_sound_manager(m_hostServices->audio.createSoundManager()),
+      m_main_loop(m_hostServices->timer.createLooper()),
+      m_render_loop(m_hostServices->timer.createLooper()),
+      m_render_handler(std::make_shared<RenderHandler>(*this, m_hostServices)) {}
