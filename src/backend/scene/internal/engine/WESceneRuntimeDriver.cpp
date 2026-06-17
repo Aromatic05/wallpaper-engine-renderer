@@ -22,6 +22,8 @@
 #include "WESceneRenderPlanBuilder.hpp"
 #include "render/vulkanrender/VulkanRender.hpp"
 #include <atomic>
+#include <charconv>
+#include <optional>
 
 using namespace wallpaper;
 
@@ -46,6 +48,122 @@ std::shared_ptr<looper::Message> CreateMsgWithCmd(const std::shared_ptr<looper::
     auto msg = looper::Message::create(0, handler);
     AddMsgCmd(*msg, cmd);
     return msg;
+}
+
+std::optional<float> ReadNumericPropertyValue(const std::shared_ptr<looper::Message>& msg) {
+    float value { 0.0f };
+    if (msg->findFloat("value", &value)) return value;
+
+    int32_t int_value { 0 };
+    if (msg->findInt32("value", &int_value)) return static_cast<float>(int_value);
+
+    return std::nullopt;
+}
+
+std::optional<std::array<float, 3>> ParseColorString(std::string_view value) {
+    std::array<float, 3> color {};
+    size_t               start { 0 };
+    for (size_t index = 0; index < color.size(); index++) {
+        const size_t end = index + 1 == color.size() ? value.size() : value.find(',', start);
+        if (end == std::string_view::npos) return std::nullopt;
+
+        const std::string_view token = value.substr(start, end - start);
+        float                  channel { 0.0f };
+        const auto [ptr, ec] =
+            std::from_chars(token.data(), token.data() + token.size(), channel);
+        if (ec != std::errc() || ptr != token.data() + token.size()) return std::nullopt;
+
+        color[index] = channel;
+        start        = end + 1;
+    }
+    return color;
+}
+
+std::optional<std::array<float, 3>> ReadColorPropertyValue(
+    const std::shared_ptr<looper::Message>& msg) {
+    std::shared_ptr<std::array<float, 3>> object_value;
+    if (msg->findObject("value", &object_value) && object_value) return *object_value;
+
+    std::string string_value;
+    if (msg->findString("value", &string_value)) return ParseColorString(string_value);
+
+    return std::nullopt;
+}
+
+bool ResolveParticleRuntimeProperty(std::string_view property, std::string* target,
+                                    std::string_view* attribute) {
+    constexpr std::string_view kPrefix { "particle." };
+    if (! property.starts_with(kPrefix)) return false;
+
+    const std::string_view suffix = property.substr(kPrefix.size());
+    const size_t           split  = suffix.find('.');
+    if (split == std::string_view::npos || split == 0 || split + 1 >= suffix.size()) return false;
+
+    *target    = std::string(suffix.substr(0, split));
+    *attribute = suffix.substr(split + 1);
+    return true;
+}
+
+std::vector<ParticleSubSystem*> ResolveParticleTargets(Scene& scene, std::string_view target) {
+    auto appendTargets = [&](int32_t object_id, std::vector<ParticleSubSystem*>* out) {
+        auto it = scene.runtimeParticleSubsystemsByObjectId.find(object_id);
+        if (it == scene.runtimeParticleSubsystemsByObjectId.end()) return;
+        out->insert(out->end(), it->second.begin(), it->second.end());
+    };
+
+    std::vector<ParticleSubSystem*> result;
+
+    int32_t object_id { 0 };
+    const auto [ptr, ec] = std::from_chars(target.data(), target.data() + target.size(), object_id);
+    if (ec == std::errc() && ptr == target.data() + target.size()) {
+        appendTargets(object_id, &result);
+        return result;
+    }
+
+    auto name_it = scene.runtimeParticleObjectIdsByName.find(std::string(target));
+    if (name_it == scene.runtimeParticleObjectIdsByName.end()) return result;
+
+    appendTargets(name_it->second, &result);
+    return result;
+}
+
+bool ApplyParticleRuntimeProperty(Scene& scene, std::string_view property,
+                                  const std::shared_ptr<looper::Message>& msg) {
+    std::string      target;
+    std::string_view attribute;
+    if (! ResolveParticleRuntimeProperty(property, &target, &attribute)) return false;
+
+    auto targets = ResolveParticleTargets(scene, target);
+    if (targets.empty()) return false;
+
+    if (attribute == "rate") {
+        const auto value = ReadNumericPropertyValue(msg);
+        if (! value.has_value()) return false;
+        for (auto* subsystem : targets) {
+            if (subsystem) subsystem->SetRuntimeRateOverride(*value);
+        }
+        return true;
+    }
+
+    if (attribute == "size") {
+        const auto value = ReadNumericPropertyValue(msg);
+        if (! value.has_value()) return false;
+        for (auto* subsystem : targets) {
+            if (subsystem) subsystem->SetRuntimeSizeOverride(*value);
+        }
+        return true;
+    }
+
+    if (attribute == "color" || attribute == "colorn") {
+        const auto value = ReadColorPropertyValue(msg);
+        if (! value.has_value()) return false;
+        for (auto* subsystem : targets) {
+            if (subsystem) subsystem->SetRuntimeColorOverride(*value);
+        }
+        return true;
+    }
+
+    return false;
 }
 } // namespace
 
@@ -104,6 +222,7 @@ private:
     bool m_inited { false };
     std::shared_ptr<HostServices>          m_hostServices;
     std::shared_ptr<WESceneEngineServices> m_engineServices;
+    std::shared_ptr<Scene>                 m_scene;
 
     std::string m_assets;
     std::string m_source;
@@ -372,6 +491,8 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                 nmsg->setFloat("value", speed);
                 nmsg->post();
             }
+        } else if (m_scene && ApplyParticleRuntimeProperty(*m_scene, property, msg)) {
+            return;
         }
     }
 }
@@ -477,6 +598,7 @@ void MainHandler::loadScene() {
             return;
         }
         scene = m_scene_parser.Parse(scene_id, scene_src, vfs, *m_sound_manager);
+        m_scene = scene;
         scene->vfs.swap(pVfs);
     }
 

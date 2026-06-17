@@ -209,7 +209,7 @@ ParticleInitOp WPParticleParser::genOverrideInitOp(const wpscene::ParticleInstan
             PM::InitColor(
                 p, over.color[0] / 255.0f, over.color[1] / 255.0f, over.color[2] / 255.0f);
         } else if (over.overColorn) {
-            PM::MutiplyInitColor(p, over.colorn[0], over.colorn[1], over.colorn[2]);
+            PM::InitColor(p, over.colorn[0], over.colorn[1], over.colorn[2]);
         }
     };
 }

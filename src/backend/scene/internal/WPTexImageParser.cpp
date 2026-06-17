@@ -124,7 +124,7 @@ std::shared_ptr<Image> WPTexImageParser::Parse(const std::string& name) {
     std::string            path    = "/assets/materials/" + name + ".tex";
     std::shared_ptr<Image> img_ptr = std::make_shared<Image>();
     auto&                  img     = *img_ptr;
-    img.key                        = name;
+    img.key                        = m_vfs->ScopedResourceKey(path);
     // std::ifstream file = fs::GetFileFstream(vfs, path);
     auto pfile = m_vfs->Open(path);
     if (! pfile) return nullptr;

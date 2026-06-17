@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <cstdint>
 #include <vector>
 #include <memory>
 #include <string>
@@ -35,8 +37,31 @@ public:
 		}
 	};
 public:
-	VFS() = default;
+	VFS(): m_identity(s_next_identity.fetch_add(1, std::memory_order_relaxed)) {}
 	~VFS() = default;
+
+    uint64_t Identity() const { return m_identity; }
+
+    std::string ScopedResourceKey(std::string_view path) const {
+        std::string normalized;
+        normalized.reserve(path.size() + 1);
+        if (path.empty() || path.front() != '/') normalized.push_back('/');
+
+        bool previous_slash = false;
+        for (char ch : path) {
+            const char normalized_ch = ch == '\\' ? '/' : ch;
+            if (normalized_ch == '/') {
+                if (previous_slash) continue;
+                previous_slash = true;
+            } else {
+                previous_slash = false;
+            }
+            normalized.push_back(normalized_ch);
+        }
+        if (normalized.empty()) normalized = "/";
+
+        return std::to_string(m_identity) + ":" + normalized;
+    }
 
 	bool Mount(std::string_view mountpoint, std::unique_ptr<Fs> fs, std::string_view name="") {
 		if(!MountedFs::CheckMountPoint(mountpoint) || !fs) return false;
@@ -99,6 +124,8 @@ public:
 	}
 private:
 	std::vector<MountedFs> m_mountedFss;
+    uint64_t m_identity { 0 };
+    inline static std::atomic<uint64_t> s_next_identity { 1 };
 };
 
 inline std::string GetFileContent(fs::VFS& vfs, std::string_view path) {

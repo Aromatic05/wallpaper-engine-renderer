@@ -149,20 +149,53 @@ ParticleAnimationMode ToAnimMode(const std::string& str) {
     }
 }
 
+std::array<i32, 4> ResolvePaddedSpriteSheetResolution(const ImageHeader& texh,
+                                                      const SpriteFrame& frame) {
+    const auto physical_width  = texh.width > 0 ? texh.width : texh.mapWidth;
+    const auto physical_height = texh.height > 0 ? texh.height : texh.mapHeight;
+    auto       content_width   = texh.mapWidth > 0 ? texh.mapWidth : physical_width;
+    auto       content_height  = texh.mapHeight > 0 ? texh.mapHeight : physical_height;
+
+    const auto frame_width = static_cast<i32>(std::lround(frame.width));
+    if (frame_width > 0) content_width -= content_width % frame_width;
+    const auto frame_height = static_cast<i32>(std::lround(frame.height));
+    if (frame_height > 0) content_height -= content_height % frame_height;
+
+    return { physical_width, physical_height, content_width, content_height };
+}
+
 void LoadControlPoint(ParticleSubSystem& pSys, const wpscene::Particle& wp) {
     std::span<ParticleControlpoint> pcs = pSys.Controlpoints();
     usize                           s   = std::min(pcs.size(), wp.controlpoints.size());
     for (usize i = 0; i < s; i++) {
-        pcs[i].offset = Eigen::Vector3d { array_cast<double>(wp.controlpoints[i].offset).data() };
+        pcs[i].base_offset =
+            Eigen::Vector3d { array_cast<double>(wp.controlpoints[i].offset).data() };
+        pcs[i].offset = pcs[i].base_offset;
         pcs[i].link_mouse =
             wp.controlpoints[i].flags[wpscene::ParticleControlpoint::FlagEnum::link_mouse];
         pcs[i].worldspace =
             wp.controlpoints[i].flags[wpscene::ParticleControlpoint::FlagEnum::worldspace];
     }
 }
+
+wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
+    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
+    if (! is_child_subsystem) return layer_override;
+
+    auto child_override = layer_override;
+    child_override.overColor  = false;
+    child_override.overColorn = false;
+    return child_override;
+}
+
 void LoadInitializer(ParticleSubSystem& pSys, const wpscene::Particle& wp,
                      const wpscene::ParticleInstanceoverride& over) {
+    const bool replaces_color = over.enabled && (over.overColor || over.overColorn);
     for (const auto& ini : wp.initializers) {
+        if (replaces_color && ini.contains("name") && ini.at("name").is_string() &&
+            ini.at("name").get<std::string>() == "colorrandom") {
+            continue;
+        }
         pSys.AddInitializer(WPParticleParser::genParticleInitOp(ini));
     }
     if (over.enabled) pSys.AddInitializer(WPParticleParser::genOverrideInitOp(over));
@@ -371,15 +404,14 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
             }
             if ((pScene->textures.at(name)).isSprite) {
                 material.hasSprite = true;
-const auto& f1     = texh.spriteAnim.GetCurFrame();
+                const auto& f1 = texh.spriteAnim.GetCurFrame();
                 if (wpmat.shader == "genericparticle" || wpmat.shader == "genericropeparticle") {
                     pWPShaderInfo->combos["SPRITESHEET"] = "1";
                     pWPShaderInfo->combos["THICKFORMAT"] = "1";
                     if (algorism::IsPowOfTwo((u32)texh.width) &&
                         algorism::IsPowOfTwo((u32)texh.height)) {
                         pWPShaderInfo->combos["SPRITESHEETBLENDNPOT"] = "1";
-                        resolution[2] = resolution[0] - resolution[0] % (int)f1.width;
-                        resolution[3] = resolution[1] - resolution[1] % (int)f1.height;
+                        resolution = ResolvePaddedSpriteSheetResolution(texh, f1);
                     }
                     materialShader.constValues["g_RenderVar1"] = std::array {
                         f1.xAxis[0], f1.yAxis[1], (float)(texh.spriteAnim.numFrames()), f1.rate
@@ -923,9 +955,6 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                              Vector3f(child_ptr.child->scale.data()),
                                              Vector3f(child_ptr.child->angles.data()));
         child_data     = ChildData(*child_ptr.child);
-
-        child_ptr.max_instancecount *= child_data.maxcount;
-
     } else {
         p_particle_obj = &wppartobj.particleObj;
         spNode         = std::make_shared<SceneNode>(Vector3f(wppartobj.origin.data()),
@@ -933,7 +962,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                              Vector3f(wppartobj.angles.data()));
     }
 
-    wpscene::ParticleInstanceoverride override = wppartobj.instanceoverride;
+    wpscene::ParticleInstanceoverride override =
+        ResolveParticleSubsystemOverride(wppartobj.instanceoverride, is_child);
 
     auto& particle_obj = *p_particle_obj;
     auto& vfs          = *context.vfs;
@@ -981,7 +1011,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         shaderInfo.combos["TRAILRENDERER"] = "1";
     }
 
-    if (! particle_obj.flags[wpscene::Particle::FlagEnum::spritenoframeblending]) {
+    if (! particle_obj.flags[wpscene::Particle::FlagEnum::spritenoframeblending] &&
+        particle_obj.animationmode != "randomframe") {
         shaderInfo.combos["SPRITESHEETBLEND"] = "1";
     }
 
@@ -1011,7 +1042,11 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
 
     bool thick_format = material.hasSprite || hastrail;
     {
-        u32 mesh_maxcount = maxcount * (u32)child_ptr.max_instancecount;
+        u32 mesh_instancecount = static_cast<u32>(std::max<i32>(1, child_data.maxcount));
+        if (is_child && ParseSpawnType(child_data.type) == ParticleSubSystem::SpawnType::STATIC) {
+            mesh_instancecount = 1;
+        }
+        u32 mesh_maxcount = maxcount * mesh_instancecount;
         if (render_rope)
             SetRopeParticleMesh(mesh, particle_obj, mesh_maxcount, thick_format);
         else
@@ -1039,6 +1074,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                 break;
             }
         });
+    particleSub->SetSceneNode(spNode.get());
+    particleSub->SetRuntimeSizeReference(override.size);
 
     LoadEmitter(*particleSub, particle_obj, override.count, render_rope);
     LoadInitializer(*particleSub, particle_obj, override);
@@ -1060,10 +1097,13 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                          });
     }
 
-    if (is_child)
+    if (is_child) {
         child_ptr.particle_parent->AddChild(std::move(particleSub));
-    else
+    } else {
+        context.scene->runtimeParticleSubsystemsByObjectId[wppartobj.id].push_back(particleSub.get());
+        context.scene->runtimeParticleObjectIdsByName[wppartobj.name] = wppartobj.id;
         context.scene->paritileSys->subsystems.emplace_back(std::move(particleSub));
+    }
 
     if (is_child)
         child_ptr.node_parent->AppendChild(spNode);

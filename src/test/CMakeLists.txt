@@ -47,6 +47,16 @@ target_compile_options(host-services-contract-test PRIVATE ${warn_opts})
 
 add_test(NAME host-services-contract-test COMMAND host-services-contract-test)
 
+add_executable(
+  resource-correctness-test
+  resource_correctness_test.cpp)
+
+target_link_libraries(resource-correctness-test PRIVATE ${PROJECT_NAME})
+target_include_directories(resource-correctness-test PRIVATE ..)
+target_compile_options(resource-correctness-test PRIVATE ${warn_opts})
+
+add_test(NAME resource-correctness-test COMMAND resource-correctness-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}

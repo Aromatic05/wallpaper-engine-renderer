@@ -36,15 +36,19 @@ public:
     virtual ~WPSoundStream() = default;
 
     uint64_t NextPcmData(void* pData, uint32_t frameCount) override {
+        if (m_soundPaths.empty()) return 0;
+
         // first
         if (! m_curActive) {
             Switch();
         }
+        if (! m_curActive) return 0;
 
         // loop
         uint64_t frameReads = m_curActive->NextPcmData(pData, frameCount);
         if (frameReads == 0) {
             Switch();
+            if (! m_curActive) return 0;
             frameReads = m_curActive->NextPcmData(pData, frameCount);
         }
         // volume
@@ -58,10 +62,25 @@ public:
         return frameReads;
     };
     void PassDesc(const Desc& d) override { m_desc = d; }
+
     void Switch() {
-        std::string path = m_soundPaths[LoopIndex()];
-        // LOG_INFO("Switch to audio file: %s", path.c_str());
-        m_curActive = audio::CreateSoundStream(vfs.Open("/assets/" + path), m_desc);
+        if (m_soundPaths.empty()) return;
+
+        const std::string path = m_soundPaths[LoopIndex()];
+        auto              stream = vfs.Open("/assets/" + path);
+        if (! stream) {
+            LOG_ERROR("SceneSoundSwitch: asset-open-failed path='%s'", path.c_str());
+            m_curActive.reset();
+            return;
+        }
+
+        m_curActive = audio::CreateSoundStream(std::move(stream), m_desc);
+        if (! m_curActive) {
+            LOG_ERROR("SceneSoundSwitch: decoder-create-failed path='%s' channels=%u sample-rate=%u",
+                      path.c_str(),
+                      m_desc.channels,
+                      m_desc.sampleRate);
+        }
     }
     uint32_t LoopIndex() {
         m_curIndex++;
@@ -87,6 +106,5 @@ void WPSoundParser::Parse(const wpscene::WPSoundObject& obj, fs::VFS& vfs,
                                    .mode    = ToPlaybackMode(obj.playbackmode) };
 
     auto ss = std::make_unique<WPSoundStream>(obj.sound, vfs, config);
-    // auto ss_raw = ss.get();
     sm.MountStream(std::move(ss));
 }

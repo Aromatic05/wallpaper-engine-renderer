@@ -11,6 +11,7 @@
 namespace wallpaper
 {
 class ParticleSystem;
+class ParticleSubSystem;
 class IShaderValueUpdater;
 class IImageParser;
 
@@ -39,6 +40,9 @@ public:
     std::string scene_id { "unknown_id" };
 
     bool first_frame_ok { false };
+
+    std::unordered_map<int32_t, std::vector<ParticleSubSystem*>> runtimeParticleSubsystemsByObjectId;
+    std::unordered_map<std::string, int32_t>                     runtimeParticleObjectIdsByName;
 
     SceneMesh default_effect_mesh;
 

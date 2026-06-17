@@ -16,6 +16,7 @@ namespace wallpaper
 struct ParticleControlpoint {
     bool            link_mouse { false };
     bool            worldspace { false };
+    Eigen::Vector3d base_offset { 0, 0, 0 };
     Eigen::Vector3d offset { 0, 0, 0 };
 };
 

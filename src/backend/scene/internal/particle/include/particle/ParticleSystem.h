@@ -5,9 +5,12 @@
 #include "core/MapSet.hpp"
 
 #include <memory>
+#include <optional>
 
 namespace wallpaper
 {
+
+class SceneNode;
 
 enum class ParticleAnimationMode
 {
@@ -39,6 +42,7 @@ public:
     std::vector<Particle>&    ParticlesVec();
 
     BoundedData& GetBoundedData();
+    const BoundedData& GetBoundedData() const;
 
 private:
     bool                  m_is_death { false };
@@ -78,8 +82,20 @@ public:
 
     SpawnType Type() const;
     u32       MaxInstanceCount() const;
+    void      SetSceneNode(SceneNode* node);
+    void      SetRuntimeColorOverride(const std::array<float, 3>& color);
+    void      SetRuntimeRateOverride(float rate);
+    void      SetRuntimeSizeReference(float size);
+    void      SetRuntimeSizeOverride(float size);
 
 private:
+    Eigen::Vector3f ResolveEventAnchorPosition(const Eigen::Vector3f& parent_position);
+    void ApplyRuntimeColorOverrideToParticle(Particle& particle) const;
+    void ApplyRuntimeColorOverrideToInstances();
+    void ApplyRuntimeSizeDeltaToParticle(Particle& particle, float size_delta) const;
+    void ApplyRuntimeSizeDeltaToInstances(float size_delta);
+    void ApplyRuntimeSizeOverrideToNewParticle(Particle& particle) const;
+
     ParticleSystem&            m_sys;
     std::shared_ptr<SceneMesh> m_mesh;
     //	std::vector<std::unique_ptr<ParticleEmitter>> m_emiters;
@@ -102,6 +118,11 @@ private:
     u32       m_maxcount_instance { 1 };
     double    m_probability { 1.0f };
     SpawnType m_spawn_type { SpawnType::STATIC };
+    SceneNode* m_node { nullptr };
+    bool       m_logged_event_anchor_transform_error { false };
+    std::optional<std::array<float, 3>> m_runtime_color_override;
+    std::optional<float> m_runtime_size_reference;
+    float                m_runtime_size_ratio { 1.0f };
 };
 
 class Scene;

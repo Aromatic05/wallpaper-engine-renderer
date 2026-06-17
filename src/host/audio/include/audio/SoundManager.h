@@ -1,7 +1,6 @@
 #pragma once
 #include <memory>
 #include <cstdint>
-#include <functional>
 #include "utils/Logging.h"
 #include "core/NoCopyMove.hpp"
 
