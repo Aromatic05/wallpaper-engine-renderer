@@ -2,8 +2,7 @@
 
 #include "api/WallpaperRuntime.hpp"
 #include "api/WallpaperSession.hpp"
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
-#include "backend/scene/compatibility/WESceneRenderInit.hpp"
+#include "api/scene/WESceneOutput.hpp"
 #include "common/result/Result.hpp"
 
 #include <cstdint>

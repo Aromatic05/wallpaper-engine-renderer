@@ -1,4 +1,4 @@
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "api/scene/WESceneOutput.hpp"
 
 namespace wallpaper
 {

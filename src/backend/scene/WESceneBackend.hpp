@@ -1,7 +1,7 @@
 #pragma once
 
 #include "backend/scene/legacy/SceneWallpaper.hpp"
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "api/scene/WESceneOutput.hpp"
 #include "common/result/Result.hpp"
 #include "output/RenderPlanSource.hpp"
 #include "output/OutputTarget.hpp"

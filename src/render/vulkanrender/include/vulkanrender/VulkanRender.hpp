@@ -1,7 +1,7 @@
 #pragma once
 
 #include "rendergraph/RenderGraph.hpp"
-#include "backend/scene/compatibility/WESceneRenderInit.hpp"
+#include "api/scene/WESceneRenderInit.hpp"
 #include "swapchain/ExSwapchain.hpp"
 #include "Type.hpp"
 
