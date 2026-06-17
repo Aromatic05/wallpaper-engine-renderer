@@ -8,7 +8,7 @@ enum class OutputTargetBindingKind
 {
     Surface,
     Offscreen,
-    WESceneVulkan
+    VulkanRenderTarget
 };
 
 class OutputTargetBinding {

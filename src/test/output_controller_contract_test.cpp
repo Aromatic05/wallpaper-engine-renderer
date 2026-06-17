@@ -15,7 +15,7 @@ public:
         , m_shouldFail(shouldFail) {}
 
     wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
-        return wallpaper::OutputTargetBindingKind::WESceneVulkan;
+        return wallpaper::OutputTargetBindingKind::VulkanRenderTarget;
     }
 
     std::uint64_t revision() const override { return m_revision; }
@@ -84,7 +84,7 @@ public:
     ~LifetimeTrackedRenderPlan() override { ++m_destructionCount; }
 
     wallpaper::OutputTargetBindingKind requiredBindingKind() const override {
-        return wallpaper::OutputTargetBindingKind::WESceneVulkan;
+        return wallpaper::OutputTargetBindingKind::VulkanRenderTarget;
     }
 
     std::uint64_t revision() const override { return 23; }

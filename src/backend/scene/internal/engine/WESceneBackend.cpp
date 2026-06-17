@@ -14,7 +14,7 @@ public:
         : m_runtimeDriver(runtimeDriver) {}
 
     OutputTargetBindingKind requiredBindingKind() const override {
-        return OutputTargetBindingKind::WESceneVulkan;
+        return OutputTargetBindingKind::VulkanRenderTarget;
     }
 
     std::uint64_t revision() const override { return 1; }

@@ -30,7 +30,7 @@ inline WESceneOutputBinding::WESceneOutputBinding(RenderInitInfo renderInitInfo)
     : m_renderInitInfo(std::move(renderInitInfo)) {}
 
 inline OutputTargetBindingKind WESceneOutputBinding::kind() const {
-    return OutputTargetBindingKind::WESceneVulkan;
+    return OutputTargetBindingKind::VulkanRenderTarget;
 }
 
 inline const RenderInitInfo& WESceneOutputBinding::renderInitInfo() const {
