@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(wescene-renderer)
+project(wallpaper-engine-renderer)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 
+include(CTest)
 
 include_directories(SYSTEM third_party)
 
@@ -39,4 +40,8 @@ if(BUILD_QML)
     set(CMAKE_AUTOMOC OFF) 
     set(CMAKE_AUTORCC OFF) 
     set(CMAKE_AUTOUIC OFF) 
+endif()
+
+if(BUILD_TESTING)
+    add_subdirectory(src/test)
 endif()
