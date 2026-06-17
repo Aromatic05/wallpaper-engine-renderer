@@ -6,8 +6,8 @@
 #include <GLFW/glfw3.h>
 #include <atomic>
 #include "arg.hpp"
-#include "api/WallpaperRuntime.hpp"
-#include "api/scene/WEScene.hpp"
+#include "wallpaper/WallpaperRuntime.hpp"
+#include "wallpaper/scene/WEScene.hpp"
 #include "host/CachePath.hpp"
 
 using namespace std;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "output/swapchain/ExSwapchain.hpp"
+#include "swapchain/ExSwapchain.hpp"
 
 #include <cstdint>
 #include <functional>

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "api/WallpaperTypes.hpp"
-#include "common/result/Result.hpp"
-#include "output/OutputTarget.hpp"
-#include "runtime/diagnostics/Diagnostics.hpp"
-#include "runtime/input/InputEvent.hpp"
-#include "runtime/property/PropertyValue.hpp"
-#include "runtime/session/SessionState.hpp"
+#include "WallpaperTypes.hpp"
+#include "../common/result/Result.hpp"
+#include "../output/OutputTarget.hpp"
+#include "../runtime/diagnostics/Diagnostics.hpp"
+#include "../runtime/input/InputEvent.hpp"
+#include "../runtime/property/PropertyValue.hpp"
+#include "../runtime/session/SessionState.hpp"
 
 #include <memory>
 #include <string_view>

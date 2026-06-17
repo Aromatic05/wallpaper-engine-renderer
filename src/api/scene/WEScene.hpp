@@ -1,10 +1,10 @@
 #pragma once
 
-#include "api/WallpaperRuntime.hpp"
-#include "api/WallpaperSession.hpp"
-#include "api/scene/WESceneOutput.hpp"
-#include "common/scene/WESceneContract.hpp"
-#include "common/result/Result.hpp"
+#include "../WallpaperRuntime.hpp"
+#include "../WallpaperSession.hpp"
+#include "WESceneOutput.hpp"
+#include "../../common/scene/WESceneContract.hpp"
+#include "../../common/result/Result.hpp"
 
 #include <cstdint>
 #include <memory>

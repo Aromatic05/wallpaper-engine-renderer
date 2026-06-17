@@ -1,7 +1,7 @@
 #pragma once
 
-#include "api/WallpaperRuntime.hpp"
-#include "api/WallpaperSession.hpp"
+#include "../WallpaperRuntime.hpp"
+#include "../WallpaperSession.hpp"
 
 #include <string>
 
