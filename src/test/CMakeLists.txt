@@ -16,3 +16,9 @@ target_link_libraries(wallpaper-public-api-test PRIVATE ${PROJECT_NAME})
 target_compile_options(wallpaper-public-api-test PRIVATE ${warn_opts})
 
 add_test(NAME wallpaper-public-api-test COMMAND wallpaper-public-api-test)
+
+add_test(
+  NAME wallpaper-architecture-guard-test
+  COMMAND ${CMAKE_COMMAND}
+          -DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture_guard_test.cmake)
