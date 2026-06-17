@@ -18,21 +18,16 @@ set(warn_opts
     -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
     CACHE INTERNAL "")
 
-include_directories(. common host)
+include_directories(. common host backend/scene/internal render output)
 
 add_subdirectory(common)
 add_subdirectory(host)
-add_subdirectory(Scene)
-add_subdirectory(Vulkan)
-add_subdirectory(Particle)
-add_subdirectory(VulkanRender)
-add_subdirectory(RenderGraph)
+add_subdirectory(backend/scene/internal)
+add_subdirectory(render)
 
 add_library(
   ${PROJECT_NAME} STATIC
-  WPJson.cpp
-  WPPkgFs.cpp
-  Type.cpp
+  common/Type.cpp
   backend/BuiltinBackendFactory.cpp
   backend/scene/compatibility/WESceneSource.cpp
   backend/scene/compatibility/WESceneSession.cpp
@@ -41,20 +36,22 @@ add_library(
   runtime/session/WallpaperSession.cpp
   backend/scene/compatibility/WESceneOutputTarget.cpp
   backend/scene/WESceneBackend.cpp
-  wpscene/WPImageObject.cpp
-  wpscene/WPParticleObject.cpp
-  wpscene/WPMaterial.cpp
-  wpscene/WPScene.cpp
-  wpscene/WPLightObject.cpp
-  WPParticleParser.cpp
-  WPShaderParser.cpp
-  WPSceneParser.cpp
-  WPShaderValueUpdater.cpp
-  WPTexImageParser.cpp
-  WPSoundParser.cpp
-  WPMdlParser.cpp
-  WPPuppet.cpp
-  SceneWallpaper.cpp)
+  backend/scene/internal/WPJson.cpp
+  backend/scene/internal/WPPkgFs.cpp
+  backend/scene/internal/wpscene/WPImageObject.cpp
+  backend/scene/internal/wpscene/WPParticleObject.cpp
+  backend/scene/internal/wpscene/WPMaterial.cpp
+  backend/scene/internal/wpscene/WPScene.cpp
+  backend/scene/internal/wpscene/WPLightObject.cpp
+  backend/scene/internal/WPParticleParser.cpp
+  backend/scene/internal/WPShaderParser.cpp
+  backend/scene/internal/WPSceneParser.cpp
+  backend/scene/internal/WPShaderValueUpdater.cpp
+  backend/scene/internal/WPTexImageParser.cpp
+  backend/scene/internal/WPSoundParser.cpp
+  backend/scene/internal/WPMdlParser.cpp
+  backend/scene/internal/WPPuppet.cpp
+  backend/scene/legacy/SceneWallpaper.cpp)
 
 set(InteralLib
     wpAudio
@@ -73,5 +70,5 @@ target_link_libraries(
   PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain common host)
+target_include_directories(${PROJECT_NAME} PUBLIC . common host backend/scene/internal render output)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
