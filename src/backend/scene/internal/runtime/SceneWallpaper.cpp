@@ -19,7 +19,7 @@
 
 #include "rendergraph/RenderGraph.hpp"
 
-#include "vulkanrender/SceneToRenderGraph.hpp"
+#include "SceneToRenderGraph.hpp"
 #include "vulkanrender/VulkanRender.hpp"
 #include <atomic>
 

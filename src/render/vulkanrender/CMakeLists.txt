@@ -6,7 +6,6 @@ CopyPass.cpp
 CustomShaderPass.cpp
 FinPass.cpp
 PrePass.cpp
-SceneToRenderGraph.cpp
 VulkanRender.cpp
 )
 
