@@ -6,8 +6,9 @@
 #include <GLFW/glfw3.h>
 #include <atomic>
 #include "arg.hpp"
-#include "SceneWallpaper.hpp"
-#include "SceneWallpaperSurface.hpp"
+#include "api/WallpaperRuntime.hpp"
+#include "backend/scene/WESceneBackend.hpp"
+#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 
 #include "Utils/Platform.hpp"
 
@@ -16,7 +17,7 @@ using namespace std;
 atomic<bool> renderCall(false);
 
 struct UserData {
-    wallpaper::SceneWallpaper* psw { nullptr };
+    wallpaper::WallpaperSession* session { nullptr };
 
     uint16_t width;
     uint16_t height;
@@ -34,7 +35,11 @@ void mouse_button_callback(GLFWwindow* win, int button, int action, int mods) {
 
 void cursor_position_callback(GLFWwindow* win, double xpos, double ypos) {
     UserData* data = static_cast<UserData*>(glfwGetWindowUserPointer(win));
-    data->psw->mouseInput(xpos / data->width, ypos / data->height);
+    wallpaper::InputEvent event;
+    event.type     = wallpaper::InputEventType::PointerMove;
+    event.pointerX = xpos / data->width;
+    event.pointerY = ypos / data->height;
+    data->session->sendInput(event);
 }
 }
 
@@ -80,19 +85,29 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    auto* psw = new wallpaper::SceneWallpaper();
-    data.psw  = psw;
-
-    psw->init();
-    psw->initVulkan(info);
-    psw->setPropertyString(wallpaper::PROPERTY_ASSETS, program.get<std::string>(ARG_ASSETS));
-    psw->setPropertyString(wallpaper::PROPERTY_SOURCE, program.get<std::string>(ARG_SCENE));
-    psw->setPropertyBool(wallpaper::PROPERTY_GRAPHIVZ, program.get<bool>(OPT_GRAPHVIZ));
-    psw->setPropertyInt32(wallpaper::PROPERTY_FPS, program.get<int32_t>(OPT_FPS));
-
+    wallpaper::WallpaperRuntime runtime;
+    wallpaper::SessionConfig    config;
+    config.backendFactory = std::make_shared<wallpaper::WESceneBackendFactory>();
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
     if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
-    psw->setPropertyString(wallpaper::PROPERTY_CACHE_PATH, cache_path);
+    config.cachePath = cache_path;
+
+    auto session = runtime.createSession(config);
+    data.session = session.get();
+
+    wallpaper::WallpaperSource source;
+    source.type = wallpaper::BackendType::WEScene;
+    source.uri  = program.get<std::string>(ARG_SCENE);
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_ASSETS),
+                                     program.get<std::string>(ARG_ASSETS));
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_GRAPHIVZ),
+                                     program.get<bool>(OPT_GRAPHVIZ));
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FPS),
+                                     program.get<int32_t>(OPT_FPS));
+
+    session->load(source);
+    session->bindOutput(wallpaper::MakeWESceneOutputTarget(info));
+    session->play();
 
     glfwSetWindowUserPointer(window, &data);
 
@@ -103,7 +118,6 @@ int main(int argc, char** argv) {
     while (! glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
-    delete psw;
     // wgl.Clear();
     glfwDestroyWindow(window);
     glfwTerminate();

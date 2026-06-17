@@ -21,8 +21,7 @@
 #include <functional>
 
 #include "glExtra.hpp"
-#include "SceneWallpaper.hpp"
-#include "SceneWallpaperSurface.hpp"
+#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 #include "Type.hpp"
 #include "Utils/Platform.hpp"
 #include <cstdio>
@@ -66,8 +65,6 @@ wallpaper::FillMode ToWPFillMode(int fillMode) {
 
 } // namespace
 
-using sp_scene_t = std::shared_ptr<wallpaper::SceneWallpaper>;
-
 namespace scenebackend
 {
 
@@ -75,9 +72,14 @@ class TextureNode : public QObject, public QSGSimpleTextureNode {
     Q_OBJECT
 public:
     typedef std::function<QSGTexture*(QQuickWindow*)> EatFrameOp;
-    TextureNode(QQuickWindow* window, sp_scene_t scene, bool valid, EatFrameOp eatFrameOp)
+    TextureNode(QQuickWindow*                                     window,
+                SceneObject*                                      owner,
+                std::shared_ptr<wallpaper::WESceneOutputBinding> outputBinding,
+                bool                                              valid,
+                EatFrameOp                                        eatFrameOp)
         : m_texture(nullptr),
-          m_scene(scene),
+          m_owner(owner),
+          m_output_binding(std::move(outputBinding)),
           m_enable_valid(valid),
           m_eatFrameOp(eatFrameOp),
           m_window(window),
@@ -122,9 +124,13 @@ public:
             m_first_frame = true;
             Q_EMIT this->redraw();
         });
-        m_scene->setPropertyObject(wallpaper::PROPERTY_FIRST_FRAME_CALLBACK, cb);
-        // this send to looper, not in this thread
-        m_scene->initVulkan(info);
+        m_owner->ensureSession();
+        m_owner->ensureLoaded();
+        m_owner->session()->setProperty(wallpaper::PROPERTY_FIRST_FRAME_CALLBACK,
+                                        std::static_pointer_cast<void>(cb));
+        m_output_binding = wallpaper::MakeWESceneOutputBinding(info);
+        m_owner->setOutputBinding(m_output_binding);
+        m_owner->session()->bindOutput(wallpaper::MakeWESceneOutputTarget(m_output_binding));
     }
 
     void emitSceneFirstFrame() { Q_EMIT sceneFirstFrame(); }
@@ -136,9 +142,9 @@ signals:
 
 public slots:
     void newTexture() {
-        if (! m_scene->inited() || m_scene->exSwapchain() == nullptr) return;
+        if (! m_output_binding || m_output_binding->swapchain() == nullptr) return;
 
-        wallpaper::ExHandle* exh = m_scene->exSwapchain()->eatFrame();
+        wallpaper::ExHandle* exh = m_output_binding->swapchain()->eatFrame();
         if (exh != nullptr) {
             int id = exh->id();
             if (texs_map.count(id) == 0) {
@@ -173,8 +179,9 @@ public slots:
     }
 
 private:
-    sp_scene_t m_scene;
-    bool       m_enable_valid;
+    SceneObject*                                      m_owner;
+    std::shared_ptr<wallpaper::WESceneOutputBinding> m_output_binding;
+    bool                                              m_enable_valid;
 
     QSGTexture*       m_init_texture;
     QSGTexture*       m_texture;
@@ -195,10 +202,10 @@ private:
 } // namespace scenebackend
 
 SceneObject::SceneObject(QQuickItem* parent)
-    : QQuickItem(parent), m_scene(std::make_shared<wallpaper::SceneWallpaper>()) {
+    : QQuickItem(parent)
+    , m_backendFactory(std::make_shared<wallpaper::WESceneBackendFactory>()) {
     setFlag(ItemHasContents, true);
-    m_scene->init();
-    m_scene->setPropertyString(wallpaper::PROPERTY_CACHE_PATH, GetDefaultCachePath());
+    ensureSession();
 }
 
 SceneObject::~SceneObject() { _Q_INFO("Destroy sceneobject", ""); }
@@ -212,7 +219,8 @@ void SceneObject::resizeFb() {
 QSGNode* SceneObject::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     TextureNode* node = static_cast<TextureNode*>(oldNode);
     if (! node) {
-        node = new TextureNode(window(), m_scene, m_enable_valid, [this](QQuickWindow* window) {
+        ensureSession();
+        node = new TextureNode(window(), this, m_outputBinding, m_enable_valid, [this](QQuickWindow* window) {
             return (QSGTexture*)nullptr;
         });
         if (node->initGl()) {
@@ -233,11 +241,23 @@ QSGNode* SceneObject::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     return node;
 }
 
-#define SET_PROPERTY(type, name, value) m_scene->setProperty##type(name, value);
-
 void SceneObject::setScenePropertyQurl(std::string_view name, QUrl value) {
     auto str_value = QDir::toNativeSeparators(value.toLocalFile()).toStdString();
-    SET_PROPERTY(String, name, str_value);
+    ensureSession();
+
+    if (name == wallpaper::PROPERTY_SOURCE) {
+        m_source = value;
+        m_loaded = false;
+        ensureLoaded();
+        return;
+    }
+
+    if (name == wallpaper::PROPERTY_ASSETS) {
+        m_assets = value;
+        if (! m_loaded) return;
+    }
+
+    m_session->setProperty(name, str_value);
 }
 // qobject
 
@@ -266,39 +286,60 @@ void SceneObject::setAssets(const QUrl& assets) {
 void SceneObject::setFps(int value) {
     if (m_fps == value) return;
     m_fps = value;
-    SET_PROPERTY(Int32, wallpaper::PROPERTY_FPS, value);
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_FPS, static_cast<std::int32_t>(value));
+    }
     Q_EMIT fpsChanged();
 }
 void SceneObject::setFillMode(int value) {
     if (m_fillMode == value) return;
     m_fillMode = value;
-    SET_PROPERTY(Int32, wallpaper::PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_FILLMODE, (int32_t)ToWPFillMode(value));
+    }
     Q_EMIT fillModeChanged();
 }
 void SceneObject::setSpeed(float value) {
     if (m_speed == value) return;
     m_speed = value;
-    SET_PROPERTY(Float, wallpaper::PROPERTY_SPEED, value);
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_SPEED, value);
+    }
     Q_EMIT speedChanged();
 }
 void SceneObject::setVolume(float value) {
     if (m_volume == value) return;
     m_volume = value;
-    SET_PROPERTY(Float, wallpaper::PROPERTY_VOLUME, value);
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_VOLUME, value);
+    }
     Q_EMIT volumeChanged();
 }
 void SceneObject::setMuted(bool value) {
     if (m_muted == value) return;
     m_muted = value;
-    SET_PROPERTY(Bool, wallpaper::PROPERTY_MUTED, value);
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_MUTED, value);
+    }
 }
 
-void SceneObject::play() { m_scene->play(); }
-void SceneObject::pause() { m_scene->pause(); }
+void SceneObject::play() {
+    ensureLoaded();
+    m_session->play();
+}
+void SceneObject::pause() {
+    ensureLoaded();
+    m_session->pause();
+}
 
 bool SceneObject::vulkanValid() const { return m_enable_valid; }
 void SceneObject::enableVulkanValid() { m_enable_valid = true; }
-void SceneObject::enableGenGraphviz() { SET_PROPERTY(Bool, wallpaper::PROPERTY_GRAPHIVZ, true); }
+void SceneObject::enableGenGraphviz() {
+    m_genGraphviz = true;
+    if (m_loaded) {
+        m_session->setProperty(wallpaper::PROPERTY_GRAPHIVZ, true);
+    }
+}
 
 void SceneObject::setAcceptMouse(bool value) {
     if (value)
@@ -316,7 +357,12 @@ void SceneObject::mouseMoveEvent(QMouseEvent* event) {
 #else
     auto pos = event->localPos();
 #endif
-    m_scene->mouseInput(pos.x() / width(), pos.y() / height());
+    ensureLoaded();
+    wallpaper::InputEvent input;
+    input.type     = wallpaper::InputEventType::PointerMove;
+    input.pointerX = pos.x() / width();
+    input.pointerY = pos.y() / height();
+    m_session->sendInput(input);
 }
 
 void SceneObject::hoverMoveEvent(QHoverEvent* event) {
@@ -325,11 +371,63 @@ void SceneObject::hoverMoveEvent(QHoverEvent* event) {
 #else
     auto pos = event->posF();
 #endif
-    m_scene->mouseInput(pos.x() / width(), pos.y() / height());
+    ensureLoaded();
+    wallpaper::InputEvent input;
+    input.type     = wallpaper::InputEventType::PointerMove;
+    input.pointerX = pos.x() / width();
+    input.pointerY = pos.y() / height();
+    m_session->sendInput(input);
 }
 
 std::string SceneObject::GetDefaultCachePath() {
     return wallpaper::platform::GetCachePath(CACHE_DIR);
+}
+
+wallpaper::WallpaperSession* SceneObject::session() const { return m_session.get(); }
+
+std::shared_ptr<wallpaper::WESceneOutputBinding> SceneObject::outputBinding() const {
+    return m_outputBinding;
+}
+
+void SceneObject::setOutputBinding(std::shared_ptr<wallpaper::WESceneOutputBinding> binding) {
+    m_outputBinding = std::move(binding);
+}
+
+void SceneObject::ensureSession() {
+    if (m_session) return;
+
+    wallpaper::SessionConfig config;
+    config.backendFactory = m_backendFactory;
+    config.cachePath      = GetDefaultCachePath();
+    m_session             = m_runtime.createSession(config);
+}
+
+void SceneObject::ensureLoaded() {
+    ensureSession();
+    if (m_loaded || ! m_source.isValid() || m_source.isEmpty()) return;
+
+    wallpaper::WallpaperSource source;
+    source.type = wallpaper::BackendType::WEScene;
+    source.uri  = QDir::toNativeSeparators(m_source.toLocalFile()).toStdString();
+    if (m_assets.isValid() && ! m_assets.isEmpty()) {
+        source.initialProperties.emplace(std::string(wallpaper::PROPERTY_ASSETS),
+                                         QDir::toNativeSeparators(m_assets.toLocalFile()).toStdString());
+    }
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FPS), static_cast<std::int32_t>(m_fps));
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_FILLMODE),
+                                     static_cast<std::int32_t>(ToWPFillMode(m_fillMode)));
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_SPEED), m_speed);
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_VOLUME), m_volume);
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_MUTED), m_muted);
+    source.initialProperties.emplace(std::string(wallpaper::PROPERTY_GRAPHIVZ), m_genGraphviz);
+
+    auto result = m_session->load(source);
+    if (! result) return;
+
+    m_loaded = true;
+    if (m_outputBinding) {
+        m_session->bindOutput(wallpaper::MakeWESceneOutputTarget(m_outputBinding));
+    }
 }
 
 #include "SceneBackend.moc"

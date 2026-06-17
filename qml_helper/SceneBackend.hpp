@@ -6,7 +6,9 @@
 #include <QtGui/QMouseEvent>
 #include <QtGui/QHoverEvent>
 
-#include "SceneWallpaper.hpp"
+#include "api/WallpaperRuntime.hpp"
+#include "backend/scene/WESceneBackend.hpp"
+#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
 
 Q_DECLARE_LOGGING_CATEGORY(wekdeScene)
 
@@ -86,6 +88,7 @@ private:
     float m_speed { 1.0f };
     float m_volume { 1.0f };
     bool  m_muted { false };
+    bool  m_genGraphviz { false };
 
 public:
     static void on_update(void* ctx);
@@ -93,12 +96,21 @@ public:
     explicit SceneObject(QQuickItem* parent = nullptr);
     virtual ~SceneObject();
 
+    wallpaper::WallpaperSession*                            session() const;
+    std::shared_ptr<wallpaper::WESceneOutputBinding>        outputBinding() const;
+    void                                                   setOutputBinding(std::shared_ptr<wallpaper::WESceneOutputBinding> binding);
+    void                                                   ensureSession();
+    void                                                   ensureLoaded();
+
 private:
     void setScenePropertyQurl(std::string_view, QUrl);
-    bool m_inited { false };
     bool m_enable_valid { false };
+    bool m_loaded { false };
 
-    std::shared_ptr<wallpaper::SceneWallpaper> m_scene { nullptr };
+    wallpaper::WallpaperRuntime                       m_runtime;
+    std::shared_ptr<wallpaper::BackendFactory>       m_backendFactory;
+    std::unique_ptr<wallpaper::WallpaperSession>     m_session;
+    std::shared_ptr<wallpaper::WESceneOutputBinding> m_outputBinding;
 
 protected:
     QSGNode* updatePaintNode(QSGNode*, UpdatePaintNodeData*);
