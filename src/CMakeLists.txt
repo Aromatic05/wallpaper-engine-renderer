@@ -29,6 +29,7 @@ add_library(
   ${PROJECT_NAME} STATIC
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
+  backend/BuiltinSessionFactory.cpp
   api/scene/WEScene.cpp
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp

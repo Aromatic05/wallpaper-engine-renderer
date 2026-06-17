@@ -1,5 +1,7 @@
 #include "api/web/Web.hpp"
+#include "backend/BuiltinSessionFactory.hpp"
 
+#include <utility>
 namespace wallpaper
 {
 std::unique_ptr<WallpaperSession> CreateWebSession(WallpaperRuntime& runtime, std::string cachePath) {

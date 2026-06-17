@@ -1,5 +1,6 @@
 #include "api/scene/WEScene.hpp"
 #include "api/scene/WESceneSource.hpp"
+#include "backend/BuiltinSessionFactory.hpp"
 
 namespace wallpaper
 {
