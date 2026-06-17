@@ -7,7 +7,7 @@
 #include <QtGui/QHoverEvent>
 
 #include "api/WallpaperRuntime.hpp"
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
+#include "api/scene/WEScene.hpp"
 
 Q_DECLARE_LOGGING_CATEGORY(wekdeScene)
 

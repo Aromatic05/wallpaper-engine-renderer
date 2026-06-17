@@ -21,9 +21,7 @@
 #include <functional>
 
 #include "glExtra.hpp"
-#include "backend/scene/compatibility/WESceneOutputTarget.hpp"
-#include "backend/scene/compatibility/WESceneSession.hpp"
-#include "backend/scene/compatibility/WESceneSource.hpp"
+#include "api/scene/WEScene.hpp"
 #include "Type.hpp"
 #include "Utils/Platform.hpp"
 #include <cstdio>

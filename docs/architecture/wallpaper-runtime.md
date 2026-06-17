@@ -129,6 +129,7 @@ This stage intentionally uses shim layers:
 
 - `backend/scene/WESceneBackend` wraps the existing `SceneWallpaper`
 - `backend/scene/compatibility/WESceneRenderInit.hpp` owns scene-output init types for new code
+- `api/scene/WEScene.hpp` is the preferred include for WE scene session compatibility helpers
 - `output/OutputController` binds runtime sessions to backend-provided `OutputSource`
 - `api/WallpaperRuntime.hpp` becomes the top-level entry for new integrations
 

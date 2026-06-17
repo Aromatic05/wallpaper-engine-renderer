@@ -7,7 +7,7 @@
 #include <atomic>
 #include "arg.hpp"
 #include "api/WallpaperRuntime.hpp"
-#include "backend/scene/compatibility/WESceneSession.hpp"
+#include "api/scene/WEScene.hpp"
 
 #include "Utils/Platform.hpp"
 
