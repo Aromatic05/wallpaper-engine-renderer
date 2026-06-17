@@ -6,6 +6,19 @@ namespace wallpaper
 {
 namespace
 {
+const char* sessionStateName(SessionState state) {
+    switch (state) {
+    case SessionState::Idle: return "Idle";
+    case SessionState::Loaded: return "Loaded";
+    case SessionState::Playing: return "Playing";
+    case SessionState::Paused: return "Paused";
+    case SessionState::Stopped: return "Stopped";
+    case SessionState::Error: return "Error";
+    }
+
+    return "Unknown";
+}
+
 Result<void> missingFactory() {
     return Result<void>::failure(ResultCode::InvalidState, "session has no backend factory");
 }
@@ -23,6 +36,11 @@ Result<void> WallpaperSession::load(const WallpaperSource& source) {
         recordError("runtime.session", missingFactory().error());
         m_state = SessionState::Error;
         return missingFactory();
+    }
+
+    auto resetResult = resetBackendForLoad();
+    if (! resetResult) {
+        return resetResult;
     }
 
     WallpaperSource resolvedSource = source;
@@ -70,6 +88,14 @@ Result<void> WallpaperSession::bindOutput(OutputTarget target) {
 Result<void> WallpaperSession::play() {
     auto stateResult = ensureBackend();
     if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
+        return stateResult;
+    }
+
+    stateResult = ensureState("play",
+                              { SessionState::Loaded, SessionState::Paused, SessionState::Stopped });
+    if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
@@ -87,6 +113,13 @@ Result<void> WallpaperSession::play() {
 Result<void> WallpaperSession::pause() {
     auto stateResult = ensureBackend();
     if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
+        return stateResult;
+    }
+
+    stateResult = ensureState("pause", { SessionState::Playing });
+    if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
@@ -104,6 +137,14 @@ Result<void> WallpaperSession::pause() {
 Result<void> WallpaperSession::stop() {
     auto stateResult = ensureBackend();
     if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
+        return stateResult;
+    }
+
+    stateResult = ensureState("stop",
+                              { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
+    if (! stateResult) {
+        recordError("runtime.session", stateResult.error());
         return stateResult;
     }
 
@@ -120,12 +161,13 @@ Result<void> WallpaperSession::stop() {
 
 Result<void> WallpaperSession::reload() {
     if (! m_loadedSource.has_value()) {
-        return Result<void>::failure(ResultCode::InvalidState, "session has no source to reload");
+        auto result =
+            Result<void>::failure(ResultCode::InvalidState, "session has no source to reload");
+        recordError("runtime.session", result.error());
+        return result;
     }
 
     auto source = *m_loadedSource;
-    m_backend.reset();
-    m_state = SessionState::Idle;
     return load(source);
 }
 
@@ -149,6 +191,14 @@ Result<void> WallpaperSession::setProperty(std::string_view name, PropertyValue 
 Result<void> WallpaperSession::sendInput(const InputEvent& event) {
     auto stateResult = ensureBackend();
     if (! stateResult) {
+        recordError("runtime.input", stateResult.error());
+        return stateResult;
+    }
+
+    stateResult = ensureState("send input",
+                              { SessionState::Loaded, SessionState::Playing, SessionState::Paused });
+    if (! stateResult) {
+        recordError("runtime.input", stateResult.error());
         return stateResult;
     }
 
@@ -181,6 +231,19 @@ Result<void> WallpaperSession::ensureBackend() const {
     return Result<void>::success();
 }
 
+Result<void> WallpaperSession::ensureState(
+    std::string_view action, std::initializer_list<SessionState> allowedStates) const {
+    for (SessionState state : allowedStates) {
+        if (m_state == state) {
+            return Result<void>::success();
+        }
+    }
+
+    return Result<void>::failure(ResultCode::InvalidState,
+                                 "cannot " + std::string(action) + " while session is in state "
+                                     + sessionStateName(m_state));
+}
+
 Result<void> WallpaperSession::activateOutputBinding() {
     if (! m_outputTarget.has_value()) {
         return Result<void>::failure(ResultCode::InvalidState, "session has no output target");
@@ -194,6 +257,27 @@ Result<void> WallpaperSession::activateOutputBinding() {
         recordError("runtime.output", result.error());
     }
     return result;
+}
+
+Result<void> WallpaperSession::resetBackendForLoad() {
+    if (! m_backend) {
+        m_state = SessionState::Idle;
+        return Result<void>::success();
+    }
+
+    if (m_state == SessionState::Loaded || m_state == SessionState::Playing
+        || m_state == SessionState::Paused) {
+        auto stopResult = m_backend->stop();
+        if (! stopResult) {
+            recordError("runtime.session", stopResult.error());
+            m_state = SessionState::Error;
+            return stopResult;
+        }
+    }
+
+    m_backend.reset();
+    m_state = SessionState::Idle;
+    return Result<void>::success();
 }
 
 void WallpaperSession::recordError(const char* source, const Error& error) {

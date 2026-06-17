@@ -12,6 +12,7 @@
 #include "runtime/session/WallpaperTypes.hpp"
 
 #include <memory>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,7 +42,10 @@ public:
 
 private:
     Result<void> ensureBackend() const;
+    Result<void> ensureState(std::string_view action,
+                             std::initializer_list<SessionState> allowedStates) const;
     Result<void> activateOutputBinding();
+    Result<void> resetBackendForLoad();
     void         recordError(const char* source, const Error& error);
     void         appendDiagnostic(DiagnosticSeverity severity, const char* source, std::string message);
 
