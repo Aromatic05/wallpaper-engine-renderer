@@ -99,6 +99,23 @@ target_compile_options(particle-regression-test PRIVATE ${warn_opts})
 
 add_test(NAME particle-regression-test COMMAND particle-regression-test)
 
+add_executable(
+  dynamic-value-user-setting-test
+  dynamic_value_user_setting_test.cpp)
+
+target_link_libraries(dynamic-value-user-setting-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  dynamic-value-user-setting-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(dynamic-value-user-setting-test PRIVATE ${warn_opts})
+
+add_test(NAME dynamic-value-user-setting-test COMMAND dynamic-value-user-setting-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}

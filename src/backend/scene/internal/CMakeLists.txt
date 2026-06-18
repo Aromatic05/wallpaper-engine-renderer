@@ -3,6 +3,7 @@ set(LIB_NAME wpSceneBackend)
 add_library(
   ${LIB_NAME} STATIC
   CreateScenePackageFs.cpp
+  WPDynamicValue.cpp
   WPJson.cpp
   WPPkgFs.cpp
   WPParticleParser.cpp
@@ -10,6 +11,7 @@ add_library(
   WPSceneParser.cpp
   WPShaderValueUpdater.cpp
   WPTexImageParser.cpp
+  WPUserSetting.cpp
   WPSoundParser.cpp
   WPMdlParser.cpp
   WPPuppet.cpp
