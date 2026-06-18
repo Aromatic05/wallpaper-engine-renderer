@@ -4,12 +4,18 @@
 #include "common/fs/include/fs/VFS.h"
 #include "common/fs/include/fs/Fs.h"
 #include "host/audio/include/audio/SoundManager.h"
+#include "backend/scene/internal/WPTexImageParser.hpp"
+#include "render/vulkan/include/vulkan/Device.hpp"
+#include "render/vulkan/include/vulkan/Instance.hpp"
 
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
+#include <array>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -26,6 +32,8 @@ using wallpaper::isize;
 using wallpaper::usize;
 using wallpaper::audio::CreateSoundStream;
 using wallpaper::audio::SoundStream;
+using wallpaper::TextureFormat;
+namespace vk = wallpaper::vulkan;
 
 class ShortReadStream final : public IBinaryStream {
 public:
@@ -64,6 +72,51 @@ protected:
 private:
     idx                  m_pos { 0 };
     std::vector<uint8_t> m_data;
+};
+
+class FailingSeekStream final : public IBinaryStream {
+public:
+    explicit FailingSeekStream(std::vector<uint8_t> data): m_data(std::move(data)) {}
+
+    usize Read(void* buffer, usize sizeInByte) override {
+        if (m_pos < 0 || m_pos >= Size() || sizeInByte == 0) return 0;
+        const usize remaining = static_cast<usize>(Size() - m_pos);
+        const usize read      = std::min(sizeInByte, remaining);
+        std::memcpy(buffer, m_data.data() + m_pos, read);
+        m_pos += static_cast<idx>(read);
+        return read;
+    }
+
+    char* Gets(char* buffer, usize sizeStr) override {
+        Read(buffer, sizeStr);
+        return buffer;
+    }
+
+    idx Tell() const override { return m_pos; }
+
+    bool SeekSet(idx offset) override {
+        m_seek_attempts.push_back(offset);
+        if (m_fail_seek) return false;
+        if (offset < 0 || offset > Size()) return false;
+        m_pos = offset;
+        return true;
+    }
+
+    bool SeekCur(idx offset) override { return SeekSet(m_pos + offset); }
+    bool SeekEnd(idx offset) override { return SeekSet(Size() + offset); }
+    isize Size() const override { return static_cast<isize>(m_data.size()); }
+
+    void SetFailSeek(bool fail_seek) { m_fail_seek = fail_seek; }
+    const std::vector<idx>& SeekAttempts() const { return m_seek_attempts; }
+
+protected:
+    usize Write_impl(const void*, usize) override { return 0; }
+
+private:
+    idx                  m_pos { 0 };
+    bool                 m_fail_seek { false };
+    std::vector<uint8_t> m_data;
+    std::vector<idx>     m_seek_attempts;
 };
 
 class TrackingStream final : public IBinaryStream {
@@ -187,6 +240,65 @@ std::vector<uint8_t> DecodeBase64(std::string_view input) {
     return output;
 }
 
+template<typename T>
+void AppendLE(std::vector<uint8_t>& bytes, T value) {
+    for (usize i = 0; i < sizeof(T); ++i) {
+        bytes.push_back(static_cast<uint8_t>((static_cast<std::make_unsigned_t<T>>(value) >>
+                                              (8 * i)) &
+                                             0xFF));
+    }
+}
+
+void AppendTexVersion(std::vector<uint8_t>& bytes, const char prefix, int version) {
+    bytes.push_back('T');
+    bytes.push_back('E');
+    bytes.push_back('X');
+    bytes.push_back(static_cast<uint8_t>(prefix));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 1000) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 100) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 10) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + (version % 10)));
+    bytes.push_back('\0');
+}
+
+std::string BuildMinimalTexAsset(std::array<uint8_t, 4> rgba) {
+    std::vector<uint8_t> bytes;
+    AppendTexVersion(bytes, 'V', 1);
+    AppendTexVersion(bytes, 'I', 1);
+    AppendLE<int32_t>(bytes, 0); // RGBA8
+    AppendLE<uint32_t>(bytes, 0); // flags
+    AppendLE<int32_t>(bytes, 1);  // width
+    AppendLE<int32_t>(bytes, 1);  // height
+    AppendLE<int32_t>(bytes, 1);  // map width
+    AppendLE<int32_t>(bytes, 1);  // map height
+    AppendLE<int32_t>(bytes, 0);  // unknown
+    AppendTexVersion(bytes, 'B', 1);
+    AppendLE<int32_t>(bytes, 1); // image count
+    AppendLE<int32_t>(bytes, 1); // mipmap count
+    AppendLE<int32_t>(bytes, 1); // mip width
+    AppendLE<int32_t>(bytes, 1); // mip height
+    AppendLE<int32_t>(bytes, 4); // src size
+    bytes.insert(bytes.end(), rgba.begin(), rgba.end());
+    return std::string(bytes.begin(), bytes.end());
+}
+
+struct VulkanFixture {
+    vk::Instance instance;
+    vk::Device   device;
+
+    VulkanFixture() {
+        const std::array<vk::Extension, 0>     inst_exts {};
+        const std::array<vk::InstanceLayer, 0> inst_layers {};
+        const std::array<vk::Extension, 0>     device_exts {};
+
+        assert(vk::Instance::Create(instance, inst_exts, inst_layers));
+        assert(instance.ChoosePhysicalDevice([&](auto gpu) {
+            return vk::Device::CheckGPU(gpu, device_exts, {});
+        }));
+        assert(vk::Device::Create(instance, device_exts, VkExtent2D { 1, 1 }, device));
+    }
+};
+
 void TestLimitedBinaryStream() {
     auto base = std::make_shared<ShortReadStream>(std::vector<uint8_t> { 1, 2, 3, 4, 5, 6 });
     LimitedBinaryStream limited(base, 1, 4);
@@ -216,6 +328,37 @@ void TestLimitedBinaryStream() {
     assert(limited.SeekEnd(0));
     assert(limited.Rewind());
     assert(limited.Tell() == 0);
+
+    auto failing = std::make_shared<FailingSeekStream>(std::vector<uint8_t> { 10, 11, 12, 13 });
+    LimitedBinaryStream guarded(failing, 1, 2);
+
+    assert(guarded.SeekSet(0));
+    assert(guarded.Tell() == 0);
+    assert(failing->Tell() == 1);
+
+    failing->SetFailSeek(true);
+    assert(! guarded.SeekSet(1));
+    assert(guarded.Tell() == 0);
+    assert(failing->Tell() == 1);
+
+    uint8_t byte { 0 };
+    assert(guarded.Read(&byte, 1) == 0);
+    assert(byte == 0);
+    assert(guarded.Tell() == 0);
+    assert(failing->Tell() == 1);
+
+    assert(! guarded.SeekCur(1));
+    assert(guarded.Tell() == 0);
+    assert(failing->Tell() == 1);
+
+    failing->SetFailSeek(false);
+    assert(guarded.SeekSet(1));
+    assert(guarded.Tell() == 1);
+    assert(failing->Tell() == 2);
+    assert(guarded.Read(&byte, 1) == 1);
+    assert(byte == 12);
+    assert(guarded.Tell() == 2);
+    assert(failing->Tell() == 3);
 }
 
 void TestVfsIdentityAndCacheIsolation() {
@@ -248,6 +391,43 @@ void TestVfsIdentityAndCacheIsolation() {
     cache.emplace(key2, "second");
     vfs1.reset();
     assert(cache.at(key2) == "second");
+}
+
+void TestVfsTextureCacheIsolation() {
+    auto vfs1 = std::make_unique<VFS>();
+    auto vfs2 = std::make_unique<VFS>();
+
+    const auto tex_blob = BuildMinimalTexAsset({ 255, 0, 0, 255 });
+    vfs1->Mount("/assets",
+                std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                    { "/materials/same.tex", tex_blob },
+                }),
+                "mem1");
+    vfs2->Mount("/assets",
+                std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                    { "/materials/same.tex", tex_blob },
+                }),
+                "mem2");
+
+    wallpaper::WPTexImageParser parser1(vfs1.get());
+    wallpaper::WPTexImageParser parser2(vfs2.get());
+    auto                        image1 = parser1.Parse("same");
+    auto                        image2 = parser2.Parse("same");
+
+    assert(image1 != nullptr);
+    assert(image2 != nullptr);
+    assert(image1->key != image2->key);
+    assert(image1->header.format == TextureFormat::RGBA8);
+    assert(image2->header.format == TextureFormat::RGBA8);
+
+    VulkanFixture vk;
+    auto          tex1 = vk.device.tex_cache().CreateTex(*image1);
+    auto          tex2 = vk.device.tex_cache().CreateTex(*image2);
+
+    assert(! tex1.slots.empty());
+    assert(! tex2.slots.empty());
+    assert(tex1.slots.front().handle != tex2.slots.front().handle);
+    assert(tex1.slots.front().view != tex2.slots.front().view);
 }
 
 void TestDecoderFailureHandling() {
@@ -347,6 +527,7 @@ void TestDecoderProbeAndRewind() {
 int main() {
     TestLimitedBinaryStream();
     TestVfsIdentityAndCacheIsolation();
+    TestVfsTextureCacheIsolation();
     TestDecoderFailureHandling();
     TestDecoderProbeAndRewind();
     return 0;

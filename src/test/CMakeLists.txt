@@ -52,7 +52,14 @@ add_executable(
   resource_correctness_test.cpp)
 
 target_link_libraries(resource-correctness-test PRIVATE ${PROJECT_NAME})
-target_include_directories(resource-correctness-test PRIVATE ..)
+target_include_directories(
+  resource-correctness-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/fs/include
+  ../render/vulkan/include)
 target_compile_options(resource-correctness-test PRIVATE ${warn_opts})
 
 add_test(NAME resource-correctness-test COMMAND resource-correctness-test)
@@ -74,6 +81,23 @@ target_include_directories(
 target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts})
 
 add_test(NAME effect-rendergraph-correctness-test COMMAND effect-rendergraph-correctness-test)
+
+add_executable(
+  particle-regression-test
+  particle_regression_test.cpp)
+
+target_link_libraries(particle-regression-test PRIVATE ${PROJECT_NAME})
+target_include_directories(
+  particle-regression-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/particle/include
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include)
+target_compile_options(particle-regression-test PRIVATE ${warn_opts})
+
+add_test(NAME particle-regression-test COMMAND particle-regression-test)
 
 add_test(
   NAME wallpaper-architecture-guard-test

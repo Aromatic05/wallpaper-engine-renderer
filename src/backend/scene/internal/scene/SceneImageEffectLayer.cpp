@@ -26,6 +26,18 @@ SceneImageEffectLayer::SceneImageEffectLayer(SceneNode* node, float w, float h,
       m_final_mesh(std::make_unique<SceneMesh>()),
       m_final_node(std::make_unique<SceneNode>()) {};
 
+bool SceneImageEffectLayer::HasFinalComposite() const { return m_final_node->HasMaterial(); }
+
+void SceneImageEffectLayer::SetFinalCompositeSource(std::string source) {
+    m_final_composite_source = std::move(source);
+    if (! m_final_node->HasMaterial()) return;
+
+    auto* material = m_final_node->Mesh()->Material();
+    if (material == nullptr) return;
+    if (material->textures.empty()) material->textures.resize(1);
+    material->textures[0] = m_final_composite_source;
+}
+
 void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
                                           std::string_view effect_cam) {
     std::string_view ppong_a = m_pingpong_a, ppong_b = m_pingpong_b;
@@ -73,24 +85,34 @@ void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
         swap_pp();
     }
     if (last_output != nullptr) {
-        last_output->output = SpecTex_Default;
-        if (last_effect != nullptr) last_effect->SetFinalBypassTarget(std::string(SpecTex_Default));
         auto& mesh          = *(last_output->sceneNode->Mesh());
         auto& material      = *mesh.Material();
         {
-            material.blenmode = m_final_blend;
-            last_output->premultiplied_source_blend = true;
-            if (fullscreen) {
-                last_output->camera_override = std::string(effect_cam);
-                last_output->sceneNode->CopyTrans(default_node);
-                mesh.ChangeMeshDataFrom(default_mesh);
-            } else {
-                last_output->camera_override.clear();
-                last_output->sceneNode->CopyTrans(*m_final_node);
-                mesh.ChangeMeshDataFrom(*m_final_mesh);
-            }
-            last_output->clear_before_draw = false;
-            last_output->force_alpha_write = false;
+            material.blenmode = BlendMode::Normal;
+            last_output->premultiplied_source_blend = false;
+            last_output->camera_override = std::string(effect_cam);
+            last_output->sceneNode->CopyTrans(default_node);
+            mesh.ChangeMeshDataFrom(default_mesh);
+            last_output->clear_before_draw = true;
+            last_output->force_alpha_write = true;
+        }
+
+        if (last_effect != nullptr) last_effect->SetFinalBypassTarget(last_output->output);
+        SetFinalCompositeSource(last_output->output);
+    }
+
+    if (m_final_node->HasMaterial()) {
+        auto& mesh     = *m_final_node->Mesh();
+        auto& material = *mesh.Material();
+        material.blenmode = m_final_blend;
+        if (fullscreen) {
+            m_final_node->SetCamera(std::string(effect_cam));
+            m_final_node->CopyTrans(default_node);
+            mesh.ChangeMeshDataFrom(default_mesh);
+        } else {
+            m_final_node->SetCamera({});
+            m_final_node->CopyTrans(*m_final_node);
+            mesh.ChangeMeshDataFrom(*m_final_mesh);
         }
     }
 }

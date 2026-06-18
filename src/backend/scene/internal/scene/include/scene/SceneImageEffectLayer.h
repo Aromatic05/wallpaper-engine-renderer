@@ -71,6 +71,8 @@ public:
     SceneNode&  FinalNode() const { return *m_final_node; }
     void        SetFinalBlend(BlendMode m) { m_final_blend = m; }
     void        SetFullscreen(bool value) { fullscreen = value; }
+    bool        HasFinalComposite() const;
+    void        SetFinalCompositeSource(std::string source);
 
     void ResolveEffect(const SceneMesh& defualt_mesh, std::string_view effect_cam);
 
@@ -84,6 +86,7 @@ private:
     std::unique_ptr<SceneMesh> m_final_mesh;
     std::unique_ptr<SceneNode> m_final_node;
     BlendMode                  m_final_blend;
+    std::string                m_final_composite_source;
 
     std::vector<std::shared_ptr<SceneImageEffect>> m_effects;
 };

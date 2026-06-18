@@ -99,15 +99,15 @@ bool Instance::ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
 
     // choose deiscrete device
     for (const auto& d : deviceList) {
-        VkPhysicalDeviceIDProperties device_id_props {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, .pNext = NULL
-        };
-        VkPhysicalDeviceProperties2 props2 { .sType =
-                                                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                             .pNext = &device_id_props };
-        d.GetProperties2KHR(props2);
-        auto& props = props2.properties;
         if (uuid.size() > 0) {
+            VkPhysicalDeviceIDProperties device_id_props {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, .pNext = NULL
+            };
+            VkPhysicalDeviceProperties2 props2 { .sType =
+                                                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                                 .pNext = &device_id_props };
+            d.GetProperties2KHR(props2);
+            auto& props = props2.properties;
             decltype(uuid) device_uuid { device_id_props.deviceUUID };
             if (std::equal(uuid.begin(), uuid.end(), device_uuid.begin(), device_uuid.end())) {
                 /*
@@ -120,6 +120,7 @@ bool Instance::ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
                 break;
             }
         } else {
+            auto props = d.GetProperties();
             if (checkgpu(d)) {
                 final_props = props;
                 final_gpu   = d;

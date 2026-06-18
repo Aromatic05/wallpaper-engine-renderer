@@ -109,7 +109,10 @@ struct ExtraInfo {
 
 static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, ExtraInfo& extra,
                         const SceneImageEffectNode* effect_node = nullptr,
-                        const SceneImageEffect* effect_owner = nullptr) {
+                        const SceneImageEffect* effect_owner = nullptr,
+                        std::string_view camera_override = {}, bool clear_before_draw = false,
+                        bool force_alpha_write = false,
+                        bool premultiplied_source_blend = false) {
     auto& rgraph = *extra.rgraph;
     auto& scene  = *extra.scene;
 
@@ -153,6 +156,19 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                     });
             }
         }
+
+        if (effs->HasFinalComposite()) {
+            ToGraphPass(&effs->FinalNode(),
+                        SpecTex_Default,
+                        node->ID(),
+                        extra,
+                        nullptr,
+                        nullptr,
+                        effs->FinalNode().Camera(),
+                        false,
+                        false,
+                        true);
+        }
     };
 
     if (node->Mesh() == nullptr) return;
@@ -174,7 +190,19 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     rgraph.addPass<vulkan::CustomShaderPass>(
         passName,
         rg::PassNode::Type::CustomShader,
-        [material, node, effect_node, effect_owner, &output, &imgId, &rgraph, &scene, &extra](
+        [material,
+         node,
+         effect_node,
+         effect_owner,
+         camera_override = std::string(camera_override),
+         clear_before_draw,
+         force_alpha_write,
+         premultiplied_source_blend,
+         &output,
+         &imgId,
+         &rgraph,
+         &scene,
+         &extra](
             rg::RenderGraphBuilder& builder, vulkan::CustomShaderPass::Desc& pdesc) {
             const auto& pass = builder.workPassNode();
             pdesc.node       = node;
@@ -187,6 +215,11 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                 pdesc.should_execute = [effect_owner] {
                     return effect_owner == nullptr || effect_owner->LocalVisible();
                 };
+            } else {
+                pdesc.cameraOverride           = camera_override;
+                pdesc.clearBeforeDraw          = clear_before_draw;
+                pdesc.forceAlphaWrite          = force_alpha_write;
+                pdesc.premultipliedSourceBlend = premultiplied_source_blend;
             }
             CheckAndSetSprite(scene, pdesc, material->textures);
             for (usize i = 0; i < material->textures.size(); i++) {

@@ -42,6 +42,17 @@ std::shared_ptr<SceneNode> makeNode(const std::string& name, std::vector<std::st
     return node;
 }
 
+std::shared_ptr<SceneMesh> makeMesh(const std::string& name, std::vector<std::string> textures,
+                                    BlendMode blend = BlendMode::Translucent) {
+    auto mesh = std::make_shared<SceneMesh>();
+    SceneMaterial material;
+    material.name     = name;
+    material.textures = std::move(textures);
+    material.blenmode = blend;
+    mesh->AddMaterial(std::move(material));
+    return mesh;
+}
+
 struct Fixture {
     Scene                                      scene;
     std::shared_ptr<SceneNode>                 owner;
@@ -76,6 +87,8 @@ std::unique_ptr<Fixture> makeFixture(bool fullscreen) {
     fx->layer->SetFullscreen(fullscreen);
     fx->layer->FinalNode().CopyTrans(*fx->owner);
     fx->layer->FinalMesh().ChangeMeshDataFrom(fx->scene.default_effect_mesh);
+    fx->layer->FinalNode().AddMesh(
+        makeMesh("final-composite", { fx->pingA }, BlendMode::Translucent));
     fx->scene.cameras["layercam"]->AttatchImgEffect(fx->layer);
 
     auto nodeA = makeNode("effect-a", { std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) });
@@ -111,7 +124,12 @@ std::vector<std::string> snapshot(rg::RenderGraph& graph) {
         if (auto* shader = dynamic_cast<vk::CustomShaderPass*>(pass)) {
             const auto& desc = shader->desc();
             const auto  tex0 = desc.textures.empty() ? std::string() : desc.textures.front();
-            lines.push_back("shader:" + desc.output + ":" + tex0 + ":" + desc.cameraOverride);
+            const auto* material = desc.node != nullptr && desc.node->Mesh() != nullptr
+                                       ? desc.node->Mesh()->Material()
+                                       : nullptr;
+            const auto material_name = material != nullptr ? material->name : std::string();
+            lines.push_back("shader:" + material_name + ":" + desc.output + ":" + tex0 + ":" +
+                            desc.cameraOverride);
         } else if (auto* copy = dynamic_cast<vk::CopyPass*>(pass)) {
             const auto& desc = copy->desc();
             lines.push_back("copy:" + desc.src + ":" + desc.dst);
@@ -136,6 +154,21 @@ const vk::CopyPass::Desc* findCopy(rg::RenderGraph& graph, const std::string& sr
         auto* pass = graph.getPass(id);
         if (auto* copy = dynamic_cast<vk::CopyPass*>(pass)) {
             if (copy->desc().src == src && copy->desc().dst == dst) return &copy->desc();
+        }
+    }
+    return nullptr;
+}
+
+const vk::CustomShaderPass::Desc* findShaderByMaterial(rg::RenderGraph& graph,
+                                                       const std::string& material_name) {
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass = graph.getPass(id);
+        if (auto* shader = dynamic_cast<vk::CustomShaderPass*>(pass)) {
+            const auto* material =
+                shader->desc().node != nullptr && shader->desc().node->Mesh() != nullptr
+                    ? shader->desc().node->Mesh()->Material()
+                    : nullptr;
+            if (material != nullptr && material->name == material_name) return &shader->desc();
         }
     }
     return nullptr;
@@ -169,9 +202,10 @@ int main() {
             assert(bypass != nullptr);
             assert(static_cast<bool>(bypass->should_execute) == true);
             assert(bypass->should_execute() == !visible);
-            auto* effectB = findShader(*graph, SpecTex_Default.data());
-            assert(effectB != nullptr);
-            assert(effectB->textures.front() == fixture->pingB);
+            auto* finalComposite = findShaderByMaterial(*graph, "final-composite");
+            assert(finalComposite != nullptr);
+            assert(finalComposite->output == SpecTex_Default);
+            assert(finalComposite->textures.front() == fixture->pingA);
         };
 
         check(true);
@@ -186,48 +220,67 @@ int main() {
         fixture->effectB->SetLocalVisible(true);
         auto graphHideA = wallpaper::BuildWESceneRenderPlan(fixture->scene);
         auto* bypassA = findCopy(*graphHideA, fixture->pingA, fixture->pingB);
-        auto* finalA  = findShader(*graphHideA, SpecTex_Default.data());
+        auto* finalA  = findShaderByMaterial(*graphHideA, "final-composite");
         assert(bypassA != nullptr && bypassA->should_execute());
         assert(finalA != nullptr);
-        assert(finalA->textures.front() == fixture->pingB);
+        assert(finalA->textures.front() == fixture->pingA);
 
         fixture->effectA->SetLocalVisible(true);
         fixture->effectB->SetLocalVisible(false);
         auto graphHideB = wallpaper::BuildWESceneRenderPlan(fixture->scene);
-        auto* finalBypass = findCopy(*graphHideB, fixture->pingB, SpecTex_Default.data());
-        assert(finalBypass != nullptr);
-        assert(finalBypass->should_execute());
+        auto* bypassB = findCopy(*graphHideB, fixture->pingB, fixture->pingA);
+        auto* finalB  = findShaderByMaterial(*graphHideB, "final-composite");
+        assert(bypassB != nullptr);
+        assert(bypassB->should_execute());
+        assert(finalB != nullptr);
+        assert(finalB->textures.front() == fixture->pingA);
     }
 
     {
         auto normal = makeFixture(false);
         auto normalGraph = wallpaper::BuildWESceneRenderPlan(normal->scene);
-        auto* normalFinal = findShader(*normalGraph, SpecTex_Default.data());
+        auto* normalFinal = findShaderByMaterial(*normalGraph, "final-composite");
         assert(normalFinal != nullptr);
         assert(normalFinal->cameraOverride.empty());
 
         auto fullscreen = makeFixture(true);
         auto fullscreenGraph = wallpaper::BuildWESceneRenderPlan(fullscreen->scene);
-        auto* fullscreenFinal = findShader(*fullscreenGraph, SpecTex_Default.data());
+        auto* fullscreenFinal = findShaderByMaterial(*fullscreenGraph, "final-composite");
         assert(fullscreenFinal != nullptr);
-        assert(fullscreenFinal->cameraOverride == "effect");
+        assert(fullscreen->layer->FinalNode().Camera() == "effect");
     }
 
     {
         auto fixture = makeFixture(false);
         auto graph = wallpaper::BuildWESceneRenderPlan(fixture->scene);
-        auto* finalPass = findShader(*graph, SpecTex_Default.data());
-        auto* intermediate = findShader(*graph, fixture->pingB);
+        auto* finalPass = findShaderByMaterial(*graph, "final-composite");
+        auto* authoredFinal = findShaderByMaterial(*graph, "effect-b");
         assert(finalPass != nullptr);
-        assert(intermediate != nullptr);
+        assert(authoredFinal != nullptr);
+        assert(finalPass->output == SpecTex_Default);
+        assert(authoredFinal->output == fixture->pingA);
+        assert(findCopy(*graph, fixture->pingA, SpecTex_Default.data()) == nullptr);
         assert(finalPass->premultipliedSourceBlend);
-        assert(intermediate->clearBeforeDraw);
-        assert(intermediate->forceAlphaWrite);
+        assert(authoredFinal->clearBeforeDraw);
+        assert(authoredFinal->forceAlphaWrite);
 
         VkPipelineColorBlendAttachmentState blend {};
+        vk::SetBlend(BlendMode::Translucent, blend, false);
+        assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
+        assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+
         vk::SetBlend(BlendMode::Translucent, blend, true);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+
+        vk::SetBlend(BlendMode::Additive, blend, false);
+        assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
+        assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
     }
 
     return 0;

@@ -1,4 +1,5 @@
 #include "WPSceneParser.hpp"
+#include "WPSceneParserTestHooks.hpp"
 #include "WPJson.hpp"
 
 #include "utils/String.h"
@@ -149,8 +150,8 @@ ParticleAnimationMode ToAnimMode(const std::string& str) {
     }
 }
 
-std::array<i32, 4> ResolvePaddedSpriteSheetResolution(const ImageHeader& texh,
-                                                      const SpriteFrame& frame) {
+std::array<i32, 4> ResolvePaddedSpriteSheetResolutionImpl(const ImageHeader& texh,
+                                                          const SpriteFrame& frame) {
     const auto physical_width  = texh.width > 0 ? texh.width : texh.mapWidth;
     const auto physical_height = texh.height > 0 ? texh.height : texh.mapHeight;
     auto       content_width   = texh.mapWidth > 0 ? texh.mapWidth : physical_width;
@@ -178,7 +179,7 @@ void LoadControlPoint(ParticleSubSystem& pSys, const wpscene::Particle& wp) {
     }
 }
 
-wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
+wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverrideImpl(
     const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
     if (! is_child_subsystem) return layer_override;
 
@@ -188,8 +189,8 @@ wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
     return child_override;
 }
 
-void LoadInitializer(ParticleSubSystem& pSys, const wpscene::Particle& wp,
-                     const wpscene::ParticleInstanceoverride& over) {
+void LoadParticleInitializersImpl(ParticleSubSystem& pSys, const wpscene::Particle& wp,
+                                  const wpscene::ParticleInstanceoverride& over) {
     const bool replaces_color = over.enabled && (over.overColor || over.overColorn);
     for (const auto& ini : wp.initializers) {
         if (replaces_color && ini.contains("name") && ini.at("name").is_string() &&
@@ -411,7 +412,7 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
                     if (algorism::IsPowOfTwo((u32)texh.width) &&
                         algorism::IsPowOfTwo((u32)texh.height)) {
                         pWPShaderInfo->combos["SPRITESHEETBLENDNPOT"] = "1";
-                        resolution = ResolvePaddedSpriteSheetResolution(texh, f1);
+                        resolution = ResolvePaddedSpriteSheetResolutionImpl(texh, f1);
                     }
                     materialShader.constValues["g_RenderVar1"] = std::array {
                         f1.xAxis[0], f1.yAxis[1], (float)(texh.spriteAnim.numFrames()), f1.rate
@@ -721,6 +722,17 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
     }
     // material blendmode for last step to use
     auto imgBlendMode = material.blenmode;
+    auto finalCompositeMaterial = material;
+    if (! finalCompositeMaterial.textures.empty()) {
+        finalCompositeMaterial.textures[0] = "";
+    }
+    finalCompositeMaterial.blenmode = imgBlendMode;
+    auto& finalConstValues = finalCompositeMaterial.customShader.constValues;
+    finalConstValues["g_Color4"]      = std::array<float, 4> { 1.0f, 1.0f, 1.0f, 1.0f };
+    finalConstValues["g_Color"]       = std::array<float, 3> { 1.0f, 1.0f, 1.0f };
+    finalConstValues["g_Alpha"]       = 1.0f;
+    finalConstValues["g_UserAlpha"]   = 1.0f;
+    finalConstValues["g_Brightness"]  = 1.0f;
     // disable img material blend, as it's the first effect node now
     if (hasEffect) {
         material.blenmode = BlendMode::Normal;
@@ -762,6 +774,11 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
             imgEffectLayer->SetFinalBlend(imgBlendMode);
             imgEffectLayer->FinalMesh().ChangeMeshDataFrom(effct_final_mesh);
             imgEffectLayer->FinalNode().CopyTrans(*spImgNode);
+            auto finalMesh = std::make_shared<SceneMesh>();
+            finalMesh->ChangeMeshDataFrom(effct_final_mesh);
+            finalMesh->AddMaterial(std::move(finalCompositeMaterial));
+            imgEffectLayer->FinalNode().AddMesh(finalMesh);
+            context.shader_updater->SetNodeData(&imgEffectLayer->FinalNode(), svData);
             if (isCompose) {
             } else {
                 spImgNode->CopyTrans(SceneNode());
@@ -961,7 +978,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
     }
 
     wpscene::ParticleInstanceoverride override =
-        ResolveParticleSubsystemOverride(wppartobj.instanceoverride, is_child);
+        ResolveParticleSubsystemOverrideImpl(wppartobj.instanceoverride, is_child);
 
     auto& particle_obj = *p_particle_obj;
     auto& vfs          = *context.vfs;
@@ -1076,7 +1093,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
     particleSub->SetRuntimeSizeReference(override.size);
 
     LoadEmitter(*particleSub, particle_obj, override.count, render_rope);
-    LoadInitializer(*particleSub, particle_obj, override);
+    LoadParticleInitializersImpl(*particleSub, particle_obj, override);
     LoadOperator(*particleSub, particle_obj, override);
     LoadControlPoint(*particleSub, particle_obj);
 
@@ -1134,6 +1151,21 @@ void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj,
     objs.push_back(wpobj);
 }
 } // namespace
+
+std::array<i32, 4> wallpaper::ResolvePaddedSpriteSheetResolution(const ImageHeader& texh,
+                                                                 const SpriteFrame& frame) {
+    return ResolvePaddedSpriteSheetResolutionImpl(texh, frame);
+}
+
+wpscene::ParticleInstanceoverride wallpaper::ResolveParticleSubsystemOverride(
+    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
+    return ResolveParticleSubsystemOverrideImpl(layer_override, is_child_subsystem);
+}
+
+void wallpaper::LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene::Particle& wp,
+                                         const wpscene::ParticleInstanceoverride& over) {
+    LoadParticleInitializersImpl(pSys, wp, over);
+}
 
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
                                             fs::VFS& vfs, audio::SoundManager& sm) {

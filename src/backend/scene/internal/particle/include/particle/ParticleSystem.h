@@ -87,6 +87,11 @@ public:
     void      SetRuntimeRateOverride(float rate);
     void      SetRuntimeSizeReference(float size);
     void      SetRuntimeSizeOverride(float size);
+    std::size_t InstanceCount() const { return m_instances.size(); }
+    const ParticleInstance* InstanceAt(std::size_t index) const { return m_instances.at(index).get(); }
+    std::size_t ChildCount() const { return m_children.size(); }
+    const ParticleSubSystem* ChildAt(std::size_t index) const { return m_children.at(index).get(); }
+    double Rate() const { return m_rate; }
 
 private:
     Eigen::Vector3f ResolveEventAnchorPosition(const Eigen::Vector3f& parent_position);

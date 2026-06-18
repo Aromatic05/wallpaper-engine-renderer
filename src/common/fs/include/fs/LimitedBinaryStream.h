@@ -22,8 +22,10 @@ private:
     bool SeekInMPos(void) { return m_infs->SeekSet(m_start + m_pos); }
     bool SeekInPos(idx pos) {
         if (CanSeekTo(pos)) {
-            m_pos = pos;
-            return SeekInMPos();
+            const idx old_pos = m_pos;
+            m_pos             = pos;
+            if (SeekInMPos()) return true;
+            m_pos = old_pos;
         }
         return false;
     }
@@ -41,7 +43,7 @@ public:
 
         isize isizeInByte = static_cast<isize>(sizeInByte);
         if (isizeInByte > available) isizeInByte = available;
-        SeekInMPos();
+        if (! SeekInMPos()) return 0;
         const usize read = m_infs->Read(buffer, static_cast<usize>(isizeInByte));
         m_pos += static_cast<isize>(read);
         return read;
