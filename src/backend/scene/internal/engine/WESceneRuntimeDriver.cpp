@@ -7,6 +7,7 @@
 #include "timer/FrameTimer.hpp"
 #include "utils/FpsCounter.h"
 #include "WPSceneParser.hpp"
+#include "WPSceneScriptHost.hpp"
 #include "scene/Scene.h"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
@@ -301,6 +302,10 @@ private:
     MHANDLER_CMD(DRAW) {
         m_frameTimer->FrameBegin();
         if (m_rg) {
+            m_scene->PassFrameTime(m_frameTimer->IdeaTime() * m_speed);
+            if (m_scene->scriptHost) {
+                m_scene->scriptHost->FrameBegin(m_scene->frameTime);
+            }
             // LOG_INFO("frame info, fps: %.1f, frametime: %.1f", 1.0f, 1000.0f*m_scene->frameTime);
             m_scene->shaderValueUpdater->FrameBegin();
             {
@@ -310,8 +315,6 @@ private:
             m_scene->paritileSys->Emitt();
 
             m_render->drawFrame(*m_scene);
-
-            m_scene->PassFrameTime(m_frameTimer->IdeaTime() * m_speed);
 
             m_scene->shaderValueUpdater->FrameEnd();
             // fps_counter.RegisterFrame();
@@ -334,6 +337,19 @@ private:
     }
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
+#if WP_ENABLE_SCENESCRIPT_RUNTIME
+            m_scene->scriptHost = std::make_shared<WPSceneScriptHost>(m_scene.get());
+            for (const auto& registration : m_scene->bindingRegistrations) {
+                m_scene->scriptHost->RegisterPropertyBinding(registration);
+            }
+            for (const auto& registration : m_scene->propertyAnimationRegistrations) {
+                m_scene->scriptHost->RegisterPropertyAnimation(registration);
+            }
+            for (const auto& registration : m_scene->scriptRegistrations) {
+                m_scene->scriptHost->RegisterPropertyScript(registration);
+            }
+            m_scene->scriptHost->Initialize();
+#endif
             if (m_rg) m_render->clearLastRenderGraph();
             m_rg = BuildWESceneRenderPlan(*m_scene);
 

@@ -8,6 +8,7 @@ add_library(
   WPPkgFs.cpp
   WPParticleParser.cpp
   WPPropertyAnimation.cpp
+  WPSceneScriptHost.cpp
   WPShaderParser.cpp
   WPSceneParser.cpp
   WPShaderValueUpdater.cpp
@@ -51,6 +52,7 @@ target_link_libraries(
 
 target_include_directories(${LIB_NAME} PRIVATE . ../../..)
 target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
+target_compile_definitions(${LIB_NAME} PRIVATE WP_ENABLE_SCENESCRIPT_RUNTIME=$<BOOL:${WP_ENABLE_SCENESCRIPT_RUNTIME}>)
 set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if(WP_ENABLE_SCENESCRIPT_RUNTIME)

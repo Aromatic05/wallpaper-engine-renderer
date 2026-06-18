@@ -1,10 +1,14 @@
 #pragma once
+#include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "SceneTexture.h"
 #include "SceneRenderTarget.h"
 #include "SceneNode.h"
 #include "SceneLight.hpp"
+#include "WPSceneScriptRegistration.hpp"
 
 #include "core/NoCopyMove.hpp"
 
@@ -14,6 +18,7 @@ class ParticleSystem;
 class ParticleSubSystem;
 class IShaderValueUpdater;
 class IImageParser;
+class WPSceneScriptHost;
 
 namespace fs
 {
@@ -36,6 +41,10 @@ public:
     std::unique_ptr<IShaderValueUpdater> shaderValueUpdater;
     std::unique_ptr<IImageParser>        imageParser;
     std::unique_ptr<fs::VFS>             vfs;
+    std::shared_ptr<WPSceneScriptHost>   scriptHost;
+    std::vector<WPSceneScriptRegistration> bindingRegistrations;
+    std::vector<WPSceneScriptRegistration> scriptRegistrations;
+    std::vector<WPSceneScriptRegistration> propertyAnimationRegistrations;
 
     std::string scene_id { "unknown_id" };
 
