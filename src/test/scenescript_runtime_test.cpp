@@ -116,5 +116,37 @@ int main() {
         Require(!result.has_value(), "unsupported return type should fail conversion");
     }
 
+    {
+        WPScriptEvaluationContext context;
+        context.property_name = "alpha";
+
+        const auto first = runtime.evaluate(R"(
+            if (!shared.queued) {
+              shared.queued = true;
+              shared.value = 1;
+              engine.setTimeout(() => { shared.value = 4; }, 0);
+            }
+            function update(value) {
+              return value + shared.value;
+            }
+        )",
+                                            WPScriptValue::Number(1.0),
+                                            context);
+        Require(first.has_value(), "timer setup script should evaluate");
+        Require(NearlyEqual(first->numeric_values[0], 2.0),
+                "timer callback should not run in the same dispatch slice");
+
+        const auto second = runtime.evaluate(R"(
+            function update(value) {
+              return value + shared.value;
+            }
+        )",
+                                             WPScriptValue::Number(1.0),
+                                             context);
+        Require(second.has_value(), "timer dispatch script should evaluate");
+        Require(NearlyEqual(second->numeric_values[0], 5.0),
+                "zero-delay timer should run on the next runtime dispatch");
+    }
+
     return 0;
 }
