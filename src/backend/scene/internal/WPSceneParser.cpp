@@ -23,10 +23,12 @@
 #include "particle/ParticleSystem.h"
 
 #include "WPShaderValueUpdater.hpp"
+#include "scene/SceneTextPrimitive.h"
 #include "wpscene/WPImageObject.h"
 #include "wpscene/WPParticleObject.h"
 #include "wpscene/WPSoundObject.h"
 #include "wpscene/WPLightObject.hpp"
+#include "wpscene/WPTextObject.h"
 #include "wpscene/WPScene.h"
 
 #include "fs/VFS.h"
@@ -63,7 +65,8 @@ struct ParseContext {
 };
 
 using WPObjectVar = std::variant<wpscene::WPImageObject, wpscene::WPParticleObject,
-                                 wpscene::WPSoundObject, wpscene::WPLightObject>;
+                                 wpscene::WPSoundObject, wpscene::WPLightObject,
+                                 wpscene::WPTextObject>;
 
 namespace
 {
@@ -1304,6 +1307,25 @@ void ParseLightObj(ParseContext& context, wpscene::WPLightObject& light_obj) {
     context.scene->sceneGraph->AppendChild(node);
 }
 
+void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
+    if (! text_obj.visible) return;
+
+    auto node = std::make_shared<SceneNode>(Vector3f(text_obj.origin.data()),
+                                            Vector3f(text_obj.scale.data()),
+                                            Vector3f(text_obj.angles.data()));
+    LoadAlignment(*node, text_obj.anchor, { text_obj.size[0], text_obj.size[1] });
+    node->ID() = text_obj.id;
+    context.object_nodes[text_obj.id] = node;
+    context.global_camera_node->AppendChild(node);
+
+    auto primitive = std::make_shared<SceneTextPrimitive>();
+    primitive->object = text_obj;
+    primitive->layout.logical_size = text_obj.size;
+    primitive->layout.visible_display_size = text_obj.size;
+    primitive->layout.visible_source_size = text_obj.size;
+    context.scene->textPrimitives[text_obj.id] = std::move(primitive);
+}
+
 template<typename T>
 void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj, fs::VFS& vfs) {
     T wpobj;
@@ -1352,6 +1374,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
             AddWPObject<wpscene::WPSoundObject>(wp_objs, obj, vfs);
         } else if (obj.contains("light") && ! obj.at("light").is_null()) {
             AddWPObject<wpscene::WPLightObject>(wp_objs, obj, vfs);
+        } else if (obj.contains("text") && ! obj.at("text").is_null()) {
+            AddWPObject<wpscene::WPTextObject>(wp_objs, obj, vfs);
         }
     }
 
@@ -1404,6 +1428,9 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
                        },
                        [&context](wpscene::WPLightObject& obj) {
                            ParseLightObj(context, obj);
+                       },
+                       [&context](wpscene::WPTextObject& obj) {
+                           ParseTextObj(context, obj);
                        },
                    },
                    obj);

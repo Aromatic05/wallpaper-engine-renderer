@@ -23,6 +23,7 @@ add_library(
   wpscene/WPMaterial.cpp
   wpscene/WPScene.cpp
   wpscene/WPLightObject.cpp
+  wpscene/WPTextObject.cpp
   engine/WESceneBackend.cpp
   engine/WESceneRenderPlanBuilder.cpp
   engine/WESceneRuntimeDriver.cpp)

@@ -115,6 +115,23 @@ target_compile_options(synthetic-image-parser-test PRIVATE ${warn_opts})
 add_test(NAME synthetic-image-parser-test COMMAND synthetic-image-parser-test)
 
 add_executable(
+  text-scene-model-test
+  text_scene_model_test.cpp)
+
+target_link_libraries(text-scene-model-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  text-scene-model-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/fs/include
+  ../../third_party/nlohmann/include)
+target_compile_options(text-scene-model-test PRIVATE ${warn_opts})
+
+add_test(NAME text-scene-model-test COMMAND text-scene-model-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 

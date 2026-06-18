@@ -19,6 +19,7 @@ class ParticleSubSystem;
 class IShaderValueUpdater;
 class IImageParser;
 class WPSceneScriptHost;
+class SceneTextPrimitive;
 
 namespace fs
 {
@@ -36,6 +37,7 @@ public:
     std::unordered_map<std::string, std::vector<std::string>>     linkedCameras;
 
     std::vector<std::unique_ptr<SceneLight>> lights;
+    std::unordered_map<int32_t, std::shared_ptr<SceneTextPrimitive>> textPrimitives;
 
     std::shared_ptr<SceneNode>           sceneGraph;
     std::unique_ptr<IShaderValueUpdater> shaderValueUpdater;
