@@ -183,6 +183,32 @@ target_compile_options(video-texture-cache-test PRIVATE ${warn_opts})
 add_test(NAME video-texture-cache-test COMMAND video-texture-cache-test)
 
 add_executable(
+  migrated-features-regression-test
+  migrated_features_regression_test.cpp)
+
+target_link_libraries(
+  migrated-features-regression-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend
+  wpVulkanRender
+  wpRGraph)
+target_include_directories(
+  migrated-features-regression-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include
+  ../render
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../render/vulkanrender
+  ../../third_party/nlohmann/include)
+target_compile_options(migrated-features-regression-test PRIVATE ${warn_opts})
+
+add_test(NAME migrated-features-regression-test COMMAND migrated-features-regression-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 
