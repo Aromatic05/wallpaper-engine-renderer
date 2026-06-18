@@ -45,6 +45,7 @@ public:
     std::vector<WPSceneScriptRegistration> bindingRegistrations;
     std::vector<WPSceneScriptRegistration> scriptRegistrations;
     std::vector<WPSceneScriptRegistration> propertyAnimationRegistrations;
+    UserPropertyMap                      userProperties;
 
     std::string scene_id { "unknown_id" };
 

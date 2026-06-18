@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
@@ -56,13 +57,23 @@ wallpaper::WPSceneScriptRegistration MakeRegistration(
     registration.target_kind = target_kind;
     registration.value_type = value_type;
     registration.base_value = std::move(base_value);
+    registration.setting.value = registration.base_value;
     return registration;
+}
+
+void BindToUserProperty(wallpaper::WPSceneScriptRegistration& registration, std::string name) {
+    wallpaper::UserPropertyBinding binding;
+    binding.name = std::move(name);
+    registration.setting.property = std::move(binding);
 }
 
 } // namespace
 
 int main() {
     using wallpaper::Scene;
+    using wallpaper::ShaderValue;
+    using wallpaper::UserProperty;
+    using wallpaper::UserPropertyMap;
     using wallpaper::WPDynamicValue;
     using wallpaper::WPSceneScriptHost;
     using wallpaper::WPSceneScriptRegistration;
@@ -104,6 +115,12 @@ int main() {
     Require(host.AnimationCount() == 1, "host should track animation registrations");
 
     host.Initialize();
+    auto resolved_alpha = host.FindResolvedValue(1, "alpha");
+    Require(resolved_alpha.has_value(), "initialized host should expose binding value");
+    float alpha = 0.0f;
+    Require(resolved_alpha->tryGet(&alpha), "resolved alpha should be a float");
+    Require(NearlyEqual(alpha, 1.0), "resolved alpha should start with authored value");
+
     const auto initial_state = host.FindAnimationState(3, "alpha");
     Require(initial_state.has_value(), "initialized host should expose animation state");
     Require(initial_state->playing, "initialized animation should start playing");
@@ -126,6 +143,59 @@ int main() {
     const auto late_state = host.FindAnimationState(4, "opacity");
     Require(late_state.has_value(), "late animation registration should initialize state immediately");
     Require(late_state->playing, "late animation should start playing");
+
+    auto bound_registration = MakeRegistration(5,
+                                               "LayerE",
+                                               "alpha",
+                                               WPSceneScriptTargetKind::Layer,
+                                               WPDynamicValue::Type::Float,
+                                               WPDynamicValue(0.25f));
+    BindToUserProperty(bound_registration, "layer_alpha");
+    Require(host.RegisterPropertyBinding(std::move(bound_registration)),
+            "late user-bound property registration should succeed");
+
+    auto bound_animation = MakeRegistration(6,
+                                            "LayerF",
+                                            "alpha",
+                                            WPSceneScriptTargetKind::Layer,
+                                            WPDynamicValue::Type::Float,
+                                            WPDynamicValue(0.0f));
+    BindToUserProperty(bound_animation, "animated_alpha");
+    bound_animation.animation = MakeAnimationDefinition();
+    Require(host.RegisterPropertyAnimation(std::move(bound_animation)),
+            "user-bound animation registration should succeed");
+
+    UserPropertyMap properties;
+    properties.emplace(
+        "layer_alpha",
+        UserProperty { .value = ShaderValue(0.75f), .condition = {}, .is_boolean = false });
+    properties.emplace(
+        "animated_alpha",
+        UserProperty { .value = ShaderValue(0.5f), .condition = {}, .is_boolean = false });
+
+    host.ApplyUserProperties(properties, false);
+    Require(host.UserPropertyDispatchCount() == 1, "user property dispatch should be counted");
+    Require(scene.userProperties.size() == 2, "scene should retain latest user properties");
+
+    const auto user_alpha_value = host.FindResolvedValue(5, "alpha");
+    Require(user_alpha_value.has_value(), "user binding should resolve a value");
+    alpha = 0.0f;
+    Require(user_alpha_value->tryGet(&alpha), "user binding value should be a float");
+    Require(NearlyEqual(alpha, 0.75), "user binding should use latest user property");
+
+    const auto animated_alpha_value = host.FindResolvedValue(6, "alpha");
+    Require(animated_alpha_value.has_value(), "user-bound animation should resolve base value");
+    alpha = 0.0f;
+    Require(animated_alpha_value->tryGet(&alpha), "animation base value should be a float");
+    Require(NearlyEqual(alpha, 0.5), "animation base value should use latest user property");
+
+    host.ApplyGeneralSettings({ { "language", "zh-cn" }, { "quality", "high" } }, true);
+    Require(host.GeneralSettingDispatchCount() == 1, "initial general setting dispatch should be counted");
+    host.ApplyGeneralSettings({ { "language", "en-us" } }, false);
+    Require(host.GeneralSettingDispatchCount() == 2, "general setting updates should be counted");
+    const auto language = host.FindGeneralSetting("language");
+    Require(language.has_value(), "general setting should be queryable");
+    Require(*language == "en-us", "general setting should retain latest value");
 
     return 0;
 }
