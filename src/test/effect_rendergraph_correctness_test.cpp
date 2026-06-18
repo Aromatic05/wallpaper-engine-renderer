@@ -3,9 +3,12 @@
 #include "backend/scene/internal/scene/include/scene/SceneCamera.h"
 #include "backend/scene/internal/scene/include/scene/SceneImageEffectLayer.h"
 #include "backend/scene/internal/scene/include/scene/SceneMesh.h"
+#include "backend/scene/internal/scene/include/scene/SceneTextPrimitive.h"
+#include "render/vulkanrender/ClearPass.hpp"
 #include "render/vulkanrender/CopyPass.hpp"
 #include "render/vulkanrender/CustomShaderPass.hpp"
 #include "render/vulkanrender/PassCommon.hpp"
+#include "render/vulkanrender/TextPass.hpp"
 #include "rendergraph/RenderGraph.hpp"
 #include "backend/scene/internal/SpecTexs.hpp"
 
@@ -173,6 +176,29 @@ const vk::CustomShaderPass::Desc* findShaderByMaterial(rg::RenderGraph& graph,
     }
     return nullptr;
 }
+
+const vk::TextPass::Desc* findTextPass(rg::RenderGraph& graph, int32_t layer_id,
+                                       const std::string& output) {
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass = graph.getPass(id);
+        if (auto* text = dynamic_cast<vk::TextPass*>(pass)) {
+            if (text->desc().layer_id == layer_id && text->desc().output == output) {
+                return &text->desc();
+            }
+        }
+    }
+    return nullptr;
+}
+
+const vk::ClearPass::Desc* findClearPass(rg::RenderGraph& graph, const std::string& target) {
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass = graph.getPass(id);
+        if (auto* clear = dynamic_cast<vk::ClearPass*>(pass)) {
+            if (clear->desc().target == target) return &clear->desc();
+        }
+    }
+    return nullptr;
+}
 } // namespace
 
 int main() {
@@ -281,6 +307,44 @@ int main() {
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+    }
+
+    {
+        Scene scene;
+        scene.renderTargets[SpecTex_Default.data()] = { 64, 64, true };
+        auto node = std::make_shared<SceneNode>();
+        node->ID() = 77;
+        scene.sceneGraph->AppendChild(node);
+        auto primitive = std::make_shared<wallpaper::SceneTextPrimitive>();
+        primitive->object.id = 77;
+        scene.textPrimitives[77] = primitive;
+
+        auto graph = wallpaper::BuildWESceneRenderPlan(scene);
+        auto* text = findTextPass(*graph, 77, SpecTex_Default.data());
+        assert(text != nullptr);
+        assert(text->node == node.get());
+    }
+
+    {
+        Scene scene;
+        const std::string bridge_target = "_rt_text_bridge";
+        scene.renderTargets[SpecTex_Default.data()] = { 64, 64, true };
+        scene.renderTargets[bridge_target] = { 32, 16, true };
+        auto node = std::make_shared<SceneNode>();
+        node->ID() = 88;
+        scene.sceneGraph->AppendChild(node);
+        auto primitive = std::make_shared<wallpaper::SceneTextPrimitive>();
+        primitive->object.id = 88;
+        primitive->bridge.enabled = true;
+        primitive->bridge.render_targets.push_back(
+            wallpaper::TextBridgeRenderTarget { .name = bridge_target, .scale = 1 });
+        scene.textPrimitives[88] = primitive;
+
+        auto graph = wallpaper::BuildWESceneRenderPlan(scene);
+        assert(findClearPass(*graph, bridge_target) != nullptr);
+        auto* bridged_text = findTextPass(*graph, 88, bridge_target);
+        assert(bridged_text != nullptr);
+        assert(bridged_text->clear_output);
     }
 
     return 0;

@@ -8,6 +8,8 @@
 
 #include "render/vulkanrender/AllPasses.hpp"
 
+#include <array>
+
 using namespace wallpaper;
 namespace wallpaper::rg
 {
@@ -65,13 +67,28 @@ TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc =
     return copy;
 }
 
+void addClearPass(RenderGraph& rgraph, const TexNode::Desc& target,
+                  std::array<float, 4> color = { 0.0f, 0.0f, 0.0f, 0.0f }) {
+    rgraph.addPass<vulkan::ClearPass>(
+        "clear",
+        PassNode::Type::Clear,
+        [target, color](RenderGraphBuilder& builder, vulkan::ClearPass::Desc& desc) {
+            auto* target_node = builder.createTexNode(target, true);
+            builder.write(target_node);
+            desc.target      = target_node->key();
+            desc.clear_value = VkClearValue { .color = { color[0], color[1], color[2], color[3] } };
+        });
+}
+
+static bool IsRuntimeRenderTarget(const Scene* scene, const std::string& path) {
+    return IsSpecTex(path) || (scene != nullptr && scene->renderTargets.count(path) != 0);
+}
+
 static TexNode::Desc createTexDesc(std::string path, const Scene* scene = nullptr) {
     return TexNode::Desc { .name = path,
                            .key  = path,
-                           .type = (IsSpecTex(path) ||
-                                    (scene != nullptr && scene->renderTargets.count(path) != 0))
-                                       ? TexNode::TexType::Temp
-                                       : TexNode::TexType::Imported };
+                           .type = IsRuntimeRenderTarget(scene, path) ? TexNode::TexType::Temp
+                                                                      : TexNode::TexType::Imported };
 }
 } // namespace wallpaper::rg
 
@@ -171,6 +188,64 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
         }
     };
 
+    auto addTextPass = [node, output, imgId, &rgraph, &scene]() {
+        if (node == nullptr || scene.textPrimitives.count(imgId) == 0 ||
+            scene.textPrimitives.at(imgId) == nullptr) {
+            return;
+        }
+        if (scene.renderTargets.count(std::string(output)) == 0) {
+            LOG_ERROR("TextPass: output render target not found while building graph: %.*s",
+                      static_cast<int>(output.size()),
+                      output.data());
+            return;
+        }
+
+        rgraph.addPass<vulkan::TextPass>(
+            "text",
+            rg::PassNode::Type::Text,
+            [node, output = std::string(output), imgId](
+                rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
+                pdesc.node     = node;
+                pdesc.layer_id = imgId;
+                pdesc.output   = output;
+
+                auto* output_node =
+                    builder.createTexNode(rg::TexNode::Desc { .name = output,
+                                                              .key  = output,
+                                                              .type = rg::TexNode::TexType::Temp },
+                                          true);
+                builder.write(output_node);
+            });
+    };
+
+    addTextPass();
+
+    if (auto primitive_it = scene.textPrimitives.find(imgId);
+        primitive_it != scene.textPrimitives.end() && primitive_it->second != nullptr &&
+        primitive_it->second->bridge.enabled) {
+        for (const auto& target : primitive_it->second->bridge.render_targets) {
+            if (target.name.empty() || scene.renderTargets.count(target.name) == 0) continue;
+            rg::addClearPass(rgraph, rg::createTexDesc(target.name, &scene));
+            rgraph.addPass<vulkan::TextPass>(
+                "text",
+                rg::PassNode::Type::Text,
+                [node, target_name = target.name, imgId](
+                    rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
+                    pdesc.node         = node;
+                    pdesc.layer_id     = imgId;
+                    pdesc.output       = target_name;
+                    pdesc.clear_output = true;
+
+                    auto* output_node =
+                        builder.createTexNode(rg::TexNode::Desc { .name = target_name,
+                                                                  .key  = target_name,
+                                                                  .type = rg::TexNode::TexType::Temp },
+                                              true);
+                    builder.write(output_node);
+                });
+        }
+    }
+
     if (node->Mesh() == nullptr) return;
     auto* mesh = node->Mesh();
     if (mesh->Material() == nullptr) return;
@@ -238,11 +313,11 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                     rg::TexNode::Desc desc;
                     desc.key  = url;
                     desc.name = url;
-                    desc.type = (! IsSpecTex(url) && scene.renderTargets.count(url) == 0)
+                    desc.type = ! rg::IsRuntimeRenderTarget(&scene, url)
                                     ? rg::TexNode::TexType::Imported
                                     : rg::TexNode::TexType::Temp;
                     input     = builder.createTexNode(desc);
-                    if (desc.type == rg::TexNode::TexType::Temp) builder.markVirtualWrite(input);
+                    if (rg::IsRuntimeRenderTarget(&scene, url)) builder.markVirtualWrite(input);
                     if (sstart_with(url, WE_MIP_MAPPED_FRAME_BUFFER))
                         extra.use_mipmap_framebuffer = true;
                 }
