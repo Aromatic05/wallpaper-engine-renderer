@@ -116,6 +116,23 @@ target_compile_options(dynamic-value-user-setting-test PRIVATE ${warn_opts})
 
 add_test(NAME dynamic-value-user-setting-test COMMAND dynamic-value-user-setting-test)
 
+add_executable(
+  property-animation-test
+  property_animation_test.cpp)
+
+target_link_libraries(property-animation-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  property-animation-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(property-animation-test PRIVATE ${warn_opts})
+
+add_test(NAME property-animation-test COMMAND property-animation-test)
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}

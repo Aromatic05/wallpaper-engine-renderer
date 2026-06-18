@@ -7,6 +7,7 @@ add_library(
   WPJson.cpp
   WPPkgFs.cpp
   WPParticleParser.cpp
+  WPPropertyAnimation.cpp
   WPShaderParser.cpp
   WPSceneParser.cpp
   WPShaderValueUpdater.cpp
