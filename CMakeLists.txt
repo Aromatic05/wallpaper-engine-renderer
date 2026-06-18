@@ -6,12 +6,45 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
+find_package(Threads REQUIRED)
 
 include(CTest)
 
 include_directories(SYSTEM third_party)
 
 link_libraries(Eigen3::Eigen)
+
+option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" OFF)
+option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" OFF)
+
+set(WP_QUICKJS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/quickjs"
+    CACHE PATH "Path to the QuickJS checkout used for SceneScript runtime support")
+
+if(WP_ENABLE_SCENESCRIPT_RUNTIME)
+    if(NOT EXISTS "${WP_QUICKJS_DIR}/quickjs.c")
+        message(FATAL_ERROR
+                "WP_ENABLE_SCENESCRIPT_RUNTIME=ON requires QuickJS sources at "
+                "'${WP_QUICKJS_DIR}'.")
+    endif()
+
+    add_library(
+        wpquickjs STATIC
+        ${WP_QUICKJS_DIR}/dtoa.c
+        ${WP_QUICKJS_DIR}/libregexp.c
+        ${WP_QUICKJS_DIR}/libunicode.c
+        ${WP_QUICKJS_DIR}/quickjs.c)
+    target_compile_definitions(wpquickjs PRIVATE QUICKJS_NG_BUILD _GNU_SOURCE)
+    target_include_directories(wpquickjs PUBLIC ${WP_QUICKJS_DIR})
+
+    find_library(M_LIBRARIES m)
+    if(M_LIBRARIES)
+        target_link_libraries(wpquickjs PUBLIC ${CMAKE_DL_LIBS} Threads::Threads m)
+    else()
+        target_link_libraries(wpquickjs PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
+    endif()
+    set_property(TARGET wpquickjs PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
 
 add_subdirectory(third_party)
 add_subdirectory(src)
