@@ -2,10 +2,12 @@ set(LIB_NAME wpVulkanRender)
 
 add_library(${LIB_NAME}
 STATIC
+ClearPass.cpp
 CopyPass.cpp
 CustomShaderPass.cpp
 FinPass.cpp
 PrePass.cpp
+TextPass.cpp
 VulkanRender.cpp
 )
 

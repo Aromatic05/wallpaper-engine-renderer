@@ -13,6 +13,8 @@ public:
     enum class Type {
         CustomShader,
         Copy,
+        Clear,
+        Text,
         Virtual // for mark a virual writer to update version
     };
     static PassNode* addPassNode(DependencyGraph& dg, Type type);

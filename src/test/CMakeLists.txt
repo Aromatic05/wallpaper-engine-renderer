@@ -148,6 +148,25 @@ target_compile_options(text-layer-runtime-test PRIVATE ${warn_opts})
 add_test(NAME text-layer-runtime-test COMMAND text-layer-runtime-test)
 
 add_executable(
+  text-clear-pass-test
+  text_clear_pass_test.cpp)
+
+target_link_libraries(text-clear-pass-test PRIVATE ${PROJECT_NAME} wpVulkanRender wpRGraph)
+target_include_directories(
+  text-clear-pass-test PRIVATE
+  ..
+  ../render
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../render/vulkanrender
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common)
+target_compile_options(text-clear-pass-test PRIVATE ${warn_opts})
+
+add_test(NAME text-clear-pass-test COMMAND text-clear-pass-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 
