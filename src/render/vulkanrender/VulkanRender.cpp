@@ -487,6 +487,7 @@ void VulkanRender::Impl::clearLastRenderGraph() {
     }
     m_passes.clear();
     m_device->tex_cache().Clear();
+    m_device->video_tex_cache().Clear();
 
     m_vertex_buf->destroy();
     m_dyn_buf->destroy();

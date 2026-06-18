@@ -13,6 +13,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
@@ -67,6 +68,11 @@ TextureFormat ToTexFormate(int type) {
         return TextureFormat::RGBA8;
     }
 }
+
+bool LooksLikeMp4Payload(const char* data, size_t size) {
+    return data != nullptr && size >= 8 && std::memcmp(data + 4, "ftyp", 4) == 0;
+}
+
 void LoadHeader(fs::IBinaryStream& file, ImageHeader& header) {
     header.extraHeader["texv"].val = ReadTexVesion(file);
     header.extraHeader["texi"].val = ReadTexVesion(file);
@@ -184,6 +190,11 @@ std::shared_ptr<Image> WPTexImageParser::Parse(const std::string& name) {
                     return nullptr;
                 }
             }
+            if (i_image == 0 && i_mipmap == 0 && img.header.type == ImageType::UNKNOWN &&
+                LooksLikeMp4Payload(result, static_cast<size_t>(src_size))) {
+                img.header.isVideoTexture = true;
+                img.header.extraHeader["texb_is_video_mp4"].val = 1;
+            }
             // is image container
             if (img.header.extraHeader["texb"].val == 3 && img.header.type != ImageType::UNKNOWN) {
                 int32_t w, h, n;
@@ -238,7 +249,22 @@ ImageHeader WPTexImageParser::ParseHeader(const std::string& name) {
                     (void)decompressed_size;
                 }
                 long src_size = file.ReadInt32();
-                file.SeekCur(src_size);
+                if (i_image == 0 && i_mipmap == 0 && src_size > 0) {
+                    constexpr usize probe_size = 16;
+                    char            probe[probe_size] {};
+                    const auto      to_read = static_cast<usize>(
+                        std::min<long>(src_size, static_cast<long>(probe_size)));
+                    const auto read = file.Read(probe, to_read);
+                    if (header.type == ImageType::UNKNOWN && LooksLikeMp4Payload(probe, read)) {
+                        header.isVideoTexture = true;
+                        header.extraHeader["texb_is_video_mp4"].val = 1;
+                    }
+                    if (src_size > static_cast<long>(read)) {
+                        file.SeekCur(src_size - static_cast<long>(read));
+                    }
+                } else {
+                    file.SeekCur(src_size);
+                }
             }
         }
         // sprite pos
@@ -290,10 +316,34 @@ ImageHeader WPTexImageParser::ParseHeader(const std::string& name) {
         }
     } else {
         i32 mipmap_count = file.ReadInt32();
-        (void)mipmap_count;
-        i32 width  = file.ReadInt32();
-        i32 height = file.ReadInt32();
-        SetHeaderPow2(header, width, height);
+        for (int32_t i_mipmap = 0; i_mipmap < mipmap_count; i_mipmap++) {
+            i32 width  = file.ReadInt32();
+            i32 height = file.ReadInt32();
+            if (i_mipmap == 0) SetHeaderPow2(header, width, height);
+            if (header.extraHeader["texb"].val > 1) {
+                const int32_t LZ4_compressed    = file.ReadInt32();
+                const int32_t decompressed_size = file.ReadInt32();
+                (void)LZ4_compressed;
+                (void)decompressed_size;
+            }
+            const long src_size = file.ReadInt32();
+            if (i_mipmap == 0 && src_size > 0) {
+                constexpr usize probe_size = 16;
+                char            probe[probe_size] {};
+                const auto      to_read = static_cast<usize>(
+                    std::min<long>(src_size, static_cast<long>(probe_size)));
+                const auto read = file.Read(probe, to_read);
+                if (header.type == ImageType::UNKNOWN && LooksLikeMp4Payload(probe, read)) {
+                    header.isVideoTexture = true;
+                    header.extraHeader["texb_is_video_mp4"].val = 1;
+                }
+                if (src_size > static_cast<long>(read)) {
+                    file.SeekCur(src_size - static_cast<long>(read));
+                }
+            } else {
+                file.SeekCur(src_size);
+            }
+        }
     }
     return header;
 }

@@ -11,6 +11,7 @@ Shader.cpp
 StagingBuffer.cpp
 Swapchain.cpp
 TextureCache.cpp
+VideoTextureCache.cpp
 Parameters.cpp
 Vma.cpp
 vulkan_wrapper.cpp

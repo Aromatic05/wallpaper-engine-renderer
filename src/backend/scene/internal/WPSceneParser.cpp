@@ -403,8 +403,14 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
 
             if (pScene->textures.count(name) == 0) {
                 SceneTexture stex;
-                stex.sample = texh.sample;
-                stex.url    = name;
+                stex.sample    = texh.sample;
+                stex.url       = name;
+                stex.format    = texh.format;
+                stex.isVideo   = texh.isVideoTexture;
+                stex.width     = texh.width;
+                stex.height    = texh.height;
+                stex.mapWidth  = texh.mapWidth;
+                stex.mapHeight = texh.mapHeight;
                 if (texh.isSprite) {
                     stex.isSprite   = texh.isSprite;
                     stex.spriteAnim = texh.spriteAnim;

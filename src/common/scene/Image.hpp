@@ -42,6 +42,7 @@ struct ImageHeader {
     i32           count { 0 };
 
     bool          isSprite { false };
+    bool          isVideoTexture { false };
     TextureSample sample;
 
     SpriteAnimation                           spriteAnim;

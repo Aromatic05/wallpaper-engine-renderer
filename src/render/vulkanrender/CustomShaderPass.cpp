@@ -9,6 +9,7 @@
 #include "Resource.hpp"
 #include "PassCommon.hpp"
 #include "interface/IImageParser.h"
+#include "vulkan/VideoTextureCache.hpp"
 
 #include "core/ArrayHelper.hpp"
 
@@ -122,7 +123,16 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
         } else {
             auto image = scene.imageParser->Parse(tex_name);
             if (image) {
-                img_slots = device.tex_cache().CreateTex(*image);
+                auto texture_it = scene.textures.find(tex_name);
+                if (texture_it != scene.textures.end() && texture_it->second.isVideo) {
+                    img_slots = device.video_tex_cache().Acquire(
+                        tex_name,
+                        texture_it->second,
+                        *image,
+                        VideoTexturePlaybackState::Playing);
+                } else {
+                    img_slots = device.tex_cache().CreateTex(*image);
+                }
             } else {
                 LOG_ERROR("parse tex \"%s\" failed", tex_name.c_str());
             }

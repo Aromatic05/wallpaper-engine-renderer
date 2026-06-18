@@ -4,6 +4,7 @@
 #include "vk_mem_alloc.h"
 #include "Parameters.hpp"
 #include "TextureCache.hpp"
+#include "VideoTextureCache.hpp"
 
 namespace wallpaper
 {
@@ -17,7 +18,8 @@ public:
     Device();
     ~Device();
 
-    static bool Create(Instance&, std::span<const Extension> exts, VkExtent2D extent, Device&);
+    static bool Create(Instance&, std::span<const Extension> exts, VkExtent2D extent, Device&,
+                       VideoTexturePipelineSettings video_texture_settings = {});
     static bool CheckGPU(vvk::PhysicalDevice gpu, std::span<const Extension> exts, VkSurfaceKHR surface);
 
     void Destroy();
@@ -37,6 +39,7 @@ public:
     bool supportExt(std::string_view) const;
 
     TextureCache& tex_cache() const { return *m_tex_cache; }
+    VideoTextureCache& video_tex_cache() const { return *m_video_tex_cache; }
 
     VkDeviceSize GetUsage() const;
 
@@ -62,6 +65,7 @@ private:
     VkExtent2D m_extent { 1, 1 };
 
     std::unique_ptr<TextureCache> m_tex_cache;
+    std::unique_ptr<VideoTextureCache> m_video_tex_cache;
 };
 
 } // namespace vulkan

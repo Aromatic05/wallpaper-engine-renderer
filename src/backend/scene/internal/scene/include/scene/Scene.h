@@ -42,6 +42,9 @@ public:
     std::unordered_map<int32_t, std::shared_ptr<SceneTextPrimitive>> textPrimitives;
     std::unordered_map<int32_t, TextLayerRuntimeState> textLayers;
     std::unordered_set<int32_t> dirtyTextLayerIds;
+    std::unordered_map<std::string, bool> videoTexturePaused;
+    std::unordered_set<std::string>       videoTextureStopped;
+    std::unordered_map<std::string, double> videoTextureSeekRequests;
 
     std::shared_ptr<SceneNode>           sceneGraph;
     std::unique_ptr<IShaderValueUpdater> shaderValueUpdater;

@@ -167,6 +167,22 @@ target_compile_options(text-clear-pass-test PRIVATE ${warn_opts})
 add_test(NAME text-clear-pass-test COMMAND text-clear-pass-test)
 
 add_executable(
+  video-texture-cache-test
+  video_texture_cache_test.cpp)
+
+target_link_libraries(video-texture-cache-test PRIVATE ${PROJECT_NAME} wpVulkan)
+target_include_directories(
+  video-texture-cache-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../render/vulkan/include)
+target_compile_options(video-texture-cache-test PRIVATE ${warn_opts})
+
+add_test(NAME video-texture-cache-test COMMAND video-texture-cache-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 
