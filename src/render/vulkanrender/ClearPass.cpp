@@ -10,6 +10,10 @@ ClearPass::ClearPass(const Desc& desc): m_desc(desc) {}
 
 ClearPass::~ClearPass() = default;
 
+std::string ClearPass::residencyKey() const {
+    return "ClearPass|target=" + m_desc.target;
+}
+
 void ClearPass::prepare(Scene& scene, const Device& device, RenderingResources&) {
     if (scene.renderTargets.count(m_desc.target) == 0) {
         LOG_ERROR("ClearPass: target render target not found: %s", m_desc.target.c_str());

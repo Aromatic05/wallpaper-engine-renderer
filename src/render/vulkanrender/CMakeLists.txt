@@ -8,6 +8,7 @@ CustomShaderPass.cpp
 FinPass.cpp
 PrePass.cpp
 TextPass.cpp
+VulkanPass.cpp
 VulkanRender.cpp
 )
 

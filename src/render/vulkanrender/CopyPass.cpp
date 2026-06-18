@@ -11,6 +11,10 @@ CopyPass::CopyPass(const Desc& desc): m_desc(desc) {}
 
 CopyPass::~CopyPass() {};
 
+std::string CopyPass::residencyKey() const {
+    return "CopyPass|src=" + m_desc.src + "|dst=" + m_desc.dst;
+}
+
 void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& rr) {
     if (scene.renderTargets.count(m_desc.src) == 0) {
         LOG_ERROR("%s not found", m_desc.src.c_str());

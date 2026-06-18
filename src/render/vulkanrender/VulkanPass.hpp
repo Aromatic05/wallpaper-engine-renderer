@@ -25,6 +25,8 @@ public:
     virtual void prepare(Scene&, const Device&, RenderingResources&) = 0;
     virtual void execute(const Device&, RenderingResources&)         = 0;
     virtual void destory(const Device&, RenderingResources&)         = 0;
+    virtual std::string residencyKey() const { return {}; }
+    virtual bool canReuseForResidency(const VulkanPass& next_pass) const;
 
     void addReleaseTexs(std::span<const std::string_view> texs) {
         m_release_texs.clear();

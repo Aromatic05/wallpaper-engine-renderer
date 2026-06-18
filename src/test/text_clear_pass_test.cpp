@@ -1,8 +1,12 @@
 #include "render/rendergraph/include/rendergraph/RenderGraph.hpp"
 #include "render/vulkanrender/ClearPass.hpp"
+#include "render/vulkanrender/CopyPass.hpp"
+#include "render/vulkanrender/CustomShaderPass.hpp"
 #include "render/vulkanrender/TextPass.hpp"
+#include "backend/scene/internal/scene/include/scene/SceneNode.h"
 
 #include <cassert>
+#include <string>
 
 int main() {
     wallpaper::rg::RenderGraph graph;
@@ -55,6 +59,42 @@ int main() {
     assert(clear_pass->desc().target == "_rt_text");
     assert(text_pass->desc().output == "_rt_text");
     assert(text_pass->desc().layer_id == 7);
+    assert(clear_pass->residencyKey() == "ClearPass|target=_rt_text");
+    assert(text_pass->residencyKey().find("TextPass|node=") == 0);
+    assert(text_pass->residencyKey().find("|layer=7|output=_rt_text") != std::string::npos);
+
+    wallpaper::vulkan::ClearPass::Desc clear_desc;
+    clear_desc.target = "_rt_text";
+    wallpaper::vulkan::ClearPass matching_clear(clear_desc);
+    clear_desc.target = "_rt_other";
+    wallpaper::vulkan::ClearPass other_clear(clear_desc);
+    assert(clear_pass->canReuseForResidency(matching_clear));
+    assert(!clear_pass->canReuseForResidency(other_clear));
+
+    wallpaper::vulkan::CopyPass::Desc copy_desc;
+    copy_desc.src = "_rt_a";
+    copy_desc.dst = "_rt_b";
+    wallpaper::vulkan::CopyPass copy(copy_desc);
+    wallpaper::vulkan::CopyPass matching_copy(copy_desc);
+    copy_desc.src = "_rt_b";
+    copy_desc.dst = "_rt_a";
+    wallpaper::vulkan::CopyPass other_copy(copy_desc);
+    assert(copy.residencyKey() == "CopyPass|src=_rt_a|dst=_rt_b");
+    assert(copy.canReuseForResidency(matching_copy));
+    assert(!copy.canReuseForResidency(other_copy));
+
+    wallpaper::SceneNode shader_node;
+    wallpaper::vulkan::CustomShaderPass::Desc shader_desc;
+    shader_desc.node = &shader_node;
+    shader_desc.output = "_rt_shader";
+    wallpaper::vulkan::CustomShaderPass shader(shader_desc);
+    wallpaper::vulkan::CustomShaderPass matching_shader(shader_desc);
+    shader_desc.output = "_rt_other";
+    wallpaper::vulkan::CustomShaderPass other_shader(shader_desc);
+    assert(shader.residencyKey().find("CustomShaderPass|node=") == 0);
+    assert(shader.residencyKey().find("|output=_rt_shader") != std::string::npos);
+    assert(shader.canReuseForResidency(matching_shader));
+    assert(!shader.canReuseForResidency(other_shader));
 
     return 0;
 }

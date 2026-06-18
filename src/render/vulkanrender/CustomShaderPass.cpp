@@ -14,6 +14,7 @@
 #include "core/ArrayHelper.hpp"
 
 #include <cassert>
+#include <cstdint>
 
 using namespace wallpaper::vulkan;
 
@@ -29,6 +30,12 @@ CustomShaderPass::CustomShaderPass(const Desc& desc) {
     m_desc.sprites_map = desc.sprites_map;
 };
 CustomShaderPass::~CustomShaderPass() {}
+
+std::string CustomShaderPass::residencyKey() const {
+    return "CustomShaderPass|node=" +
+           std::to_string(reinterpret_cast<std::uintptr_t>(m_desc.node)) +
+           "|output=" + m_desc.output;
+}
 
 std::optional<vvk::RenderPass> CreateRenderPass(const vvk::Device& device, VkFormat format,
                                                 VkAttachmentLoadOp loadOp,

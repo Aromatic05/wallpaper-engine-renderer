@@ -11,6 +11,11 @@ TextPass::TextPass(const Desc& desc): m_desc(desc) {}
 
 TextPass::~TextPass() = default;
 
+std::string TextPass::residencyKey() const {
+    return "TextPass|node=" + std::to_string(reinterpret_cast<std::uintptr_t>(m_desc.node)) +
+           "|layer=" + std::to_string(m_desc.layer_id) + "|output=" + m_desc.output;
+}
+
 void TextPass::prepare(Scene& scene, const Device& device, RenderingResources&) {
     if (m_desc.node == nullptr || m_desc.layer_id == 0 || m_desc.output.empty()) {
         LOG_ERROR("TextPass: invalid text pass description");
