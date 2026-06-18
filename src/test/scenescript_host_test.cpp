@@ -1,4 +1,5 @@
 #include "backend/scene/internal/WPSceneScriptHost.hpp"
+#include "backend/scene/internal/WPSceneParser.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -7,6 +8,8 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+
+#include <nlohmann/json.hpp>
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 
@@ -196,6 +199,56 @@ int main() {
     const auto language = host.FindGeneralSetting("language");
     Require(language.has_value(), "general setting should be queryable");
     Require(*language == "en-us", "general setting should retain latest value");
+
+    Scene parsed_scene;
+    wallpaper::SceneNode parsed_node;
+    RegisterSceneScriptBindingsForTest(
+        parsed_scene,
+        nlohmann::json {
+            { "general",
+              {
+                  { "clearcolor",
+                    { { "value", nlohmann::json::array({ 0.1f, 0.2f, 0.3f }) },
+                      { "user", "scene_color" } } },
+              } },
+            { "objects",
+              nlohmann::json::array({
+                  {
+                      { "id", 7 },
+                      { "name", "ScriptedLayer" },
+                      { "alpha", { { "value", 0.4f }, { "user", "layer_alpha" } } },
+                      { "origin",
+                        { { "value", nlohmann::json::array({ 1.0f, 2.0f, 3.0f }) },
+                          { "script", "return value;" } } },
+                      { "brightness",
+                        { { "value", 0.0f },
+                          { "animation",
+                            {
+                                { "options", { { "fps", 10.0 }, { "length", 10.0 } } },
+                                { "c0",
+                                  nlohmann::json::array({
+                                      { { "frame", 0.0 }, { "value", 0.0 } },
+                                      { { "frame", 10.0 }, { "value", 1.0 } },
+                                  }) },
+                            } } } },
+                  },
+              }) },
+        },
+        &parsed_node);
+    Require(parsed_scene.bindingRegistrations.size() == 2,
+            "parser should register layer and general user bindings");
+    Require(parsed_scene.scriptRegistrations.size() == 1,
+            "parser should register script bindings");
+    Require(parsed_scene.propertyAnimationRegistrations.size() == 1,
+            "parser should register property animations");
+    Require(parsed_scene.bindingRegistrations[0].property_name == "clearcolor",
+            "general binding should preserve property name");
+    Require(parsed_scene.bindingRegistrations[1].property_name == "alpha",
+            "layer binding should preserve property name");
+    Require(parsed_scene.scriptRegistrations[0].node == &parsed_node,
+            "script registration should bind parsed scene node");
+    Require(parsed_scene.propertyAnimationRegistrations[0].animation != nullptr,
+            "property animation registration should own animation definition");
 
     return 0;
 }

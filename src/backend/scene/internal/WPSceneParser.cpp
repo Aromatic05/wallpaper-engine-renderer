@@ -15,6 +15,8 @@
 #include "WPParticleParser.hpp"
 #include "WPSoundParser.hpp"
 #include "WPMdlParser.hpp"
+#include "WPPropertyAnimation.hpp"
+#include "WPUserSetting.hpp"
 
 #include "particle/WPParticleRawGener.h"
 #include "particle/ParticleSystem.h"
@@ -56,6 +58,7 @@ struct ParseContext {
     std::shared_ptr<SceneNode> effect_camera_node;
     std::shared_ptr<SceneNode> global_camera_node;
     std::shared_ptr<SceneNode> global_perspective_camera_node;
+    std::unordered_map<int32_t, std::shared_ptr<SceneNode>> object_nodes;
 };
 
 using WPObjectVar = std::variant<wpscene::WPImageObject, wpscene::WPParticleObject,
@@ -494,6 +497,162 @@ void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
     }
 }
 
+std::optional<WPDynamicValue> ParsePropertyBaseValue(const nlohmann::json& property_json,
+                                                     WPDynamicValue::Type hint) {
+    if (property_json.is_object() && property_json.contains("value")) {
+        return WPDynamicValue::FromJsonLiteral(property_json.at("value"), hint);
+    }
+    return WPDynamicValue::FromJsonLiteral(property_json, hint);
+}
+
+bool GetObjectIdAndName(const nlohmann::json& object_json, int32_t* object_id,
+                        std::string* object_name) {
+    if (! object_json.is_object() || ! object_json.contains("id")) return false;
+
+    int32_t id { 0 };
+    if (! GetJsonValue(__SHORT_FILE__,
+                       __FUNCTION__,
+                       __LINE__,
+                       object_json.at("id"),
+                       id,
+                       false,
+                       "",
+                       false)) {
+        return false;
+    }
+
+    std::string name = std::to_string(id);
+    if (object_json.contains("name")) {
+        (void)GetJsonValue(__SHORT_FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           object_json.at("name"),
+                           name,
+                           false,
+                           "",
+                           false);
+    }
+
+    if (object_id) *object_id = id;
+    if (object_name) *object_name = std::move(name);
+    return id != 0;
+}
+
+void RegisterLayerSceneScriptProperty(ParseContext& context, const nlohmann::json& object_json,
+                                      std::string_view property_name,
+                                      WPDynamicValue::Type hint) {
+    if (context.scene == nullptr || ! object_json.is_object() ||
+        ! object_json.contains(property_name) || ! object_json.at(property_name).is_object()) {
+        return;
+    }
+
+    int32_t     object_id { 0 };
+    std::string object_name;
+    if (! GetObjectIdAndName(object_json, &object_id, &object_name)) return;
+
+    const auto node_it = context.object_nodes.find(object_id);
+    if (node_it == context.object_nodes.end()) return;
+
+    const auto& property_json = object_json.at(property_name);
+    WPUserSetting setting;
+    if (! ParseUserSetting(property_json, setting, hint)) return;
+
+    WPSceneScriptRegistration registration {
+        .object_id     = object_id,
+        .object_name   = std::move(object_name),
+        .property_name = std::string(property_name),
+        .node          = node_it->second.get(),
+        .target_kind   = WPSceneScriptTargetKind::Layer,
+        .target_index  = 0,
+        .value_type    = hint,
+        .base_value    = ParsePropertyBaseValue(property_json, hint).value_or(setting.value),
+        .setting       = std::move(setting),
+    };
+
+    if (property_json.contains("animation") && ! property_json.at("animation").is_null()) {
+        WPPropertyAnimationDefinition animation_definition;
+        if (! ParsePropertyAnimationDefinition(property_json, hint, animation_definition)) return;
+        registration.animation =
+            std::make_shared<WPPropertyAnimationDefinition>(std::move(animation_definition));
+        context.scene->propertyAnimationRegistrations.push_back(std::move(registration));
+    } else if (registration.setting.hasScript()) {
+        context.scene->scriptRegistrations.push_back(std::move(registration));
+    } else if (registration.setting.hasUserBinding()) {
+        context.scene->bindingRegistrations.push_back(std::move(registration));
+    }
+}
+
+void RegisterGeneralSceneScriptProperty(ParseContext& context, const nlohmann::json& general_json,
+                                        std::string_view property_name,
+                                        WPDynamicValue::Type hint) {
+    if (context.scene == nullptr || ! general_json.is_object() ||
+        ! general_json.contains(property_name) || ! general_json.at(property_name).is_object()) {
+        return;
+    }
+
+    const auto& property_json = general_json.at(property_name);
+    if (property_json.contains("animation")) return;
+
+    WPUserSetting setting;
+    if (! ParseUserSetting(property_json, setting, hint) || ! setting.hasUserBinding()) return;
+
+    context.scene->bindingRegistrations.push_back(WPSceneScriptRegistration {
+        .object_id     = 0,
+        .object_name   = "scene.general",
+        .property_name = std::string(property_name),
+        .node          = nullptr,
+        .target_kind   = WPSceneScriptTargetKind::Scene,
+        .target_index  = 0,
+        .value_type    = hint,
+        .base_value    = ParsePropertyBaseValue(property_json, hint).value_or(setting.value),
+        .setting       = std::move(setting),
+    });
+}
+
+void RegisterSceneScripts(ParseContext& context, const nlohmann::json& scene_json) {
+    if (scene_json.contains("general") && scene_json.at("general").is_object()) {
+        const auto& general = scene_json.at("general");
+        RegisterGeneralSceneScriptProperty(
+            context, general, "clearcolor", WPDynamicValue::Type::Float3);
+        RegisterGeneralSceneScriptProperty(
+            context, general, "ambientcolor", WPDynamicValue::Type::Float3);
+        RegisterGeneralSceneScriptProperty(
+            context, general, "cameraparallax", WPDynamicValue::Type::Boolean);
+        RegisterGeneralSceneScriptProperty(
+            context, general, "cameraparallaxamount", WPDynamicValue::Type::Float);
+        RegisterGeneralSceneScriptProperty(
+            context, general, "cameraparallaxdelay", WPDynamicValue::Type::Float);
+        RegisterGeneralSceneScriptProperty(
+            context, general, "cameraparallaxmouseinfluence", WPDynamicValue::Type::Float);
+        RegisterGeneralSceneScriptProperty(context, general, "fov", WPDynamicValue::Type::Float);
+        RegisterGeneralSceneScriptProperty(context, general, "nearz", WPDynamicValue::Type::Float);
+        RegisterGeneralSceneScriptProperty(context, general, "farz", WPDynamicValue::Type::Float);
+    }
+
+    if (! scene_json.contains("objects") || ! scene_json.at("objects").is_array()) return;
+
+    for (const auto& object_json : scene_json.at("objects")) {
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "visible", WPDynamicValue::Type::Boolean);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "origin", WPDynamicValue::Type::Float3);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "angles", WPDynamicValue::Type::Float3);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "scale", WPDynamicValue::Type::Float3);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "parallaxDepth", WPDynamicValue::Type::Float2);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "size", WPDynamicValue::Type::Float2);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "color", WPDynamicValue::Type::Float3);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "alpha", WPDynamicValue::Type::Float);
+        RegisterLayerSceneScriptProperty(
+            context, object_json, "brightness", WPDynamicValue::Type::Float);
+    }
+}
+
 // parse
 
 void ParseCamera(ParseContext& context, wpscene::WPSceneGeneral& general) {
@@ -622,6 +781,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                                  Vector3f(wpimgobj.angles.data()));
     LoadAlignment(*spImgNode, wpimgobj.alignment, { wpimgobj.size[0], wpimgobj.size[1] });
     spImgNode->ID() = wpimgobj.id;
+    context.object_nodes[wpimgobj.id] = spImgNode;
 
     SceneMaterial     material;
     WPShaderValueData svData;
@@ -975,6 +1135,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         spNode         = std::make_shared<SceneNode>(Vector3f(wppartobj.origin.data()),
                                              Vector3f(wppartobj.scale.data()),
                                              Vector3f(wppartobj.angles.data()));
+        spNode->ID() = wppartobj.id;
+        context.object_nodes[wppartobj.id] = spNode;
     }
 
     wpscene::ParticleInstanceoverride override =
@@ -1245,6 +1407,27 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
                    obj);
     }
 
+    RegisterSceneScripts(context, json);
+
     WPShaderParser::FinalGlslang();
     return context.scene;
+}
+
+void wallpaper::RegisterSceneScriptBindingsForTest(Scene& scene, const nlohmann::json& scene_json,
+                                                   SceneNode* node) {
+    ParseContext context;
+    context.scene = std::shared_ptr<Scene>(&scene, [](Scene*) {});
+
+    if (scene_json.contains("objects") && scene_json.at("objects").is_array()) {
+        for (const auto& object_json : scene_json.at("objects")) {
+            int32_t     object_id { 0 };
+            std::string object_name;
+            if (GetObjectIdAndName(object_json, &object_id, &object_name) && node != nullptr) {
+                context.object_nodes[object_id] =
+                    std::shared_ptr<SceneNode>(node, [](SceneNode*) {});
+            }
+        }
+    }
+
+    RegisterSceneScripts(context, scene_json);
 }
