@@ -100,6 +100,21 @@ target_compile_options(particle-regression-test PRIVATE ${warn_opts})
 add_test(NAME particle-regression-test COMMAND particle-regression-test)
 
 add_executable(
+  synthetic-image-parser-test
+  synthetic_image_parser_test.cpp)
+
+target_link_libraries(synthetic-image-parser-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  synthetic-image-parser-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common)
+target_compile_options(synthetic-image-parser-test PRIVATE ${warn_opts})
+
+add_test(NAME synthetic-image-parser-test COMMAND synthetic-image-parser-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 

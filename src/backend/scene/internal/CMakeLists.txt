@@ -12,6 +12,7 @@ add_library(
   WPShaderParser.cpp
   WPSceneParser.cpp
   WPShaderValueUpdater.cpp
+  WPSyntheticImageParser.cpp
   WPTexImageParser.cpp
   WPUserSetting.cpp
   WPSoundParser.cpp

@@ -16,6 +16,7 @@
 #include "WPSoundParser.hpp"
 #include "WPMdlParser.hpp"
 #include "WPPropertyAnimation.hpp"
+#include "WPSyntheticImageParser.hpp"
 #include "WPUserSetting.hpp"
 
 #include "particle/WPParticleRawGener.h"
@@ -693,7 +694,8 @@ void InitContext(ParseContext& context, fs::VFS& vfs, wpscene::WPScene& sc) {
     context.scene            = std::make_shared<Scene>();
     context.vfs              = &vfs;
     auto& scene              = *context.scene;
-    scene.imageParser        = std::make_unique<WPTexImageParser>(&vfs);
+    scene.imageParser        = std::make_unique<WPSyntheticImageParser>(
+        std::make_unique<WPTexImageParser>(&vfs));
     scene.paritileSys->gener = std::make_unique<WPParticleRawGener>();
     scene.shaderValueUpdater = std::make_unique<WPShaderValueUpdater>(&scene);
     GenCardMesh(scene.default_effect_mesh, { 2, 2 });
