@@ -25,6 +25,13 @@ add_library(
   engine/WESceneRenderPlanBuilder.cpp
   engine/WESceneRuntimeDriver.cpp)
 
+if(WP_ENABLE_SCENESCRIPT_RUNTIME)
+  target_sources(
+    ${LIB_NAME}
+    PRIVATE
+      WPScriptRuntime.cpp)
+endif()
+
 target_link_libraries(
   ${LIB_NAME}
   PUBLIC wpUtils
@@ -45,6 +52,10 @@ target_link_libraries(
 target_include_directories(${LIB_NAME} PRIVATE . ../../..)
 target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
 set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+if(WP_ENABLE_SCENESCRIPT_RUNTIME)
+  target_link_libraries(${LIB_NAME} PRIVATE wpquickjs)
+endif()
 
 add_subdirectory(scene)
 add_subdirectory(particle)

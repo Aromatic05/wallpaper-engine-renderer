@@ -133,6 +133,25 @@ target_compile_options(property-animation-test PRIVATE ${warn_opts})
 
 add_test(NAME property-animation-test COMMAND property-animation-test)
 
+if(WP_ENABLE_SCENESCRIPT_RUNTIME)
+  add_executable(
+    scenescript-runtime-test
+    scenescript_runtime_test.cpp)
+
+  target_link_libraries(scenescript-runtime-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+  target_include_directories(
+    scenescript-runtime-test PRIVATE
+    ..
+    ../backend/scene/internal
+    ../backend/scene/internal/scene/include
+    ../common
+    ../common/utils/include
+    ../../third_party/nlohmann/include)
+  target_compile_options(scenescript-runtime-test PRIVATE ${warn_opts})
+
+  add_test(NAME scenescript-runtime-test COMMAND scenescript-runtime-test)
+endif()
+
 add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}
