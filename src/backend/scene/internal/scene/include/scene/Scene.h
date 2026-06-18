@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "SceneTexture.h"
@@ -9,6 +10,7 @@
 #include "SceneNode.h"
 #include "SceneLight.hpp"
 #include "WPSceneScriptRegistration.hpp"
+#include "WPTextLayer.hpp"
 
 #include "core/NoCopyMove.hpp"
 
@@ -38,6 +40,8 @@ public:
 
     std::vector<std::unique_ptr<SceneLight>> lights;
     std::unordered_map<int32_t, std::shared_ptr<SceneTextPrimitive>> textPrimitives;
+    std::unordered_map<int32_t, TextLayerRuntimeState> textLayers;
+    std::unordered_set<int32_t> dirtyTextLayerIds;
 
     std::shared_ptr<SceneNode>           sceneGraph;
     std::unique_ptr<IShaderValueUpdater> shaderValueUpdater;
@@ -66,6 +70,10 @@ public:
     std::array<float, 3> clearColor { 1.0f, 1.0f, 1.0f };
 
     double elapsingTime { 0.0f }, frameTime { 0.0f };
+    double textRenderScale { 1.0 };
+    void MarkTextLayerResourcesDirty(int32_t layer_id) {
+        if (layer_id != 0) dirtyTextLayerIds.insert(layer_id);
+    }
     void   PassFrameTime(double t) {
           frameTime = t;
           elapsingTime += t;

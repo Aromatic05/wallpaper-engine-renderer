@@ -17,6 +17,7 @@
 #include "WPMdlParser.hpp"
 #include "WPPropertyAnimation.hpp"
 #include "WPSyntheticImageParser.hpp"
+#include "WPTextLayer.hpp"
 #include "WPUserSetting.hpp"
 
 #include "particle/WPParticleRawGener.h"
@@ -1324,6 +1325,11 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
     primitive->layout.visible_display_size = text_obj.size;
     primitive->layout.visible_source_size = text_obj.size;
     context.scene->textPrimitives[text_obj.id] = std::move(primitive);
+    context.scene->textLayers[text_obj.id] = TextLayerRuntimeState {
+        .object = text_obj,
+        .primitive = context.scene->textPrimitives[text_obj.id],
+        .applied_alignment = ResolveTextLayerSceneAlignment(text_obj),
+    };
 }
 
 template<typename T>

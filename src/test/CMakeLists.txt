@@ -132,6 +132,22 @@ target_compile_options(text-scene-model-test PRIVATE ${warn_opts})
 add_test(NAME text-scene-model-test COMMAND text-scene-model-test)
 
 add_executable(
+  text-layer-runtime-test
+  text_layer_runtime_test.cpp)
+
+target_link_libraries(text-layer-runtime-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  text-layer-runtime-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../../third_party/nlohmann/include)
+target_compile_options(text-layer-runtime-test PRIVATE ${warn_opts})
+
+add_test(NAME text-layer-runtime-test COMMAND text-layer-runtime-test)
+
+add_executable(
   dynamic-value-user-setting-test
   dynamic_value_user_setting_test.cpp)
 
