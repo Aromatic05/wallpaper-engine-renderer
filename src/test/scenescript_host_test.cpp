@@ -12,6 +12,10 @@
 #include <nlohmann/json.hpp>
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
+#include "backend/scene/internal/scene/include/scene/SceneMaterial.h"
+#include "backend/scene/internal/scene/include/scene/SceneMesh.h"
+#include "backend/scene/internal/scene/include/scene/SceneNode.h"
+#include "backend/scene/internal/scene/include/scene/SceneTexture.h"
 
 namespace
 {
@@ -74,6 +78,10 @@ void BindToUserProperty(wallpaper::WPSceneScriptRegistration& registration, std:
 
 int main() {
     using wallpaper::Scene;
+    using wallpaper::SceneMaterial;
+    using wallpaper::SceneMesh;
+    using wallpaper::SceneNode;
+    using wallpaper::SceneTexture;
     using wallpaper::ShaderValue;
     using wallpaper::UserProperty;
     using wallpaper::UserPropertyMap;
@@ -199,6 +207,71 @@ int main() {
     const auto language = host.FindGeneralSetting("language");
     Require(language.has_value(), "general setting should be queryable");
     Require(*language == "en-us", "general setting should retain latest value");
+
+    Scene media_scene;
+    SceneTexture media_texture;
+    media_texture.isVideo = true;
+    media_scene.textures.emplace("movie", media_texture);
+
+    auto media_node = std::make_shared<SceneNode>();
+    media_node->ID() = 20;
+    auto media_mesh = std::make_shared<SceneMesh>();
+    SceneMaterial media_material;
+    media_material.textures.push_back("movie");
+    media_mesh->AddMaterial(std::move(media_material));
+    media_node->AddMesh(media_mesh);
+
+    WPSceneScriptHost media_host(&media_scene);
+    auto media_registration = MakeRegistration(20,
+                                               "VideoLayer",
+                                               "alpha",
+                                               WPSceneScriptTargetKind::Layer,
+                                               WPDynamicValue::Type::Float,
+                                               WPDynamicValue(1.0f));
+    media_registration.node = media_node.get();
+    media_registration.setting.script = R"(
+        export function update(value) {
+            const video = thisLayer.getVideoTexture();
+            if (video.isPlaying()) {
+                video.pause();
+            }
+            video.setCurrentTime(3.5);
+            return value;
+        }
+    )";
+    Require(media_host.RegisterPropertyScript(std::move(media_registration)),
+            "media script registration should succeed");
+    media_host.Initialize();
+    Require(media_scene.videoTexturePaused["movie"], "media script should pause a playing video");
+    Require(media_scene.videoTextureStopped.count("movie") == 0,
+            "pause should not mark the video as stopped");
+    Require(NearlyEqual(media_scene.videoTextureSeekRequests["movie"], 3.5),
+            "media script should request a seek");
+
+    auto media_control_registration = MakeRegistration(21,
+                                                       "VideoLayer",
+                                                       "alpha",
+                                                       WPSceneScriptTargetKind::Layer,
+                                                       WPDynamicValue::Type::Float,
+                                                       WPDynamicValue(1.0f));
+    media_control_registration.node = media_node.get();
+    media_control_registration.setting.script = R"(
+        export function update(value) {
+            const video = thisLayer.getVideoTexture();
+            video.play();
+            video.stop();
+            video.setCurrentTime(-5);
+            return value;
+        }
+    )";
+    Require(media_host.RegisterPropertyScript(std::move(media_control_registration)),
+            "media control script registration should succeed");
+    media_host.FrameBegin(0.1);
+    Require(media_scene.videoTexturePaused["movie"], "stop should leave the video paused");
+    Require(media_scene.videoTextureStopped.count("movie") == 1,
+            "stop should mark the video as stopped");
+    Require(NearlyEqual(media_scene.videoTextureSeekRequests["movie"], 0.0),
+            "negative seeks should clamp to zero");
 
     Scene parsed_scene;
     wallpaper::SceneNode parsed_node;

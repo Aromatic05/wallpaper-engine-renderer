@@ -177,6 +177,17 @@ bool ReadJSObjectNumber(JSContext* context,
     return ok;
 }
 
+bool ReadJSObjectString(JSContext* context,
+                        JSValueConst value,
+                        const char* property_name,
+                        std::string* out_value) {
+    JSValue property = JS_GetPropertyStr(context, value, property_name);
+    const bool ok = !JS_IsException(property) && !JS_IsUndefined(property) &&
+        ReadJSString(context, property, out_value);
+    JS_FreeValue(context, property);
+    return ok;
+}
+
 bool ReadJSArrayLength(JSContext* context, JSValueConst value, uint32_t* out_length) {
     JSValue length_value = JS_GetPropertyStr(context, value, "length");
     const bool ok = !JS_IsException(length_value) && JS_ToUint32(context, out_length, length_value) == 0;
@@ -286,6 +297,64 @@ std::optional<WPScriptValue> ScriptValueFromJS(JSContext* context,
     }
 
     return std::nullopt;
+}
+
+JSValue VideoTextureStatesToJS(JSContext* context,
+                               const std::vector<WPScriptVideoTextureState>& states) {
+    JSValue array = JS_NewArray(context);
+    for (uint32_t index = 0; index < states.size(); index++) {
+        const auto& state = states[static_cast<size_t>(index)];
+        JSValue item = JS_NewObject(context);
+        JS_SetPropertyStr(
+            context, item, "key", JS_NewStringLen(context, state.key.c_str(), state.key.size()));
+        JS_SetPropertyStr(context, item, "paused", JS_NewBool(context, state.paused));
+        JS_SetPropertyStr(context, item, "stopped", JS_NewBool(context, state.stopped));
+        JS_SetPropertyUint32(context, array, index, item);
+    }
+    return array;
+}
+
+void ReadVideoTextureEventsFromJS(JSContext* context,
+                                  JSValueConst global,
+                                  std::vector<WPScriptVideoTextureEvent>* out_events) {
+    if (out_events == nullptr) {
+        return;
+    }
+
+    JSValue events = JS_GetPropertyStr(context, global, "__videoTextureEvents");
+    if (JS_IsException(events) || !JS_IsArray(events)) {
+        JS_FreeValue(context, events);
+        return;
+    }
+
+    uint32_t length = 0;
+    if (!ReadJSArrayLength(context, events, &length)) {
+        JS_FreeValue(context, events);
+        return;
+    }
+
+    for (uint32_t index = 0; index < length; index++) {
+        JSValue item = JS_GetPropertyUint32(context, events, index);
+        if (JS_IsException(item) || !JS_IsObject(item)) {
+            JS_FreeValue(context, item);
+            continue;
+        }
+
+        WPScriptVideoTextureEvent event;
+        const bool has_key = ReadJSObjectString(context, item, "key", &event.key);
+        const bool has_method = ReadJSObjectString(context, item, "method", &event.method);
+        if (has_key && has_method && !event.key.empty() && !event.method.empty()) {
+            double current_time = 0.0;
+            if (ReadJSObjectNumber(context, item, "currentTime", &current_time)) {
+                event.current_time = current_time;
+            }
+            out_events->push_back(std::move(event));
+        }
+
+        JS_FreeValue(context, item);
+    }
+
+    JS_FreeValue(context, events);
 }
 
 std::string BuildWrappedScript(std::string_view script_source) {
@@ -438,6 +507,38 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "  }));\n"
             << "  const __makeNoopAnimation = () => ({ play() {}, stop() {}, pause() {}, isPlaying() { return false; }, getFrame() { return 0; }, setFrame() {}, join() {}, addEndedCallback() {} });\n"
             << "  const __makeNoopVideoTexture = () => ({ play() {}, pause() {}, stop() {}, setCurrentTime() {}, isPlaying() { return false; } });\n"
+            << "  const __videoTextureStates = Array.isArray(globalThis.__videoTextureStates)\n"
+            << "    ? globalThis.__videoTextureStates\n"
+            << "    : [];\n"
+            << "  const __videoTextureEvents = [];\n"
+            << "  globalThis.__videoTextureEvents = __videoTextureEvents;\n"
+            << "  const __videoTextureStateByKey = new Map(__videoTextureStates.map((state) => [String(state.key ?? ''), {\n"
+            << "    paused: !!state.paused,\n"
+            << "    stopped: !!state.stopped\n"
+            << "  }]));\n"
+            << "  const __makeVideoTexture = (key) => {\n"
+            << "    const textureKey = String(key ?? '');\n"
+            << "    if (!textureKey) return __makeNoopVideoTexture();\n"
+            << "    const state = __videoTextureStateByKey.get(textureKey) ?? { paused: false, stopped: false };\n"
+            << "    const record = (method, currentTime = 0) => {\n"
+            << "      const event = { key: textureKey, method };\n"
+            << "      if (method === 'setCurrentTime') event.currentTime = Math.max(0, __toNumber(currentTime, 0));\n"
+            << "      __videoTextureEvents.push(event);\n"
+            << "      if (method === 'play') { state.paused = false; state.stopped = false; }\n"
+            << "      else if (method === 'pause') { state.paused = true; state.stopped = false; }\n"
+            << "      else if (method === 'stop') { state.paused = true; state.stopped = true; }\n"
+            << "    };\n"
+            << "    return {\n"
+            << "      play() { record('play'); },\n"
+            << "      pause() { record('pause'); },\n"
+            << "      stop() { record('stop'); },\n"
+            << "      setCurrentTime(value) { record('setCurrentTime', value); },\n"
+            << "      isPlaying() { return !state.paused && !state.stopped; }\n"
+            << "    };\n"
+            << "  };\n"
+            << "  const __makeLayerVideoTexture = () => __videoTextureStates.length > 0\n"
+            << "    ? __makeVideoTexture(__videoTextureStates[0].key)\n"
+            << "    : __makeNoopVideoTexture();\n"
             << "  const __makeIdentityTransformMatrix = () => ({ m: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] });\n"
             << "  const WEMath = (globalThis.WEMath && typeof globalThis.WEMath === 'object')\n"
             << "    ? globalThis.WEMath\n"
@@ -589,7 +690,7 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "  if (typeof thisLayer.getTextureAnimation !== 'function') thisLayer.getTextureAnimation = () => __makeNoopAnimation();\n"
             << "  if (typeof thisLayer.getAnimation !== 'function') thisLayer.getAnimation = () => __makeNoopAnimation();\n"
             << "  if (typeof thisLayer.getAnimationLayer !== 'function') thisLayer.getAnimationLayer = () => __makeNoopAnimation();\n"
-            << "  if (typeof thisLayer.getVideoTexture !== 'function') thisLayer.getVideoTexture = () => __makeNoopVideoTexture();\n"
+            << "  thisLayer.getVideoTexture = __makeLayerVideoTexture;\n"
             << "  const __sceneLayerStore = (globalThis.__sceneLayerStore && typeof globalThis.__sceneLayerStore.get === 'function')\n"
             << "    ? globalThis.__sceneLayerStore\n"
             << "    : (globalThis.__sceneLayerStore = new Map());\n"
@@ -803,6 +904,10 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
                        global,
                        "__propertyName",
                        JS_NewStringLen(js_context, context.property_name.c_str(), context.property_name.size()));
+    InstallGlobalValue(js_context,
+                       global,
+                       "__videoTextureStates",
+                       VideoTextureStatesToJS(js_context, context.video_textures));
     InstallGlobalValue(js_context, global, "engine", engine);
 
     const std::string wrapped = BuildWrappedScript(script_source);
@@ -812,9 +917,15 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
                              "<scene-script>",
                              JS_EVAL_TYPE_GLOBAL);
 
+    if (!JS_IsException(result)) {
+        ReadVideoTextureEventsFromJS(js_context, global, context.video_texture_events);
+    }
+
     InstallGlobalValue(js_context, global, "__scriptProps", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__currentValue", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__propertyName", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__videoTextureStates", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__videoTextureEvents", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "engine", JS_UNDEFINED);
     JS_FreeValue(js_context, global);
     JS_FreeValue(js_context, script_props);

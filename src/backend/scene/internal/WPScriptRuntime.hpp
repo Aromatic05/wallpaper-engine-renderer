@@ -36,10 +36,24 @@ struct WPScriptValue {
 
 using WPScriptPropertyMap = std::unordered_map<std::string, WPScriptValue>;
 
+struct WPScriptVideoTextureState {
+    std::string key;
+    bool paused { false };
+    bool stopped { false };
+};
+
+struct WPScriptVideoTextureEvent {
+    std::string key;
+    std::string method;
+    double current_time { 0.0 };
+};
+
 struct WPScriptEvaluationContext {
     WPScriptPropertyMap script_properties;
     std::array<double, 2> canvas_size { 0.0, 0.0 };
     std::string property_name;
+    std::vector<WPScriptVideoTextureState> video_textures;
+    std::vector<WPScriptVideoTextureEvent>* video_texture_events { nullptr };
 };
 
 class WPScriptRuntime {
