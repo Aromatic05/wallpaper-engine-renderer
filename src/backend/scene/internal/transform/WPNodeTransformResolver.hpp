@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shader/WPShaderValueUpdater.hpp"
+#include "WPShaderValueUpdater.hpp"
 
 #include <optional>
 
@@ -8,13 +8,12 @@ namespace wallpaper
 {
 
 class Scene;
-class SceneCamera;
 class SceneNode;
+class SceneCamera;
 
 class WPNodeTransformResolver {
 public:
-    WPNodeTransformResolver(Scene& scene,
-                            const WPCameraParallax& parallax,
+    WPNodeTransformResolver(Scene& scene, const WPCameraParallax& parallax,
                             Map<void*, WPShaderValueData>& node_data_map,
                             Map<void*, Eigen::Matrix4d>& model_transform_cache,
                             Map<void*, Eigen::Vector3f>& parallax_offset_cache,
@@ -38,16 +37,24 @@ private:
     Eigen::Vector3f          ComputeParallaxOffset(SceneNode* node,
                                                    const WPShaderValueData& node_data,
                                                    const SceneCamera* camera);
+    void ApplyResolvedParentDelta(SceneNode* target_parent,
+                                  const WPShaderValueData& parent_data,
+                                  Eigen::Affine3f& local_transform);
+    void ApplyParentParallaxToAttachment(SceneNode* parent_node,
+                                         const WPShaderValueData& parent_data,
+                                         Eigen::Affine3f& local_transform);
+    std::optional<Eigen::Affine3f> ResolveAttachmentLocalTransform(SceneNode* node,
+                                                                   const WPShaderValueData& node_data);
 
-    Scene&                          m_scene;
-    const WPCameraParallax&         m_parallax;
-    Map<void*, WPShaderValueData>&  m_node_data_map;
-    Map<void*, Eigen::Matrix4d>&    m_model_transform_cache;
-    Map<void*, Eigen::Vector3f>&    m_parallax_offset_cache;
-    Map<void*, Eigen::Affine3f>&    m_attachment_transform_cache;
-    const SceneCamera*              m_parallax_camera;
-    const std::array<float, 2>&     m_mouse_pos;
-    uint64_t                        m_puppet_frame_serial;
+    Scene&                         m_scene;
+    const WPCameraParallax&        m_parallax;
+    Map<void*, WPShaderValueData>& m_node_data_map;
+    Map<void*, Eigen::Matrix4d>&   m_model_transform_cache;
+    Map<void*, Eigen::Vector3f>&   m_parallax_offset_cache;
+    Map<void*, Eigen::Affine3f>&   m_attachment_transform_cache;
+    const SceneCamera*             m_parallax_camera;
+    const std::array<float, 2>&    m_mouse_pos;
+    uint64_t                       m_puppet_frame_serial;
 };
 
 } // namespace wallpaper

@@ -9,6 +9,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "WPScriptRuntime.hpp"
 #include "WPUserProperties.hpp"
 
 namespace wallpaper
@@ -58,10 +59,13 @@ public:
     template<typename T>
     bool tryGet(T* out_value) const;
 
+    std::optional<WPScriptValue> toScriptValue() const;
+
     static std::optional<WPDynamicValue> FromJsonLiteral(const nlohmann::json& json, Type hint);
     static std::optional<WPDynamicValue> FromJsonLiteral(const nlohmann::json& json);
     static std::optional<WPDynamicValue> FromUserPropertyValue(const UserPropertyValue& property,
                                                                Type                     hint);
+    static std::optional<WPDynamicValue> FromScriptValue(const WPScriptValue& value, Type hint);
 
     template<typename T>
     static constexpr Type TypeFor();

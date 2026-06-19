@@ -72,7 +72,22 @@ target_compile_options(${LIB_NAME} PRIVATE
   ${FONTCONFIG_CFLAGS_OTHER}
   ${FREETYPE2_CFLAGS_OTHER})
 
-target_include_directories(${LIB_NAME} PRIVATE . ../../..)
+target_include_directories(${LIB_NAME} PRIVATE
+  .
+  ../../..
+  ../../../common/scene
+  animation
+  parser
+  resources
+  scenescript
+  settings
+  shader
+  text
+  transform
+  scene/include
+  scene/include/scene
+  particle/include
+  particle/include/particle)
 target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
 target_compile_definitions(${LIB_NAME} PRIVATE WP_ENABLE_SCENESCRIPT_RUNTIME=$<BOOL:${WP_ENABLE_SCENESCRIPT_RUNTIME}>)
 set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

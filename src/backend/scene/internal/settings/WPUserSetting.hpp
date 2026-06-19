@@ -7,7 +7,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "settings/WPDynamicValue.hpp"
+#include "WPDynamicValue.hpp"
 
 namespace wallpaper
 {
@@ -23,20 +23,28 @@ struct WPUserSetting {
     }
 
     bool hasScript() const noexcept { return ! script.empty(); }
-    bool isDynamic() const noexcept { return hasUserBinding() || hasScript(); }
+    bool isDynamic() const noexcept { return hasUserBinding(); }
 
-    WPDynamicValue evaluate(const UserPropertyMap* user_properties) const;
+    WPDynamicValue evaluate(const UserPropertyMap*             user_properties,
+                            WPScriptRuntime*                   runtime,
+                            const WPScriptEvaluationContext&   base_context) const;
 
     template<typename T>
-    bool evaluateAs(T* out_value, const UserPropertyMap* user_properties) const {
-        return evaluate(user_properties).tryGet(out_value);
+    bool evaluateAs(T* out_value,
+                    const UserPropertyMap*           user_properties,
+                    WPScriptRuntime*                 runtime,
+                    const WPScriptEvaluationContext& base_context) const {
+        return evaluate(user_properties, runtime, base_context).tryGet(out_value);
     }
 
     template<typename T>
-    T evaluateOr(const T& fallback, const UserPropertyMap* user_properties) const {
-        T value_out = fallback;
-        evaluateAs(&value_out, user_properties);
-        return value_out;
+    T evaluateOr(const T& fallback,
+                 const UserPropertyMap*           user_properties,
+                 WPScriptRuntime*                 runtime,
+                 const WPScriptEvaluationContext& base_context) const {
+        T value = fallback;
+        evaluateAs(&value, user_properties, runtime, base_context);
+        return value;
     }
 };
 

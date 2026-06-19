@@ -1,7 +1,9 @@
 #include "WPJson.hpp"
 
-#include <array>
+#include <nlohmann/json.hpp>
+
 #include <cmath>
+#include <array>
 #include <cstdlib>
 #include <iomanip>
 #include <optional>
@@ -9,13 +11,10 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
-#include <vector>
 
-#include <nlohmann/json.hpp>
-
-#include "scenescript/WPScriptRuntime.hpp"
 #include "utils/Identity.hpp"
 #include "utils/String.h"
+#include "WPScriptRuntime.hpp"
 
 namespace wallpaper
 {

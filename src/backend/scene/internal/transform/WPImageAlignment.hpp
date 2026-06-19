@@ -17,6 +17,10 @@ inline Eigen::Vector3f ResolveImageAlignmentOffset(std::string_view alignment,
         float            direction;
     };
 
+    // Wallpaper Engine image layers author `origin` as the pivot implied by `alignment`. The
+    // renderer keeps that origin untouched and moves the image quad in local space instead, so
+    // rotation and scale scripts orbit around the authored pivot rather than a pre-shifted
+    // translation that only looked correct for static layers.
     constexpr std::array kContributions {
         AlignmentAxisContribution { "left", 0, 1.0f },
         AlignmentAxisContribution { "right", 0, -1.0f },
@@ -43,6 +47,10 @@ inline Eigen::Matrix4d RemoveImageAlignmentOffsetFromModel(
     const Eigen::Vector3f& alignment_offset) {
     if (alignment_offset.isZero(0.0f)) return model;
 
+    // SceneNode::GetLocalTrans() appends alignment as the final local-space translate so the
+    // layer's own mesh is visually placed around the authored pivot. Children and detached final
+    // writers must inherit that authored pivot, not the mesh placement offset, so callers remove
+    // the appended translate by post-multiplying its inverse.
     Eigen::Affine3d inverse_alignment = Eigen::Affine3d::Identity();
     inverse_alignment.translate((-alignment_offset).cast<double>());
     return model * inverse_alignment.matrix();

@@ -5,6 +5,7 @@
 #include "utils/Logging.h"
 #include "core/Random.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -43,6 +44,12 @@ public:
     uint64_t NextPcmData(void* pData, uint32_t frameCount) override {
         if (m_soundPaths.empty()) return 0;
 
+        if (m_config.mode == PlaybackMode::Random && ! m_curActive) {
+            if (! m_randomDelayScheduled) ScheduleRandomDelay();
+            if (m_randomDelayFramesRemaining > 0) return DrainRandomDelay(pData, frameCount);
+            m_randomDelayScheduled = false;
+        }
+
         // first
         if (! m_curActive) {
             Switch();
@@ -52,12 +59,23 @@ public:
         uint64_t frameReads = m_curActive->NextPcmData(pData, frameCount);
         if (frameReads == 0) {
             if (m_config.mode == PlaybackMode::Single) {
+                LOG_INFO("SceneSoundEnd: mode='single' paths=%zu", m_soundPaths.size());
                 m_curActive.reset();
                 return 0;
+            }
+            if (m_config.mode == PlaybackMode::Random) {
+                m_curActive.reset();
+                ScheduleRandomDelay();
+                if (m_randomDelayFramesRemaining > 0) return DrainRandomDelay(pData, frameCount);
+                m_randomDelayScheduled = false;
             }
             Switch();
             if (! m_curActive) return 0;
             frameReads = m_curActive->NextPcmData(pData, frameCount);
+        }
+        if (frameReads < frameCount) {
+            FillSilence(static_cast<float*>(pData) + frameReads * m_desc.channels,
+                        frameCount - static_cast<uint32_t>(frameReads));
         }
         // volume
         {
@@ -73,6 +91,8 @@ public:
     void Reset() override {
         m_curActive.reset();
         m_curIndex = std::numeric_limits<uint32_t>::max();
+        m_randomDelayFramesRemaining = 0;
+        m_randomDelayScheduled       = false;
     }
 
     void Switch() {
@@ -92,7 +112,12 @@ public:
                       path.c_str(),
                       m_desc.channels,
                       m_desc.sampleRate);
+            return;
         }
+        LOG_INFO("SceneSoundSwitch: path='%s' channels=%u sample-rate=%u",
+                 path.c_str(),
+                 m_desc.channels,
+                 m_desc.sampleRate);
     }
     uint32_t LoopIndex() {
         if (m_config.mode == PlaybackMode::Random) {
@@ -113,12 +138,37 @@ public:
         if (m_curIndex == m_soundPaths.size()) m_curIndex = 0;
         return m_curIndex;
     }
+    void ScheduleRandomDelay() {
+        const float lower = std::max(0.0f, std::min(m_config.mintime, m_config.maxtime));
+        const float upper = std::max(lower, std::max(m_config.mintime, m_config.maxtime));
+        const double delaySeconds =
+            Random::get<double>(static_cast<double>(lower), static_cast<double>(upper));
+
+        m_randomDelayFramesRemaining =
+            static_cast<uint64_t>(delaySeconds * static_cast<double>(m_desc.sampleRate));
+        m_randomDelayScheduled = true;
+        LOG_INFO("SceneSoundRandomDelay: delay=%.3f frames=%llu",
+                 delaySeconds,
+                 static_cast<unsigned long long>(m_randomDelayFramesRemaining));
+    }
+    void FillSilence(float* pData, uint32_t frameCount) {
+        if (pData == nullptr || frameCount == 0 || m_desc.channels == 0) return;
+        std::fill_n(pData, static_cast<size_t>(frameCount) * m_desc.channels, 0.0f);
+    }
+    uint64_t DrainRandomDelay(void* pData, uint32_t frameCount) {
+        FillSilence(static_cast<float*>(pData), frameCount);
+        const auto drained = std::min<uint64_t>(m_randomDelayFramesRemaining, frameCount);
+        m_randomDelayFramesRemaining -= drained;
+        return frameCount;
+    }
 
 private:
     fs::VFS& vfs;
     Config   m_config;
     Desc     m_desc;
     uint32_t m_curIndex { std::numeric_limits<uint32_t>::max() };
+    uint64_t m_randomDelayFramesRemaining { 0 };
+    bool     m_randomDelayScheduled { false };
 
     const std::vector<std::string> m_soundPaths;
     std::unique_ptr<SoundStream>   m_curActive;

@@ -2,13 +2,14 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "settings/WPDynamicValue.hpp"
+#include "WPDynamicValue.hpp"
 
 namespace wallpaper
 {
@@ -61,8 +62,8 @@ struct WPPropertyAnimationState {
     bool     playing { false };
 };
 
-bool ParsePropertyAnimationDefinition(const nlohmann::json& json,
-                                      WPDynamicValue::Type  hint,
+bool ParsePropertyAnimationDefinition(const nlohmann::json&      json,
+                                      WPDynamicValue::Type       hint,
                                       WPPropertyAnimationDefinition& out_definition);
 void InitializePropertyAnimationState(const WPPropertyAnimationDefinition& definition,
                                       WPPropertyAnimationState&            state);

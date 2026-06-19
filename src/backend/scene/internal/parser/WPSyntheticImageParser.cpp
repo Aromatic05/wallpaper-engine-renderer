@@ -1,6 +1,6 @@
 #include "WPSyntheticImageParser.hpp"
 
-#include <algorithm>
+#include "utils/Logging.h"
 
 using namespace wallpaper;
 
@@ -65,8 +65,9 @@ size_t WPSyntheticImageParser::TrackedImageCount() const {
 size_t WPSyntheticImageParser::TrackedBytes() const {
     std::lock_guard lock(m_mutex);
     size_t total_bytes = 0;
-    for (const auto& image_entry : m_images) {
-        total_bytes += EstimateImageBytes(image_entry.second);
+    for (const auto& [key, image] : m_images) {
+        (void)key;
+        total_bytes += EstimateImageBytes(image);
     }
     return total_bytes;
 }

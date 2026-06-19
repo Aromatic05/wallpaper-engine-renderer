@@ -22,23 +22,26 @@ bool HasBezierHandles(const WPPropertyAnimationKeyframe& lhs, const WPPropertyAn
     return lhs.front.enabled || rhs.back.enabled;
 }
 
-WPPropertyAnimationKeyframe::Handle ResolveBezierHandle(
-    const WPPropertyAnimationKeyframe::Handle& handle,
-    double                                     segment_dx,
-    double                                     fps,
-    bool                                       forward_handle) {
-    if (! handle.enabled) return {};
+WPPropertyAnimationKeyframe::Handle ResolveBezierHandle(const WPPropertyAnimationKeyframe::Handle& handle,
+                                                        double                                     segment_dx,
+                                                        double                                     fps,
+                                                        bool                                       forward_handle) {
+    if (!handle.enabled) return {};
 
     auto resolved = handle;
-    if (! handle.magic) return resolved;
+    if (!handle.magic) return resolved;
 
-    const double sign  = forward_handle ? 1.0 : -1.0;
+    const double sign = forward_handle ? 1.0 : -1.0;
     const double slope = std::abs(handle.x) > std::numeric_limits<double>::epsilon()
                              ? (handle.y / handle.x)
                              : 0.0;
     const double auto_dx = std::max(segment_dx / 3.0, 0.0);
-    resolved.x           = sign * auto_dx;
-    resolved.y           = slope * (resolved.x / std::max(fps, std::numeric_limits<double>::epsilon()));
+    resolved.x = sign * auto_dx;
+    // Wallpaper Engine stores magic handle slopes as value-per-second, while animation keyframe
+    // positions and Bezier X control points stay in frame units. Convert the generated X distance
+    // back to seconds only for the Y offset; otherwise alpha and other scalar curves get their
+    // handle height multiplied by fps and can overshoot by tens of times the authored value range.
+    resolved.y = slope * (resolved.x / std::max(fps, std::numeric_limits<double>::epsilon()));
     return resolved;
 }
 
@@ -47,18 +50,18 @@ double EvaluateBezierSegment(const WPPropertyAnimationKeyframe& lhs,
                              double                             frame,
                              double                             fps) {
     const double segment_dx = std::max(rhs.frame - lhs.frame, 0.0);
-    const auto   lhs_front  = ResolveBezierHandle(lhs.front, segment_dx, fps, true);
-    const auto   rhs_back   = ResolveBezierHandle(rhs.back, segment_dx, fps, false);
-    const double x0         = lhs.frame;
-    const double y0         = lhs.value;
-    const double x1         = lhs_front.enabled ? lhs.frame + lhs_front.x : lhs.frame;
-    const double y1         = lhs_front.enabled ? lhs.value + lhs_front.y : lhs.value;
-    const double x2         = rhs_back.enabled ? rhs.frame + rhs_back.x : rhs.frame;
-    const double y2         = rhs_back.enabled ? rhs.value + rhs_back.y : rhs.value;
-    const double x3         = rhs.frame;
-    const double y3         = rhs.value;
+    const auto lhs_front = ResolveBezierHandle(lhs.front, segment_dx, fps, true);
+    const auto rhs_back  = ResolveBezierHandle(rhs.back, segment_dx, fps, false);
+    const double x0 = lhs.frame;
+    const double y0 = lhs.value;
+    const double x1 = lhs_front.enabled ? lhs.frame + lhs_front.x : lhs.frame;
+    const double y1 = lhs_front.enabled ? lhs.value + lhs_front.y : lhs.value;
+    const double x2 = rhs_back.enabled ? rhs.frame + rhs_back.x : rhs.frame;
+    const double y2 = rhs_back.enabled ? rhs.value + rhs_back.y : rhs.value;
+    const double x3 = rhs.frame;
+    const double y3 = rhs.value;
 
-    double low  = 0.0;
+    double low = 0.0;
     double high = 1.0;
     for (int iteration = 0; iteration < 24; iteration++) {
         const double mid = (low + high) * 0.5;
@@ -78,7 +81,7 @@ bool ParseHandle(const nlohmann::json& json,
                  const char*           key,
                  WPPropertyAnimationKeyframe::Handle& out_handle) {
     out_handle = {};
-    if (! json.contains(key) || ! json.at(key).is_object()) return false;
+    if (!json.contains(key) || !json.at(key).is_object()) return false;
     const auto& handle = json.at(key);
     if (handle.contains("enabled") && handle.at("enabled").is_boolean()) {
         out_handle.enabled = handle.at("enabled").get<bool>();
@@ -97,23 +100,23 @@ bool ParseHandle(const nlohmann::json& json,
 
 uint32_t ChannelCountForHint(WPDynamicValue::Type hint) {
     switch (hint) {
-    case WPDynamicValue::Type::Boolean:
-    case WPDynamicValue::Type::Int32:
-    case WPDynamicValue::Type::UInt32:
-    case WPDynamicValue::Type::Float:
-    case WPDynamicValue::Type::Double:
-        return 1;
-    case WPDynamicValue::Type::Float2:
-        return 2;
-    case WPDynamicValue::Type::Int3:
-    case WPDynamicValue::Type::Float3:
-        return 3;
-    case WPDynamicValue::Type::Float4:
-        return 4;
-    case WPDynamicValue::Type::FloatVector:
-    case WPDynamicValue::Type::String:
-    case WPDynamicValue::Type::Null:
-        return 0;
+        case WPDynamicValue::Type::Boolean:
+        case WPDynamicValue::Type::Int32:
+        case WPDynamicValue::Type::UInt32:
+        case WPDynamicValue::Type::Float:
+        case WPDynamicValue::Type::Double:
+            return 1;
+        case WPDynamicValue::Type::Float2:
+            return 2;
+        case WPDynamicValue::Type::Int3:
+        case WPDynamicValue::Type::Float3:
+            return 3;
+        case WPDynamicValue::Type::Float4:
+            return 4;
+        case WPDynamicValue::Type::FloatVector:
+        case WPDynamicValue::Type::String:
+        case WPDynamicValue::Type::Null:
+            return 0;
     }
     return 0;
 }
@@ -144,14 +147,14 @@ double EvaluateChannel(const WPPropertyAnimationDefinition& definition,
         const double frame_count = std::max(definition.frame_count, 0.0);
 
         if (frame < first.frame) {
-            auto wrapped_last  = last;
-            auto wrapped_first = first;
+            WPPropertyAnimationKeyframe wrapped_last  = last;
+            WPPropertyAnimationKeyframe wrapped_first = first;
             wrapped_last.frame -= frame_count;
             return EvaluateKeyframeRange(wrapped_last, wrapped_first, frame, definition.fps);
         }
 
         if (frame > last.frame) {
-            auto wrapped_first = first;
+            WPPropertyAnimationKeyframe wrapped_first = first;
             wrapped_first.frame += frame_count;
             return EvaluateKeyframeRange(last, wrapped_first, frame, definition.fps);
         }
@@ -174,72 +177,72 @@ std::array<double, 4> BaseNumericVector(const WPDynamicValue& value, WPDynamicVa
     std::array<double, 4> result { 0.0, 0.0, 0.0, 0.0 };
 
     switch (hint) {
-    case WPDynamicValue::Type::Boolean: {
-        bool scalar = false;
-        value.tryGet(&scalar);
-        result[0] = scalar ? 1.0 : 0.0;
-        break;
-    }
-    case WPDynamicValue::Type::Int32: {
-        int32_t scalar = 0;
-        value.tryGet(&scalar);
-        result[0] = scalar;
-        break;
-    }
-    case WPDynamicValue::Type::UInt32: {
-        uint32_t scalar = 0;
-        value.tryGet(&scalar);
-        result[0] = scalar;
-        break;
-    }
-    case WPDynamicValue::Type::Float: {
-        float scalar = 0.0f;
-        value.tryGet(&scalar);
-        result[0] = scalar;
-        break;
-    }
-    case WPDynamicValue::Type::Double: {
-        double scalar = 0.0;
-        value.tryGet(&scalar);
-        result[0] = scalar;
-        break;
-    }
-    case WPDynamicValue::Type::Float2: {
-        std::array<float, 2> vector {};
-        value.tryGet(&vector);
-        result[0] = vector[0];
-        result[1] = vector[1];
-        break;
-    }
-    case WPDynamicValue::Type::Int3: {
-        std::array<int32_t, 3> vector {};
-        value.tryGet(&vector);
-        result[0] = vector[0];
-        result[1] = vector[1];
-        result[2] = vector[2];
-        break;
-    }
-    case WPDynamicValue::Type::Float3: {
-        std::array<float, 3> vector {};
-        value.tryGet(&vector);
-        result[0] = vector[0];
-        result[1] = vector[1];
-        result[2] = vector[2];
-        break;
-    }
-    case WPDynamicValue::Type::Float4: {
-        std::array<float, 4> vector {};
-        value.tryGet(&vector);
-        result[0] = vector[0];
-        result[1] = vector[1];
-        result[2] = vector[2];
-        result[3] = vector[3];
-        break;
-    }
-    case WPDynamicValue::Type::FloatVector:
-    case WPDynamicValue::Type::String:
-    case WPDynamicValue::Type::Null:
-        break;
+        case WPDynamicValue::Type::Boolean: {
+            bool scalar = false;
+            value.tryGet(&scalar);
+            result[0] = scalar ? 1.0 : 0.0;
+            break;
+        }
+        case WPDynamicValue::Type::Int32: {
+            int32_t scalar = 0;
+            value.tryGet(&scalar);
+            result[0] = scalar;
+            break;
+        }
+        case WPDynamicValue::Type::UInt32: {
+            uint32_t scalar = 0;
+            value.tryGet(&scalar);
+            result[0] = scalar;
+            break;
+        }
+        case WPDynamicValue::Type::Float: {
+            float scalar = 0.0f;
+            value.tryGet(&scalar);
+            result[0] = scalar;
+            break;
+        }
+        case WPDynamicValue::Type::Double: {
+            double scalar = 0.0;
+            value.tryGet(&scalar);
+            result[0] = scalar;
+            break;
+        }
+        case WPDynamicValue::Type::Float2: {
+            std::array<float, 2> vector {};
+            value.tryGet(&vector);
+            result[0] = vector[0];
+            result[1] = vector[1];
+            break;
+        }
+        case WPDynamicValue::Type::Int3: {
+            std::array<int32_t, 3> vector {};
+            value.tryGet(&vector);
+            result[0] = vector[0];
+            result[1] = vector[1];
+            result[2] = vector[2];
+            break;
+        }
+        case WPDynamicValue::Type::Float3: {
+            std::array<float, 3> vector {};
+            value.tryGet(&vector);
+            result[0] = vector[0];
+            result[1] = vector[1];
+            result[2] = vector[2];
+            break;
+        }
+        case WPDynamicValue::Type::Float4: {
+            std::array<float, 4> vector {};
+            value.tryGet(&vector);
+            result[0] = vector[0];
+            result[1] = vector[1];
+            result[2] = vector[2];
+            result[3] = vector[3];
+            break;
+        }
+        case WPDynamicValue::Type::FloatVector:
+        case WPDynamicValue::Type::String:
+        case WPDynamicValue::Type::Null:
+            break;
     }
 
     return result;
@@ -250,21 +253,21 @@ double NormalizeFrame(const WPPropertyAnimationDefinition& definition, double fr
     if (frame_count <= std::numeric_limits<double>::epsilon()) return 0.0;
 
     switch (definition.mode) {
-    case WPPropertyAnimationMode::Loop: {
-        double wrapped = std::fmod(frame, frame_count);
-        if (wrapped < 0.0) wrapped += frame_count;
-        return wrapped;
-    }
-    case WPPropertyAnimationMode::Mirror: {
-        const double period = frame_count * 2.0;
-        if (period <= std::numeric_limits<double>::epsilon()) return 0.0;
-        double wrapped = std::fmod(frame, period);
-        if (wrapped < 0.0) wrapped += period;
-        return wrapped <= frame_count ? wrapped : (period - wrapped);
-    }
-    case WPPropertyAnimationMode::Single:
-    default:
-        return std::clamp(frame, 0.0, frame_count);
+        case WPPropertyAnimationMode::Loop: {
+            double wrapped = std::fmod(frame, frame_count);
+            if (wrapped < 0.0) wrapped += frame_count;
+            return wrapped;
+        }
+        case WPPropertyAnimationMode::Mirror: {
+            const double period = frame_count * 2.0;
+            if (period <= std::numeric_limits<double>::epsilon()) return 0.0;
+            double wrapped = std::fmod(frame, period);
+            if (wrapped < 0.0) wrapped += period;
+            return wrapped <= frame_count ? wrapped : (period - wrapped);
+        }
+        case WPPropertyAnimationMode::Single:
+        default:
+            return std::clamp(frame, 0.0, frame_count);
     }
 }
 
@@ -278,8 +281,8 @@ bool ShouldStopAtBoundary(const WPPropertyAnimationDefinition& definition, doubl
 } // namespace
 
 bool WPPropertyAnimationDefinition::valid() const noexcept {
-    if (channel_count == 0 || frame_count < 0.0 || ! std::isfinite(frame_count) || fps <= 0.0 ||
-        ! std::isfinite(fps)) {
+    if (channel_count == 0 || frame_count < 0.0 || !std::isfinite(frame_count) || fps <= 0.0 ||
+        !std::isfinite(fps)) {
         return false;
     }
 
@@ -290,17 +293,17 @@ bool WPPropertyAnimationDefinition::valid() const noexcept {
     return true;
 }
 
-bool ParsePropertyAnimationDefinition(const nlohmann::json& json,
-                                      WPDynamicValue::Type  hint,
+bool ParsePropertyAnimationDefinition(const nlohmann::json&      json,
+                                      WPDynamicValue::Type       hint,
                                       WPPropertyAnimationDefinition& out_definition) {
     out_definition = {};
 
-    if (! json.is_object() || ! json.contains("animation") || ! json.at("animation").is_object()) {
+    if (!json.is_object() || !json.contains("animation") || !json.at("animation").is_object()) {
         return false;
     }
 
-    const auto& animation         = json.at("animation");
-    const auto  expected_channels = ChannelCountForHint(hint);
+    const auto& animation = json.at("animation");
+    const auto expected_channels = ChannelCountForHint(hint);
     if (expected_channels == 0) return false;
 
     out_definition.channel_count = expected_channels;
@@ -313,6 +316,10 @@ bool ParsePropertyAnimationDefinition(const nlohmann::json& json,
         if (options.contains("length") && options.at("length").is_number()) {
             out_definition.frame_count = options.at("length").get<double>();
         }
+        // Wallpaper Engine stores the user-facing timeline name in animation.options.name.
+        // Scene scripts address property timelines through this label, e.g.
+        // thisLayer.getAnimation("LogoShake"), so preserving it here lets the script host resolve
+        // authored animation names instead of only the property that owns the keyframes.
         if (options.contains("name") && options.at("name").is_string()) {
             out_definition.name = options.at("name").get<std::string>();
         }
@@ -340,30 +347,27 @@ bool ParsePropertyAnimationDefinition(const nlohmann::json& json,
 
     for (uint32_t channel_index = 0; channel_index < expected_channels; channel_index++) {
         const std::string channel_name = "c" + std::to_string(channel_index);
-        if (! animation.contains(channel_name) || ! animation.at(channel_name).is_array()) {
+        if (!animation.contains(channel_name) || !animation.at(channel_name).is_array()) {
             return false;
         }
 
         auto& channel = out_definition.channels[channel_index];
         for (const auto& keyframe_json : animation.at(channel_name)) {
-            if (! keyframe_json.is_object() || ! keyframe_json.contains("frame") ||
-                ! keyframe_json.contains("value") || ! keyframe_json.at("frame").is_number() ||
-                ! keyframe_json.at("value").is_number()) {
+            if (!keyframe_json.is_object() || !keyframe_json.contains("frame") ||
+                !keyframe_json.contains("value") || !keyframe_json.at("frame").is_number() ||
+                !keyframe_json.at("value").is_number()) {
                 return false;
             }
 
             channel.keyframes.push_back(WPPropertyAnimationKeyframe {
                 .frame = keyframe_json.at("frame").get<double>(),
                 .value = keyframe_json.at("value").get<double>(),
-                .front = {},
-                .back  = {},
             });
             auto& keyframe = channel.keyframes.back();
             if (keyframe_json.contains("lockangle") && keyframe_json.at("lockangle").is_boolean()) {
                 keyframe.lock_angle = keyframe_json.at("lockangle").get<bool>();
             }
-            if (keyframe_json.contains("locklength") &&
-                keyframe_json.at("locklength").is_boolean()) {
+            if (keyframe_json.contains("locklength") && keyframe_json.at("locklength").is_boolean()) {
                 keyframe.lock_length = keyframe_json.at("locklength").get<bool>();
             }
             ParseHandle(keyframe_json, "front", keyframe.front);
@@ -375,22 +379,23 @@ bool ParsePropertyAnimationDefinition(const nlohmann::json& json,
                   [](const auto& lhs, const auto& rhs) { return lhs.frame < rhs.frame; });
     }
 
-    return out_definition.valid();
+    if (!out_definition.valid()) return false;
+    return true;
 }
 
 void InitializePropertyAnimationState(const WPPropertyAnimationDefinition& definition,
                                       WPPropertyAnimationState&            state) {
     state.frame   = 0.0;
     state.rate    = 1.0;
-    state.playing = ! definition.start_paused;
+    state.playing = !definition.start_paused;
 }
 
 bool AdvancePropertyAnimationState(const WPPropertyAnimationDefinition& definition,
                                    WPPropertyAnimationState&            state,
                                    double                               frame_time) {
-    if (! state.playing || ! definition.valid()) return false;
+    if (!state.playing || !definition.valid()) return false;
 
-    const double next_frame       = state.frame + (frame_time * definition.fps * state.rate);
+    const double next_frame = state.frame + (frame_time * definition.fps * state.rate);
     const bool   reached_boundary = ShouldStopAtBoundary(definition, next_frame);
 
     state.frame = NormalizeFrame(definition, next_frame);
@@ -405,7 +410,7 @@ std::optional<WPDynamicValue> EvaluatePropertyAnimation(const WPPropertyAnimatio
                                                         const WPPropertyAnimationState&      state,
                                                         const WPDynamicValue&                base_value,
                                                         WPDynamicValue::Type                 hint) {
-    if (! definition.valid()) return std::nullopt;
+    if (!definition.valid()) return std::nullopt;
 
     auto result = BaseNumericVector(base_value, hint);
     for (uint32_t i = 0; i < definition.channel_count; i++) {
@@ -418,36 +423,36 @@ std::optional<WPDynamicValue> EvaluatePropertyAnimation(const WPPropertyAnimatio
     }
 
     switch (hint) {
-    case WPDynamicValue::Type::Boolean:
-        return WPDynamicValue(result[0] >= 0.5);
-    case WPDynamicValue::Type::Int32:
-        return WPDynamicValue(static_cast<int32_t>(std::lround(result[0])));
-    case WPDynamicValue::Type::UInt32:
-        return WPDynamicValue(static_cast<uint32_t>(std::max(result[0], 0.0)));
-    case WPDynamicValue::Type::Float:
-        return WPDynamicValue(static_cast<float>(result[0]));
-    case WPDynamicValue::Type::Double:
-        return WPDynamicValue(result[0]);
-    case WPDynamicValue::Type::Float2:
-        return WPDynamicValue(std::array<float, 2> { static_cast<float>(result[0]),
-                                                     static_cast<float>(result[1]) });
-    case WPDynamicValue::Type::Int3:
-        return WPDynamicValue(std::array<int32_t, 3> { static_cast<int32_t>(std::lround(result[0])),
-                                                       static_cast<int32_t>(std::lround(result[1])),
-                                                       static_cast<int32_t>(std::lround(result[2])) });
-    case WPDynamicValue::Type::Float3:
-        return WPDynamicValue(std::array<float, 3> { static_cast<float>(result[0]),
-                                                     static_cast<float>(result[1]),
-                                                     static_cast<float>(result[2]) });
-    case WPDynamicValue::Type::Float4:
-        return WPDynamicValue(std::array<float, 4> { static_cast<float>(result[0]),
-                                                     static_cast<float>(result[1]),
-                                                     static_cast<float>(result[2]),
-                                                     static_cast<float>(result[3]) });
-    case WPDynamicValue::Type::FloatVector:
-    case WPDynamicValue::Type::String:
-    case WPDynamicValue::Type::Null:
-        break;
+        case WPDynamicValue::Type::Boolean:
+            return WPDynamicValue(result[0] >= 0.5);
+        case WPDynamicValue::Type::Int32:
+            return WPDynamicValue(static_cast<int32_t>(std::lround(result[0])));
+        case WPDynamicValue::Type::UInt32:
+            return WPDynamicValue(static_cast<uint32_t>(std::max(result[0], 0.0)));
+        case WPDynamicValue::Type::Float:
+            return WPDynamicValue(static_cast<float>(result[0]));
+        case WPDynamicValue::Type::Double:
+            return WPDynamicValue(result[0]);
+        case WPDynamicValue::Type::Float2:
+            return WPDynamicValue(
+                std::array<float, 2> { static_cast<float>(result[0]), static_cast<float>(result[1]) });
+        case WPDynamicValue::Type::Int3:
+            return WPDynamicValue(std::array<int32_t, 3> { static_cast<int32_t>(std::lround(result[0])),
+                                                           static_cast<int32_t>(std::lround(result[1])),
+                                                           static_cast<int32_t>(std::lround(result[2])) });
+        case WPDynamicValue::Type::Float3:
+            return WPDynamicValue(std::array<float, 3> { static_cast<float>(result[0]),
+                                                         static_cast<float>(result[1]),
+                                                         static_cast<float>(result[2]) });
+        case WPDynamicValue::Type::Float4:
+            return WPDynamicValue(std::array<float, 4> { static_cast<float>(result[0]),
+                                                         static_cast<float>(result[1]),
+                                                         static_cast<float>(result[2]),
+                                                         static_cast<float>(result[3]) });
+        case WPDynamicValue::Type::FloatVector:
+        case WPDynamicValue::Type::String:
+        case WPDynamicValue::Type::Null:
+            break;
     }
 
     return std::nullopt;
