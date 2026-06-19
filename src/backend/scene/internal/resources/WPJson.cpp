@@ -625,7 +625,7 @@ GetJsonValue(const char* file, const char* func, int line, const nlohmann::json&
     std::string name { name_view };
     if (has_name) {
         if (! json.contains(name)) {
-            if (warn)
+            if (warn && WallpaperVerboseLogEnabled())
                 WallpaperLog(LOGLEVEL_INFO,
                              "",
                              0,
@@ -636,7 +636,7 @@ GetJsonValue(const char* file, const char* func, int line, const nlohmann::json&
                              line);
             return false;
         } else if (json.at(name).is_null()) {
-            if (warn)
+            if (warn && WallpaperVerboseLogEnabled())
                 WallpaperLog(LOGLEVEL_INFO,
                              "",
                              0,

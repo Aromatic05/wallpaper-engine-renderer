@@ -478,15 +478,15 @@ static bool CompileShaderUnitsWithDxc(std::span<const ShaderCompUnit> compUnits,
 bool wallpaper::vulkan::CompileAndLinkShaderUnits(std::span<const ShaderCompUnit> compUnits,
                                                   const ShaderCompOpt& opt,
                                                   std::vector<Uni_ShaderSpv>& spvs) {
-    LOG_INFO("ShaderCompiler: units=%zu", compUnits.size());
+    LOG_VERBOSE("ShaderCompiler: units=%zu", compUnits.size());
     for (const auto& unit : compUnits) {
-        LOG_INFO("ShaderCompiler: unit stage=%d language=%s name='%s' bytes=%zu",
+        LOG_VERBOSE("ShaderCompiler: unit stage=%d language=%s name='%s' bytes=%zu",
                  static_cast<int>(unit.stage),
                  ShaderSourceLanguageName(unit.source_language),
                  unit.debug_name.empty() ? "<shader>" : unit.debug_name.c_str(),
                  unit.src.size());
     }
 
-    LOG_INFO("ShaderCompiler: selected=dxc reason=renderer-dxc-only");
+    LOG_VERBOSE("ShaderCompiler: selected=dxc reason=renderer-dxc-only");
     return CompileShaderUnitsWithDxc(compUnits, opt, spvs);
 }

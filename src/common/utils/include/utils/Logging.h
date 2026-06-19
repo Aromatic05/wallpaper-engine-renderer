@@ -35,7 +35,12 @@ enum
 #define LOG_INFO(...)  WallpaperLog(LOGLEVEL_INFO, "", 0, __VA_ARGS__)
 #define LOG_WARN(...)  WallpaperLog(LOGLEVEL_WARN, __SHORT_FILE__, __LINE__, __VA_ARGS__)
 #define LOG_ERROR(...) WallpaperLog(LOGLEVEL_ERROR, __SHORT_FILE__, __LINE__, __VA_ARGS__)
+#define LOG_VERBOSE(...) \
+    do { \
+        if (WallpaperVerboseLogEnabled()) WallpaperLog(LOGLEVEL_INFO, "", 0, __VA_ARGS__); \
+    } while (false)
 
 void WallpaperLog(int level, const char* file, int line, const char* fmt, ...);
+bool WallpaperVerboseLogEnabled();
 
 std::string logToTmpfileWithSha1(std::span<const char>, const char* fmt, ...);

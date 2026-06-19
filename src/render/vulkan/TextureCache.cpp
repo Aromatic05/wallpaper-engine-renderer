@@ -1056,7 +1056,7 @@ std::optional<ImageParameters> TextureCache::Query(std::string_view key, Texture
             .key   = key_string,
             .image = ImageParameters(image),
         });
-        LOG_INFO("TextureCacheInitialClearQueued: key='%s' render-target=%dx%d mip-levels=%u "
+        LOG_VERBOSE("TextureCacheInitialClearQueued: key='%s' render-target=%dx%d mip-levels=%u "
                  "transparent-black=true",
                  key_string.c_str(),
                  content_hash.width,

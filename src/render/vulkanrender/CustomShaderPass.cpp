@@ -344,7 +344,7 @@ static void WriteMaterialUniforms(StagingBuffer* buf, const StagingBufferRef& bu
 
 void LogStagingAllocRequest(std::string_view kind, const CustomShaderPass::Desc& desc,
                             VkDeviceSize size) {
-    LOG_INFO("StagingAllocRequest: kind=%.*s node='%s' camera='%s' shader='%s' output='%s' "
+    LOG_VERBOSE("StagingAllocRequest: kind=%.*s node='%s' camera='%s' shader='%s' output='%s' "
              "size=%zu dyn=%s",
              static_cast<int>(kind.size()),
              kind.data(),
@@ -488,7 +488,7 @@ void LogForcedAlphaPolicy(const wallpaper::vulkan::CustomShaderPass::Desc& desc,
                           VkColorComponentFlags                            color_mask) {
     if (! desc.force_alpha_write) return;
 
-    LOG_INFO("CustomShaderForceAlphaPolicy: layer=%d node='%s' camera='%.*s' material='%s' "
+    LOG_VERBOSE("CustomShaderForceAlphaPolicy: layer=%d node='%s' camera='%.*s' material='%s' "
              "output='%s' writes-alpha=%s color-mask=0x%x blend=%d premultiplied-source=%s",
              desc.layer_id,
              desc.node != nullptr ? desc.node->Name().c_str() : "",
@@ -564,7 +564,7 @@ void ApplyExplicitClearPolicy(const wallpaper::vulkan::CustomShaderPass::Desc& d
     if (!desc.clear_before_draw) return;
 
     load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    LOG_INFO("CustomShaderExplicitClearPolicy: layer=%d node='%s' material='%s' "
+    LOG_VERBOSE("CustomShaderExplicitClearPolicy: layer=%d node='%s' material='%s' "
              "output='%s'",
              desc.layer_id,
              desc.node != nullptr ? desc.node->Name().c_str() : "",
@@ -618,7 +618,7 @@ void ApplyModelPipelineState(const wallpaper::SceneMaterial&                  ma
     const auto effective_cull_mode =
         ResolveModelCullMode(model_state->cullMode, model_state->mirroredHandedness);
     pipeline.raster.cullMode = ToVkCullMode(effective_cull_mode);
-    LOG_INFO("ModelRenderStateBind: node='%s' shader='%s' output='%s' color-load=%s "
+    LOG_VERBOSE("ModelRenderStateBind: node='%s' shader='%s' output='%s' color-load=%s "
              "mirrored-handedness=%s depth-test=%s depth-write=%s depth-clear=%s cull=%u",
              desc.node != nullptr ? desc.node->Name().c_str() : "<null>",
              material.customShader.shader != nullptr ? material.customShader.shader->name.c_str()
@@ -799,7 +799,7 @@ bool StaticSceneTexturesResidentForDeferredPrepare(wallpaper::Scene& scene, cons
         if (! missing.empty()) missing += ",";
         missing += texture;
     }
-    LOG_INFO("CustomShaderPassDeferredPrepareWaitTextures: node='%s' output='%s' missing='%s'",
+    LOG_VERBOSE("CustomShaderPassDeferredPrepareWaitTextures: node='%s' output='%s' missing='%s'",
              desc.node != nullptr ? desc.node->Name().c_str() : "<null>",
              desc.output.c_str(),
              missing.c_str());

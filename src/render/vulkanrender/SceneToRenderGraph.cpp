@@ -533,7 +533,7 @@ static void AddNodePass(SceneNode* node, std::string_view output, i32 imgId, Ext
             pdesc.use_active_camera_for_parallax =
                 !pdesc.camera_override.empty() && options.use_active_camera_for_parallax;
             if (!pdesc.camera_override.empty()) {
-                LOG_INFO("SceneRenderGraphComposeCameraOverride: layer=%d node='%s' "
+                LOG_VERBOSE("SceneRenderGraphComposeCameraOverride: layer=%d node='%s' "
                          "output='%s' camera='%s' active-parallax=%s",
                          imgId,
                          node != nullptr ? node->Name().c_str() : "",
@@ -542,7 +542,7 @@ static void AddNodePass(SceneNode* node, std::string_view output, i32 imgId, Ext
                          pdesc.use_active_camera_for_parallax ? "true" : "false");
             }
             if (pdesc.use_active_camera_for_uniforms) {
-                LOG_INFO("SceneRenderGraphActiveCameraUniformOverride: layer=%d node='%s' "
+                LOG_VERBOSE("SceneRenderGraphActiveCameraUniformOverride: layer=%d node='%s' "
                          "output='%s'",
                          imgId,
                          node != nullptr ? node->Name().c_str() : "",
@@ -659,7 +659,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
             // Root-owned proxy/source nodes are emitted through explicit authored-order routes.
             // Reaching them through the physical tree means the root traversal is at the wrong
             // sibling position, so skip this visit to avoid late duplicate composites.
-            LOG_INFO("SceneRenderGraphNodeRouteSkip: layer=%d name='%s' reason='%s'",
+            LOG_VERBOSE("SceneRenderGraphNodeRouteSkip: layer=%d name='%s' reason='%s'",
                      NodeLayerId(scene, node),
                      node->Name().c_str(),
                      detached_source_node ? "detached-source" : "proxy");
@@ -668,7 +668,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
     }
 
     if (node != nullptr && !ShouldEmitLayerNodeForResidency(scene, node, extra)) {
-        LOG_INFO("SceneRenderGraphResidencySkip: layer=%d name='%s' local-visible=%s "
+        LOG_VERBOSE("SceneRenderGraphResidencySkip: layer=%d name='%s' local-visible=%s "
                  "layer-visible=%s",
                  NodeLayerId(scene, node),
                  node->Name().c_str(),
@@ -692,7 +692,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
         ResolveEffectSourceRouting(node, imgeff, imgId, extra, inherited_output, route);
     if (imgeff != nullptr &&
         imgeff->SourceContributionPolicy() == SceneImageEffectLayer::SourcePolicy::ProxyChildrenOnly) {
-        LOG_INFO("SceneRenderGraphComposeSourceClear: layer=%d name='%s' output='%.*s' "
+        LOG_VERBOSE("SceneRenderGraphComposeSourceClear: layer=%d name='%s' output='%.*s' "
                  "camera='%s'",
                  NodeLayerId(scene, node),
                  node != nullptr ? node->Name().c_str() : "",
@@ -704,7 +704,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
 
     if (source_route.seed_empty_proxy_compose_from_framebuffer &&
         HasRenderableMeshMaterial(node)) {
-        LOG_INFO("SceneRenderGraphComposeFramebufferSeed: layer=%d name='%s' output='%.*s' "
+        LOG_VERBOSE("SceneRenderGraphComposeFramebufferSeed: layer=%d name='%s' output='%.*s' "
                  "policy=%.*s reason='empty-proxy-visible-framebuffer-source'",
                  NodeLayerId(scene, node),
                  node->Name().c_str(),
@@ -728,7 +728,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
     if (HasRenderableMeshMaterial(node) &&
         source_route.owner_node_contributes_to_effect_source) {
         if (source_route.owner_node_source_fallback) {
-            LOG_INFO("SceneRenderGraphComposeOwnerSourceFallback: layer=%d name='%s' output='%.*s' "
+            LOG_VERBOSE("SceneRenderGraphComposeOwnerSourceFallback: layer=%d name='%s' output='%.*s' "
                      "policy=%.*s reason='%.*s' framebuffer-uniforms=%s",
                      NodeLayerId(scene, node),
                      node->Name().c_str(),
@@ -754,7 +754,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                         imgeff, output, inherited_output, route, source_route));
     } else if (HasRenderableMeshMaterial(node) && imgeff != nullptr &&
                !source_route.seed_empty_proxy_compose_from_framebuffer) {
-        LOG_INFO("SceneRenderGraphComposeOwnerSourceSkip: layer=%d name='%s' output='%.*s' "
+        LOG_VERBOSE("SceneRenderGraphComposeOwnerSourceSkip: layer=%d name='%s' output='%.*s' "
                  "policy=%.*s",
                  NodeLayerId(scene, node),
                  node->Name().c_str(),
@@ -775,7 +775,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
             detached_it != scene.detachedEffectSourceNodesByWorldNode.end()) {
             for (auto* source_node : detached_it->second) {
                 if (source_node == nullptr) continue;
-                LOG_INFO("SceneRenderGraphDetachedSourceRoute: world-layer=%d source-layer=%d "
+                LOG_VERBOSE("SceneRenderGraphDetachedSourceRoute: world-layer=%d source-layer=%d "
                          "world-name='%s' source-name='%s' output='%.*s'",
                          NodeLayerId(scene, node),
                          NodeLayerId(scene, source_node),
@@ -813,7 +813,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                 // the proxied world-space node a real child of this image-effect source target, so
                 // defer ordinary proxies until the parent effect has resolved back to the inherited
                 // output space.
-                LOG_INFO("SceneRenderGraphProxyChildDefer: parent-layer=%d proxy-layer=%d "
+                LOG_VERBOSE("SceneRenderGraphProxyChildDefer: parent-layer=%d proxy-layer=%d "
                          "inherited-output='%.*s' parent-effect-output='%.*s'",
                          NodeLayerId(scene, node),
                          NodeLayerId(scene, child.node),
@@ -829,7 +829,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                 if (imgeff != nullptr) {
                     if (source_route.proxy_children_contribute_to_effect_source &&
                         !IsEffectLocalProxyDependency(child.node, extra)) {
-                        LOG_INFO("SceneRenderGraphProxyComposeSourceRoute: parent-layer=%d "
+                        LOG_VERBOSE("SceneRenderGraphProxyComposeSourceRoute: parent-layer=%d "
                                  "proxy-layer=%d output='%.*s' policy=%.*s camera='%s'",
                                  NodeLayerId(scene, node),
                                  NodeLayerId(scene, child.node),
@@ -843,7 +843,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                         // Wallpaper Engine `dependencies` are effect-local inputs. These proxies
                         // must stay inside the parent effect phase because the parent shader samples
                         // their private source target while resolving the effect chain.
-                        LOG_INFO("SceneRenderGraphProxyInlineEffectRoute: parent-layer=%d "
+                        LOG_VERBOSE("SceneRenderGraphProxyInlineEffectRoute: parent-layer=%d "
                                  "proxy-layer=%d output='%.*s'",
                                  NodeLayerId(scene, node),
                                  NodeLayerId(scene, child.node),
@@ -851,7 +851,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                                  output.data());
                     }
                 } else {
-                    LOG_INFO("SceneRenderGraphProxyChildRoute: parent-layer=%d proxy-layer=%d "
+                    LOG_VERBOSE("SceneRenderGraphProxyChildRoute: parent-layer=%d proxy-layer=%d "
                              "name='%s' output='%.*s'",
                              NodeLayerId(scene, node),
                              NodeLayerId(scene, child.node),
@@ -897,7 +897,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
             route.compose_source
                 ? SceneImageEffectLayer::FinalOutputPolicy::PrivateAuthoredThenComposite
                 : SceneImageEffectLayer::FinalOutputPolicy::AuthoredWriter;
-        LOG_INFO("SceneRenderGraphEffectResolve: layer=%d name='%s' inherited-output='%.*s' "
+        LOG_VERBOSE("SceneRenderGraphEffectResolve: layer=%d name='%s' inherited-output='%.*s' "
                  "effect-output='%.*s' offscreen-dependency=%s visible=%s local-visible=%s "
                  "routed=%s keep-final-private=%s compose-source-route=%s compose-camera='%s'",
                  NodeLayerId(scene, node),
@@ -1000,7 +1000,7 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
 
     for (const auto& child : deferred_proxy_children) {
         if (child.node == nullptr) continue;
-        LOG_INFO("SceneRenderGraphProxyOutputRoute: parent-layer=%d proxy-layer=%d output='%.*s'",
+        LOG_VERBOSE("SceneRenderGraphProxyOutputRoute: parent-layer=%d proxy-layer=%d output='%.*s'",
                  NodeLayerId(scene, node),
                  NodeLayerId(scene, child.node),
                  static_cast<int>(inherited_output.size()),
@@ -1028,7 +1028,7 @@ static std::unique_ptr<rg::RenderGraph> SceneToRenderGraphImpl(
     for (size_t index = 0; index < scene.layerOrder.size(); index++) {
         extra.layer_order_index[scene.layerOrder[index]] = index;
     }
-    LOG_INFO("SceneRenderGraphOrderInit: layer-count=%zu proxy-parent-count=%zu proxy-node-count=%zu "
+    LOG_VERBOSE("SceneRenderGraphOrderInit: layer-count=%zu proxy-parent-count=%zu proxy-node-count=%zu "
              "detached-anchor-count=%zu detached-source-count=%zu warmup-hidden=%s",
              scene.layerOrder.size(),
              scene.renderOrderProxyChildren.size(),

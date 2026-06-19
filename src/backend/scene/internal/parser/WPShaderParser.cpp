@@ -1309,7 +1309,7 @@ inline void ParseWPShader(const std::string& src, WPShaderInfo* pWPShaderInfo,
                                 TextureSlotCanEnableCombo(index, texcount, texinfos);
                             combos[wput.combo] = combo_enabled ? "1" : "0";
                             if (! combo_enabled) {
-                                LOG_INFO("ParseWPShader: texture combo '%s' disabled for "
+                                LOG_VERBOSE("ParseWPShader: texture combo '%s' disabled for "
                                          "g_Texture%d because the slot has no bound texture",
                                          wput.combo.c_str(),
                                          index);
@@ -1346,7 +1346,7 @@ inline void ParseWPShader(const std::string& src, WPShaderInfo* pWPShaderInfo,
                         }
                     }
                     if (defines.back()[0] != 'g') {
-                        LOG_INFO("PreShaderSrc User shadervalue not supported: %s %s",
+                        LOG_VERBOSE("PreShaderSrc User shadervalue not supported: %s %s",
                                  defines.back().c_str(),
                                  sv_json.dump().c_str());
                     }

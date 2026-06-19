@@ -360,7 +360,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
     if (cache != nullptr && !cache_key.empty()) {
         if (auto cached_state = cache->find(cache_key)) {
             pipeline.bindCachedState(std::move(cached_state));
-            LOG_INFO("GraphicsPipelineCache: hit name=%s key=%s cached-states=%zu",
+            LOG_VERBOSE("GraphicsPipelineCache: hit name=%s key=%s cached-states=%zu",
                      debug_name,
                      cache_key.c_str(),
                      cache->size());
@@ -368,7 +368,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
         }
     }
 
-    LOG_INFO("GraphicsPipeline: create begin name=%s existingDescriptorLayouts=%zu existingLayout=%s existingPipeline=%s stageCount=%zu descriptorSetInfos=%zu",
+    LOG_VERBOSE("GraphicsPipeline: create begin name=%s existingDescriptorLayouts=%zu existingLayout=%s existingPipeline=%s stageCount=%zu descriptorSetInfos=%zu",
              debug_name,
              pipeline.descriptor_layouts.size(),
              pipeline.layout ? "true" : "false",
@@ -376,7 +376,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
              m_stage_spv_map.size(),
              m_descriptor_set_infos.size());
     if (pipeline.handle || pipeline.layout || pipeline.pass || !pipeline.descriptor_layouts.empty()) {
-        LOG_INFO("GraphicsPipeline: reset stale pipeline state name=%s descriptorLayouts=%zu layout=%s pipeline=%s pass=%s",
+        LOG_VERBOSE("GraphicsPipeline: reset stale pipeline state name=%s descriptorLayouts=%zu layout=%s pipeline=%s pass=%s",
                  debug_name,
                  pipeline.descriptor_layouts.size(),
                  pipeline.layout ? "true" : "false",
@@ -386,7 +386,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
     }
     for (const auto& [stage, spv] : m_stage_spv_map) {
         if (!spv) continue;
-        LOG_INFO("GraphicsPipeline: stage name=%s stage=%s entry=%s spirvWords=%zu",
+        LOG_VERBOSE("GraphicsPipeline: stage name=%s stage=%s entry=%s spirvWords=%zu",
                  debug_name,
                  ShaderStageName(stage),
                  spv->entry_point.c_str(),
@@ -400,14 +400,14 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
     };
     for (size_t info_index = 0; info_index < m_descriptor_set_infos.size(); ++info_index) {
         auto& info = m_descriptor_set_infos[info_index];
-        LOG_INFO("GraphicsPipeline: descriptor-set-info name=%s index=%zu push=%s bindingCount=%zu",
+        LOG_VERBOSE("GraphicsPipeline: descriptor-set-info name=%s index=%zu push=%s bindingCount=%zu",
                  debug_name,
                  info_index,
                  info.push_descriptor ? "true" : "false",
                  info.bindings.size());
         for (size_t binding_index = 0; binding_index < info.bindings.size(); ++binding_index) {
             const auto& binding = info.bindings[binding_index];
-            LOG_INFO("GraphicsPipeline: descriptor-binding name=%s set=%zu bindingIndex=%zu binding=%u type=%u count=%u stageFlags=0x%x",
+            LOG_VERBOSE("GraphicsPipeline: descriptor-binding name=%s set=%zu bindingIndex=%zu binding=%u type=%u count=%u stageFlags=0x%x",
                      debug_name,
                      info_index,
                      binding_index,
@@ -430,7 +430,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
         if (!pipeline.cached_state) pipeline.cached_state = std::make_shared<CachedGraphicsPipelineState>();
         pipeline.cached_state->descriptor_layouts.emplace_back(std::move(layout));
         pipeline.descriptor_layouts.push_back(*pipeline.cached_state->descriptor_layouts.back());
-        LOG_INFO("GraphicsPipeline: descriptor-layout-created name=%s set=%zu handle=%p totalLayouts=%zu",
+        LOG_VERBOSE("GraphicsPipeline: descriptor-layout-created name=%s set=%zu handle=%p totalLayouts=%zu",
                  debug_name,
                  info_index,
                  reinterpret_cast<void*>(pipeline.descriptor_layouts.back()),
@@ -438,12 +438,12 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
     }
     {
         const auto& layouts = pipeline.descriptor_layouts;
-        LOG_INFO("GraphicsPipeline: create pipeline layout name=%s layoutCount=%zu renderPass=%p",
+        LOG_VERBOSE("GraphicsPipeline: create pipeline layout name=%s layoutCount=%zu renderPass=%p",
                  debug_name,
                  layouts.size(),
                  reinterpret_cast<void*>(*pass));
         for (size_t layout_index = 0; layout_index < layouts.size(); ++layout_index) {
-            LOG_INFO("GraphicsPipeline: pipeline-layout-entry name=%s index=%zu handle=%p",
+            LOG_VERBOSE("GraphicsPipeline: pipeline-layout-entry name=%s index=%zu handle=%p",
                      debug_name,
                      layout_index,
                      reinterpret_cast<void*>(layouts[layout_index]));
@@ -460,7 +460,7 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
         if (!pipeline.cached_state) pipeline.cached_state = std::make_shared<CachedGraphicsPipelineState>();
         pipeline.cached_state->layout = std::move(layout);
         pipeline.layout.handle = *pipeline.cached_state->layout;
-        LOG_INFO("GraphicsPipeline: create pipeline layout success name=%s layout=%p",
+        LOG_VERBOSE("GraphicsPipeline: create pipeline layout success name=%s layout=%p",
                  debug_name,
                  reinterpret_cast<void*>(*pipeline.cached_state->layout));
     }
@@ -520,14 +520,14 @@ bool GraphicsPipeline::create(const Device& device, vvk::RenderPass& pass,
     if (!pipeline.cached_state) pipeline.cached_state = std::make_shared<CachedGraphicsPipelineState>();
     pipeline.cached_state->handle = std::move(handle);
     pipeline.handle.handle = *pipeline.cached_state->handle;
-    LOG_INFO("GraphicsPipeline: create graphics pipeline success name=%s pipeline=%p",
+    LOG_VERBOSE("GraphicsPipeline: create graphics pipeline success name=%s pipeline=%p",
              debug_name,
              reinterpret_cast<void*>(*pipeline.cached_state->handle));
     pipeline.cached_state->pass = std::move(pass);
     pipeline.pass.handle = *pipeline.cached_state->pass;
     if (cache != nullptr && !cache_key.empty()) {
         cache->store(cache_key, pipeline.cached_state);
-        LOG_INFO("GraphicsPipelineCache: store name=%s key=%s cached-states=%zu",
+        LOG_VERBOSE("GraphicsPipelineCache: store name=%s key=%s cached-states=%zu",
                  debug_name,
                  cache_key.c_str(),
                  cache->size());

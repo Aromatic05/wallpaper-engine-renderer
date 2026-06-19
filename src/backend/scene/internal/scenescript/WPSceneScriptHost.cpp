@@ -2758,7 +2758,7 @@ bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque,
     // A resource refresh cannot add that missing pass, so the first false->true visibility toggle
     // must force a topology rebuild before the layer can become visible on screen.
     opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_INFO("DeferredRuntimeParticleRealize: materialized layer=%d topology-dirty=true", layer_id);
+    LOG_VERBOSE("DeferredRuntimeParticleRealize: materialized layer=%d topology-dirty=true", layer_id);
     return true;
 }
 
@@ -2787,7 +2787,7 @@ bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, in
     // had no material/effect passes, so turning it visible changes graph topology and must rebuild
     // before any newly-created render targets or pipelines can contribute to the frame.
     opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_INFO("DeferredRuntimeImageRealize: materialized layer=%d topology-dirty=true", layer_id);
+    LOG_VERBOSE("DeferredRuntimeImageRealize: materialized layer=%d topology-dirty=true", layer_id);
     return true;
 }
 
@@ -2817,7 +2817,7 @@ bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int
     // topology is rebuilt, even if ordinary uniforms or textures would only need a resource
     // refresh.
     opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_INFO("DeferredRuntimeTextRealize: materialized layer=%d topology-dirty=true", layer_id);
+    LOG_VERBOSE("DeferredRuntimeTextRealize: materialized layer=%d topology-dirty=true", layer_id);
     return true;
 }
 

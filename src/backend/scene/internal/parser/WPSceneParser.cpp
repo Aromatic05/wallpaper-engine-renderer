@@ -1746,7 +1746,7 @@ void RegisterRenderOrderProxyChild(ParseContext& context, int32_t parent_id,
         routed_children.push_back(child.get());
     }
     context.scene->renderOrderProxyNodes.insert(child.get());
-    LOG_INFO("SceneRenderOrderProxyRegister: parent-layer=%d proxy-layer=%d parent-name='%s' "
+    LOG_VERBOSE("SceneRenderOrderProxyRegister: parent-layer=%d proxy-layer=%d parent-name='%s' "
              "proxy-name='%s'",
              parent_id,
              child_layer_id,
@@ -1771,7 +1771,7 @@ void RegisterDetachedRenderOrderSource(ParseContext&                     context
         sources.push_back(source_node.get());
     }
     context.scene->detachedEffectSourceNodes.insert(source_node.get());
-    LOG_INFO("SceneRenderOrderDetachedSourceRegister: layer=%d world-name='%s' source-name='%s'",
+    LOG_VERBOSE("SceneRenderOrderDetachedSourceRegister: layer=%d world-name='%s' source-name='%s'",
              layer_id,
              world_node->Name().c_str(),
              source_node->Name().c_str());
@@ -1838,7 +1838,7 @@ void RestoreRenderOrderProxyChildrenForLayer(Scene& scene, int32_t parent_layer_
             routed_children.push_back(child_node_it->second);
         }
         scene.renderOrderProxyNodes.insert(child_node_it->second);
-        LOG_INFO("SceneRenderOrderProxyRestore: parent-layer=%d proxy-layer=%d parent-name='%s' "
+        LOG_VERBOSE("SceneRenderOrderProxyRestore: parent-layer=%d proxy-layer=%d parent-name='%s' "
                  "proxy-name='%s'",
                  parent_layer_id,
                  child_layer_id,
@@ -2219,7 +2219,7 @@ void RegisterLogicalImageLayer(ParseContext& context, const wpscene::WPImageObje
         context.scene->deferredRuntimeImageLayerIds.insert(wpimgobj.id);
     }
 
-    LOG_INFO("SceneObjectMaterialize: mode=image-logical-only id=%d name='%s' image='%s' "
+    LOG_VERBOSE("SceneObjectMaterialize: mode=image-logical-only id=%d name='%s' image='%s' "
              "fullscreen=%s autosize=%s projectlayer=%s effects=%zu dependency-source=%s "
              "deferred-runtime=%s",
              wpimgobj.id,
@@ -2759,7 +2759,7 @@ void RegisterConstantShaderValueBindings(ParseContext& context, const wpscene::W
         const auto  resolution      = ResolveMaterialValueUniform(info, material_value_name, true);
         const auto& gl_uniform_name = resolution.uniform_name;
         if (! SceneMaterialHasUniform(*node->Mesh()->Material(), gl_uniform_name)) {
-            LOG_INFO("ConstantShaderValueRegister: layer=%d effect-id=%d effect-index=%d "
+            LOG_VERBOSE("ConstantShaderValueRegister: layer=%d effect-id=%d effect-index=%d "
                      "material-index=%zu material-value='%s' unresolved uniform='%s' reason=%s",
                      object_id,
                      effect_id,
@@ -2807,7 +2807,7 @@ void RegisterConstantShaderValueBindings(ParseContext& context, const wpscene::W
             registration_kind += registration_kind.empty() ? "user" : "+user";
         }
 
-        LOG_INFO("ConstantShaderValueRegister: layer=%d name='%.*s' effect-id=%d "
+        LOG_VERBOSE("ConstantShaderValueRegister: layer=%d name='%.*s' effect-id=%d "
                  "effect-index=%d material-index=%zu kind=%s user-property='%s' "
                  "material-value='%s' uniform='%s' value-type=%s",
                  object_id,
@@ -4323,7 +4323,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 effect_camera_clip.near_clip,
                 effect_camera_clip.far_clip);
             scene.cameras.at(nodeAddr)->AttatchNode(spWorldNode);
-            LOG_INFO("SceneCompositionLayerSourceCamera: layer=%d name='%s' camera='%s' "
+            LOG_VERBOSE("SceneCompositionLayerSourceCamera: layer=%d name='%s' camera='%s' "
                      "size=[%d, %d] source-target=[%.3f, %.3f] near=%.3f far=%.3f "
                      "animated-puppet=%s",
                      wpimgobj.id,
@@ -4344,7 +4344,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             scene.cameras[nodeAddr] = std::make_shared<SceneCamera>(
                 w, h, effect_camera_clip.near_clip, effect_camera_clip.far_clip);
             scene.cameras.at(nodeAddr)->AttatchNode(context.effect_camera_node);
-            LOG_INFO("SceneImageEffectSourceCamera: layer=%d name='%s' camera='%s' "
+            LOG_VERBOSE("SceneImageEffectSourceCamera: layer=%d name='%s' camera='%s' "
                      "size=[%d, %d] near=%.3f far=%.3f animated-puppet=%s",
                      wpimgobj.id,
                      wpimgobj.name.c_str(),
@@ -4380,7 +4380,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             const auto source_policy = ResolveImageEffectSourcePolicy(isCompose, wpimgobj);
             imgEffectLayer->SetSourceContributionPolicy(source_policy);
             if (isCompose) {
-                LOG_INFO("SceneCompositionLayerSourcePolicy: layer=%d name='%s' "
+                LOG_VERBOSE("SceneCompositionLayerSourcePolicy: layer=%d name='%s' "
                          "copybackground=%s policy=%.*s",
                          wpimgobj.id,
                          wpimgobj.name.c_str(),
@@ -4415,7 +4415,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             scene.objectRuntimeRenderTargets[wpimgobj.id].push_back(effect_ppong_a);
             scene.objectRuntimeRenderTargets[wpimgobj.id].push_back(effect_ppong_b);
             if (wpimgobj.effectSourceScreenBound) {
-                LOG_INFO("SceneEffectPingPongTargetResolve: layer=%d name='%s' "
+                LOG_VERBOSE("SceneEffectPingPongTargetResolve: layer=%d name='%s' "
                          "pingpong-a='%s' pingpong-b='%s' size=[%.3f, %.3f] "
                          "screen-bound=true fullscreen=%s",
                          wpimgobj.id,
@@ -4458,7 +4458,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 wpimgobj.id, wpeffobj.id, static_cast<uint32_t>(i_eff), wpeffobj.name);
             imgEffect->SetRuntimeVisibilityContract(effect_visibility.requires_runtime_contract);
             if (effect_visibility.requires_runtime_contract) {
-                LOG_INFO("SceneVisibilityEffectMaterialize: layer=%d effect-id=%d effect-index=%d "
+                LOG_VERBOSE("SceneVisibilityEffectMaterialize: layer=%d effect-id=%d effect-index=%d "
                          "name='%s' initial-visible=%s authored-visible=%s",
                          wpimgobj.id,
                          wpeffobj.id,
@@ -4517,7 +4517,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                         };
                     }
                     if (wpfbo.fit > 0 || persistent_feedback_fbo) {
-                        LOG_INFO("SceneEffectFboResolve: layer=%d effect-id=%d effect='%s' "
+                        LOG_VERBOSE("SceneEffectFboResolve: layer=%d effect-id=%d effect='%s' "
                                  "fbo='%s' target='%s' size=%dx%d scale=%u fit=%u "
                                  "persistent-feedback=%s",
                                  wpimgobj.id,
@@ -4850,7 +4850,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                 text_obj.id, wp_effect.id, static_cast<uint32_t>(effect_index), wp_effect.name);
             img_effect->SetRuntimeVisibilityContract(effect_visibility.requires_runtime_contract);
             if (effect_visibility.requires_runtime_contract) {
-                LOG_INFO("SceneVisibilityEffectMaterialize: layer=%d effect-id=%d effect-index=%d "
+                LOG_VERBOSE("SceneVisibilityEffectMaterialize: layer=%d effect-id=%d effect-index=%d "
                          "name='%s' initial-visible=%s authored-visible=%s",
                          text_obj.id,
                          wp_effect.id,
@@ -5678,7 +5678,7 @@ void ParseShapeObj(ParseContext& context, WPShapeObject& shape_obj,
     image_obj.effects          = std::move(shape_obj.effects);
     image_obj.nopadding        = true;
 
-    LOG_INFO("SceneShapeDirectDraw: materialize layer=%d name='%s' shape='%s' effects=%zu "
+    LOG_VERBOSE("SceneShapeDirectDraw: materialize layer=%d name='%s' shape='%s' effects=%zu "
              "visual-size=[%.3f, %.3f] visual-policy=%s effect-source-policy=%s "
              "effect-source-size=[%.3f, %.3f] authored-size=%s final-uv-policy=%s "
              "final-uv-bounds=[%.3f, %.3f, %.3f, %.3f] transparent-texture='%.*s' "
@@ -5736,7 +5736,7 @@ void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj,
         // This image parse log intentionally mirrors the runtime geometry fields that decide
         // whether utility layers become drawable. It makes project-layer regressions visible in
         // run logs before the render graph has a chance to create a framebuffer feedback pass.
-        LOG_INFO("SceneObjectParsed: source=scene-load kind=image id=%d name='%s' "
+        LOG_VERBOSE("SceneObjectParsed: source=scene-load kind=image id=%d name='%s' "
                  "origin=[%.3f, %.3f, %.3f] size=[%.3f, %.3f] fullscreen=%s autosize=%s "
                  "projectlayer=%s image='%s' effects=%zu",
                  wpobj.id,
@@ -5755,7 +5755,7 @@ void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj,
         // Shape/direct-draw layers do not carry an image model, so this parser log is the only
         // early proof that the layer was classified as drawable effect content rather than as a
         // transform-only empty object.
-        LOG_INFO("SceneObjectParsed: source=scene-load kind=shape id=%d name='%s' "
+        LOG_VERBOSE("SceneObjectParsed: source=scene-load kind=shape id=%d name='%s' "
                  "origin=[%.3f, %.3f, %.3f] size=[%.3f, %.3f] has-size=%s shape='%s' effects=%zu",
                  wpobj.id,
                  wpobj.name.c_str(),
@@ -5771,7 +5771,7 @@ void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj,
         // Model objects are intentionally logged before materialization because a missing model
         // parse would otherwise look like an empty scene: the object has no image/particle/text
         // discriminator, so this line proves the 3D-specific dispatch path claimed it.
-        LOG_INFO("SceneObjectParsed: source=scene-load kind=model id=%d name='%s' model='%s' "
+        LOG_VERBOSE("SceneObjectParsed: source=scene-load kind=model id=%d name='%s' model='%s' "
                  "origin=[%.3f, %.3f, %.3f] reflected=%s skin=%d",
                  wpobj.id,
                  wpobj.name.c_str(),
@@ -6280,7 +6280,7 @@ void RegisterEffectVisibilityBinding(ParseContext& context, const nlohmann::json
     }
 
     if (registration_kind != nullptr) {
-        LOG_INFO("SceneVisibilityEffectRegister: layer=%d effect-id=%d effect-index=%u name='%s' "
+        LOG_VERBOSE("SceneVisibilityEffectRegister: layer=%d effect-id=%d effect-index=%u name='%s' "
                  "kind=%s initial-visible=%s",
                  object_id,
                  effect_id,
