@@ -264,7 +264,7 @@ BlendMode ParseBlendMode(std::string_view str) {
     return bm;
 }
 
-void ParseSpecTexName(std::string& name, const wpscene::WPMaterial& wpmat,
+void ParseSpecTexName(std::string& name, const wpscene::WPMaterial& wpmat, const Scene* scene,
                       const WPShaderInfo& sinfo) {
     if (IsSpecTex(name)) {
         if (name == "_rt_FullFrameBuffer") {
@@ -289,10 +289,24 @@ void ParseSpecTexName(std::string& name, const wpscene::WPMaterial& wpmat,
         } else if (sstart_with(name, WE_HALF_COMPO_BUFFER_PREFIX)) {
         } else if (sstart_with(name, WE_QUARTER_COMPO_BUFFER_PREFIX)) {
         } else if (sstart_with(name, WE_FULL_COMPO_BUFFER_PREFIX)) {
+        } else if (name == "_rt_shadowAtlas") {
+        } else if (scene != nullptr && scene->renderTargets.count(name) != 0) {
         } else {
             LOG_ERROR("unknown tex \"%s\"", name.c_str());
         }
     }
+}
+
+void ApplyKnownShaderSourceFixes(std::string_view shader_name, ShaderType stage,
+                                 std::string& source) {
+    if (shader_name == "genericropeparticle" && stage == ShaderType::VERTEX) {
+        const std::string_view broken = "position += right * uvs.x * 2.0 - 1.0;";
+        const auto             pos    = source.find(broken);
+        if (pos != std::string::npos) {
+            source.replace(pos, broken.size(), "position += right * (uvs.x * 2.0 - 1.0);");
+        }
+    }
+
 }
 
 bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene, SceneNode* pNode,
@@ -327,6 +341,10 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
                               .src             = fs::GetFileContent(vfs, shaderPath + ".frag"),
                               .preprocess_info = {},
                           } };
+
+    for (auto& unit : sd_units) {
+        ApplyKnownShaderSourceFixes(wpmat.shader, unit.stage, unit.src);
+    }
 
     std::vector<WPShaderTexInfo>                 texinfos;
     std::unordered_map<std::string, ImageHeader> texHeaders;
@@ -374,7 +392,8 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
 
     for (usize i = 0; i < textures.size(); i++) {
         std::string name = textures.at(i);
-        ParseSpecTexName(name, wpmat, *pWPShaderInfo);
+        if (name == "_alias_lightCookie") name = "cookie/flashlight1";
+        ParseSpecTexName(name, wpmat, pScene, *pWPShaderInfo);
         material.textures.push_back(name);
         material.defines.push_back("g_Texture" + std::to_string(i));
         if (name.empty()) {
@@ -1429,15 +1448,28 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
 
     {
         context.scene->renderTargets[SpecTex_Default.data()] = {
-            .width  = context.ortho_w,
-            .height = context.ortho_w,
-            .bind   = { .enable = true, .screen = true },
+            .width     = context.ortho_w,
+            .height    = context.ortho_h,
+            .mapWidth  = context.ortho_w,
+            .mapHeight = context.ortho_h,
+            .bind      = { .enable = true, .screen = true },
         };
         context.scene->renderTargets[WE_MIP_MAPPED_FRAME_BUFFER.data()] = {
             .width      = context.ortho_w,
-            .height     = context.ortho_w,
+            .height     = context.ortho_h,
+            .mapWidth   = context.ortho_w,
+            .mapHeight  = context.ortho_h,
             .has_mipmap = true,
             .bind       = { .enable = true, .name = SpecTex_Default.data() }
+        };
+        context.scene->renderTargets["_rt_shadowAtlas"] = {
+            .width      = context.ortho_w,
+            .height     = context.ortho_h,
+            .mapWidth   = context.ortho_w,
+            .mapHeight  = context.ortho_h,
+            .allowReuse = true,
+            .withDepth  = true,
+            .bind       = { .enable = true, .screen = true },
         };
     }
 

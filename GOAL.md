@@ -237,6 +237,11 @@ Planned commit:
      replays them only after queued passes become resident, and fixes multi-key
      `MarkShareReady` so shared query textures are reusable only after every logical key
      reaches its last read.
+   - `fix(scene): port stock render targets and shader compatibility fixes` registers
+     Wallpaper Engine's built-in `_rt_shadowAtlas`, maps `_alias_lightCookie` to the
+     stock cookie texture, fixes default render-target content dimensions, and ports the
+     post-preprocessor GLSL compatibility needed by stock/zcompat shaders that mix WE's
+     integer, float, and bool conventions.
    Remaining:
    - Real pass-specific resource-wait states still need their reference behavior.
    - Pipeline warmup still needs the reference hidden-layer warmup render graph, not only

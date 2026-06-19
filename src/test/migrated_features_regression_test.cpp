@@ -1,4 +1,5 @@
 #include "backend/scene/internal/parser/WPSceneParser.hpp"
+#include "backend/scene/internal/parser/WPShaderParser.hpp"
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
 #include "backend/scene/internal/text/WPTextLayer.hpp"
 #include "backend/scene/internal/SpecTexs.hpp"
@@ -11,6 +12,7 @@
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
 #include "backend/scene/internal/wpscene/WPTextObject.h"
 #include "common/fs/include/fs/VFS.h"
+#include "host/audio/include/audio/SoundManager.h"
 #include "render/vulkanrender/ClearPass.hpp"
 #include "render/vulkanrender/TextPass.hpp"
 #include "rendergraph/RenderGraph.hpp"
@@ -18,8 +20,10 @@
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -82,6 +86,93 @@ const wallpaper::vulkan::ClearPass::Desc* FindClearPass(
 } // namespace
 
 int main() {
+    {
+        wallpaper::fs::VFS vfs;
+        wallpaper::WPShaderInfo shader_info;
+        shader_info.combos["SHADER_PLACEHOLD"] = "1";
+        std::array<wallpaper::WPShaderUnit, 2> units {
+            wallpaper::WPShaderUnit {
+                .stage = wallpaper::ShaderType::VERTEX,
+                .src = R"(
+                    attribute vec3 a_Position;
+                    varying vec2 v_TexCoord;
+                    void main() {
+                        v_TexCoord = a_Position.xy;
+                        gl_Position = vec4(a_Position, 1.0);
+                    }
+                )",
+                .preprocess_info = {},
+            },
+            wallpaper::WPShaderUnit {
+                .stage = wallpaper::ShaderType::FRAGMENT,
+                .src = R"(
+                    varying vec2 v_TexCoord;
+                    uniform float u_BarCount;
+                    void main() {
+                        float frequency = floor(v_TexCoord.x * u_BarCount) / u_BarCount * 64.0;
+                        uint barFreq1 = frequency % 64;
+                        uint barFreq2 = (barFreq1 + 1) % 64;
+                        float bar = step(v_TexCoord.y, float(barFreq2));
+                        bool isLeftChannel = v_TexCoord.y < 0.49;
+                        int masked = step(v_TexCoord.x, 0.5);
+                        bar *= isLeftChannel;
+                        gl_FragColor = vec4(bar + float(masked), float(barFreq1), 0.0, 1.0);
+                    }
+                )",
+                .preprocess_info = {},
+            },
+        };
+        std::vector<wallpaper::ShaderCode> codes;
+        wallpaper::WPShaderParser::InitGlslang();
+        const bool compiled = wallpaper::WPShaderParser::CompileToSpv(
+            "migrated-shader-compat",
+            std::span<wallpaper::WPShaderUnit>(units.data(), units.size()),
+            codes,
+            vfs,
+            &shader_info,
+            std::span<const wallpaper::WPShaderTexInfo>());
+        wallpaper::WPShaderParser::FinalGlslang();
+        assert(compiled);
+        assert(codes.size() == units.size());
+    }
+
+    {
+        wallpaper::WPSceneParser parser;
+        wallpaper::fs::VFS vfs;
+        wallpaper::audio::SoundManager sound_manager;
+        auto scene = parser.Parse("migrated-render-targets",
+                                  R"({
+                                      "camera": {
+                                          "center": [0, 0, 0],
+                                          "eye": [0, 0, 1],
+                                          "up": [0, 1, 0]
+                                      },
+                                      "general": {
+                                          "clearcolor": [0, 0, 0],
+                                          "orthogonalprojection": {
+                                              "width": 320,
+                                              "height": 180
+                                          },
+                                          "zoom": 1
+                                      },
+                                      "objects": []
+                                  })",
+                                  vfs,
+                                  sound_manager);
+        assert(scene != nullptr);
+        assert(scene->renderTargets.count(wallpaper::SpecTex_Default.data()) == 1);
+        assert(scene->renderTargets.count("_rt_shadowAtlas") == 1);
+        const auto& full_frame = scene->renderTargets.at(wallpaper::SpecTex_Default.data());
+        assert(full_frame.width == 320);
+        assert(full_frame.height == 180);
+        assert(full_frame.mapWidth == 320);
+        assert(full_frame.mapHeight == 180);
+        const auto& shadow_atlas = scene->renderTargets.at("_rt_shadowAtlas");
+        assert(shadow_atlas.withDepth);
+        assert(shadow_atlas.allowReuse);
+        assert(shadow_atlas.height == 180);
+    }
+
     wallpaper::Scene scene;
     scene.vfs = std::make_unique<wallpaper::fs::VFS>();
     constexpr int32_t layer_id = 501;

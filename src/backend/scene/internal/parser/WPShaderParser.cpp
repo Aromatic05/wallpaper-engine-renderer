@@ -359,6 +359,21 @@ inline std::string Finalprocessor(const WPShaderUnit& unit, const WPPreprocessor
     return std::regex_replace(unit.src, re_hold, insert_str);
 }
 
+inline void ApplyPostPreprocessorCompatibilityFixes(std::string& source) {
+    source = std::regex_replace(source,
+                                std::regex(R"(\buint\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;\n]+?)\s*%\s*([0-9]+)\s*;)"),
+                                "uint $1 = uint($2) % $3u;");
+    source = std::regex_replace(source,
+                                std::regex(R"(uint\(\(([A-Za-z_][A-Za-z0-9_]*)\s*\+\s*([0-9]+)\)\))"),
+                                "($1 + $2u)");
+    source = std::regex_replace(source,
+                                std::regex(R"(\bint\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*step\()"),
+                                "float $1 = step(");
+    source = std::regex_replace(source,
+                                std::regex(R"(\*=\s*(is[A-Za-z_][A-Za-z0-9_]*)\s*;)"),
+                                "*= float($1);");
+}
+
 inline std::string GenSha1(std::span<const WPShaderUnit> units) {
     std::string shas;
     for (auto& unit : units) {
@@ -469,6 +484,7 @@ bool WPShaderParser::CompileToSpv(std::string_view scene_id, std::span<WPShaderU
                 i + 1 < units.size() ? &units[i + 1].preprocess_info : nullptr;
 
             unit.src = Finalprocessor(unit, pre_info, post_info);
+            ApplyPostPreprocessorCompatibilityFixes(unit.src);
 
             vunit.src   = unit.src;
             vunit.stage = ToGLSL(unit.stage);
