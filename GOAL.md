@@ -379,6 +379,12 @@ Planned commit:
      pass-specific resource-wait contracts aligned with the reference for `VulkanRender`,
      `VulkanPass`, `CustomShaderPass`, and `SceneToRenderGraph`; remaining diffs are local include
      layout or current-repository renderer adaptations such as text background image creation.
+   - Real-scene validation for workshop scene `3299228616` now reaches a stable DXC-backed render
+     loop with `sceneviewer`: system DirectXShaderCompiler is auto-detected, TextPass and FinPass
+     compile through DXC, FinPass creates a graphics pipeline with two shader stages, and the
+     active render graph reports `total=73` passes with no QuickJS/TypeError/DXC-missing errors in
+     the sampled run. The only sampled warning was a local GTK settings warning outside the
+     renderer/runtime path.
    Remaining:
    - Device/runtime validation for the deferred resource-wait path still needs real workshop scenes
      that exercise hidden dependency layers, text refresh, and video/material residency together.
