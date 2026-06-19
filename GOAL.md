@@ -159,9 +159,11 @@ Planned commit:
      layout. Layer child enumeration, attachment-aware parent calls, effect/material proxies,
      native bridge registration, media callbacks, video texture calls, and sound controls are all
      present in the current host surface.
+   - `test(scene): restore scenescript host regression coverage` re-enabled
+     `scenescript-host-test` against the migrated host surface: material uniform dispatch,
+     video texture control calls, delayed layer destruction, and layer sorting now run through
+     the current public APIs instead of the older compatibility-only assertions.
    Remaining:
-   - Re-enable or replace the temporarily removed `scenescript-host-test` coverage with assertions
-     against the migrated host surface instead of the older compatibility APIs.
    - Audit the native bridge against real workshop scripts that exercise layer/material/effect
      proxies at runtime; the code comparison is clean, but broad behavior coverage is still thin.
    Acceptance:
@@ -265,15 +267,15 @@ Planned commit:
      timing behavior: random sound layers now stay mounted, emit silence during the authored
      `mintime`/`maxtime` delay window, avoid immediate repeats, and resume playback without
      letting the mixer retire the channel.
+   - Current `WPSceneParser.cpp/.hpp` diff against the reference is now limited to local include
+     layout plus the current-repository `textPrimitives` registration needed by the split renderer.
+     The parser-side dynamic materialization path now covers image, particle, light, sound, text,
+     model, shape/direct-draw, and empty objects through `CreateDynamicSceneLayer`, and deferred
+     image/particle/text materialization preserves runtime placeholder transforms and visibility.
    Remaining:
-   - Dynamic parser/materialization now receives the active user-property map for supported
-     image/particle/text/light/sound configs, but still needs the full reference root-scoped scene
-     JSON context for dynamic configs whose script expressions depend on broader scene metadata.
-   - Full reference parser visibility contracts, dependency-aware lazy materialization,
-     deferred image/particle materialization, model layers, shape/direct-draw layers, and dynamic
-     `CreateDynamicSceneLayer` object construction for shape/direct-draw, model, and empty
-     layers remain separate parity gaps; they are not hidden behind the parser-time JSON value
-     migration above.
+   - Parser parity still needs a real workshop-scene audit for dependency-aware lazy
+     materialization and runtime-created layer ordering; the source comparison is effectively
+     clean, but behavior coverage is not broad enough to call final parity proven.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and
      `WPImageAlignment` have equivalent current-repository implementations.
@@ -373,8 +375,13 @@ Planned commit:
      stock cookie texture, fixes default render-target content dimensions, and ports the
      post-preprocessor GLSL compatibility needed by stock/zcompat shaders that mix WE's
      integer, float, and bool conventions.
+   - Current render graph/resource-wait source comparison shows the deferred preparation and
+     pass-specific resource-wait contracts aligned with the reference for `VulkanRender`,
+     `VulkanPass`, `CustomShaderPass`, and `SceneToRenderGraph`; remaining diffs are local include
+     layout or current-repository renderer adaptations such as text background image creation.
    Remaining:
-   - Real pass-specific resource-wait states still need their reference behavior.
+   - Device/runtime validation for the deferred resource-wait path still needs real workshop scenes
+     that exercise hidden dependency layers, text refresh, and video/material residency together.
    Acceptance:
    - Render graph construction covers the reference `SceneToRenderGraph` behavior.
    - `VulkanPass` subclasses expose deferred prepare, refresh, warmup, and residency
