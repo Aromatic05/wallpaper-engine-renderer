@@ -32,6 +32,10 @@ public:
     void execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
     std::string residencyKey() const override;
+    bool canReuseForResidency(const VulkanPass& next_pass) const override;
+    void absorbResidencyGraphState(const VulkanPass&) override;
+    bool referencesRenderTarget(std::string_view) const override;
+    bool referencesTextLayer(int32_t) const override;
 
     const Desc& desc() const { return m_desc; }
     bool executionDiagnosticEmitted() const { return m_execution_diagnostic_emitted; }

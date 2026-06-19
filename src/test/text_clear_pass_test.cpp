@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <string>
+#include <unordered_set>
 
 int main() {
     wallpaper::rg::RenderGraph graph;
@@ -63,6 +64,16 @@ int main() {
     assert(clear_pass->residencyKey() == "ClearPass|target=_rt_text");
     assert(text_pass->residencyKey().find("TextPass|node=") == 0);
     assert(text_pass->residencyKey().find("|layer=7|output=_rt_text") != std::string::npos);
+    assert(text_pass->referencesRenderTarget("_rt_text"));
+    assert(!text_pass->referencesRenderTarget("_rt_other"));
+    assert(text_pass->referencesTextLayer(7));
+    assert(!text_pass->referencesTextLayer(0));
+    assert(!text_pass->referencesTextLayer(8));
+    assert(text_pass->referencesAnyRenderTarget(std::unordered_set<std::string> { "_rt_other",
+                                                                                  "_rt_text" }));
+    assert(!text_pass->referencesAnyRenderTarget(std::unordered_set<std::string> { "_rt_other" }));
+    assert(text_pass->referencesAnyTextLayer(std::unordered_set<int32_t> { 3, 7 }));
+    assert(!text_pass->referencesAnyTextLayer(std::unordered_set<int32_t> { 3, 8 }));
     assert(!text_pass->prepared());
     wallpaper::vulkan::Device device;
     wallpaper::vulkan::RenderingResources resources;
@@ -89,6 +100,21 @@ int main() {
     assert(copy.residencyKey() == "CopyPass|src=_rt_a|dst=_rt_b");
     assert(copy.canReuseForResidency(matching_copy));
     assert(!copy.canReuseForResidency(other_copy));
+
+    wallpaper::SceneNode text_node_state;
+    wallpaper::vulkan::TextPass::Desc text_desc;
+    text_desc.node = &text_node_state;
+    text_desc.layer_id = 11;
+    text_desc.output = "_rt_text_a";
+    wallpaper::vulkan::TextPass text_a(text_desc);
+    wallpaper::vulkan::TextPass matching_text(text_desc);
+    text_desc.output = "_rt_text_b";
+    wallpaper::vulkan::TextPass other_text(text_desc);
+    assert(text_a.canReuseForResidency(matching_text));
+    assert(!text_a.canReuseForResidency(other_text));
+    text_a.absorbResidencyGraphState(other_text);
+    assert(text_a.desc().output == "_rt_text_b");
+    assert(text_a.referencesRenderTarget("_rt_text_b"));
 
     wallpaper::SceneNode shader_node;
     wallpaper::vulkan::CustomShaderPass::Desc shader_desc;

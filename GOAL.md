@@ -203,6 +203,13 @@ Planned commit:
    - `feat(render): port scene to render graph parity`
    - `feat(render): port deferred pass preparation`
    - `feat(render): port residency refresh and resource warmup`
+   Progress:
+   - `feat(render): add text pass residency refresh hooks` adds pass-level
+     `refreshResources`, `warmupPipeline`, render-target/text-layer reference queries,
+     residency graph-state absorption, and TextPass-specific reuse/reference behavior.
+   Remaining:
+   - The renderer still needs to call these hooks for selective resource refresh, deferred
+     preparation, pipeline warmup, and full pass residency handoff across graph rebuilds.
    Acceptance:
    - Render graph construction covers the reference `SceneToRenderGraph` behavior.
    - `VulkanPass` subclasses expose deferred prepare, refresh, warmup, and residency
