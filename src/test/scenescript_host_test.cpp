@@ -298,5 +298,58 @@ int main() {
         assert(scene.renderGraphTopologyDirty);
     }
 
+    {
+        Scene scene;
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        scene.vfs = std::make_unique<wallpaper::fs::VFS>();
+
+        auto root_node = MakeLayerNode(50, "ShapeRoot");
+        scene.sceneGraph->AppendChild(root_node);
+        RegisterLayer(scene, 50, root_node, R"({"id":50,"name":"ShapeRoot"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(50,
+                                             "ShapeRoot",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = root_node.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                const created = thisScene.createLayer({
+                    name: 'DynamicShapeFallback',
+                    shape: 'rectangle',
+                    size: [32, 16],
+                    origin: [8, 9, 0],
+                    scale: [1, 1, 1],
+                    angles: [0, 0, 0],
+                    parent: 'ShapeRoot',
+                    visible: true
+                });
+                if (!created) return 0;
+                return thisScene.getInitialLayerConfig(created).shape === 'rectangle' ? value : 0;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        const auto created_it = scene.layerNameToId.find("DynamicShapeFallback");
+        assert(created_it != scene.layerNameToId.end());
+        const int32_t created_id = created_it->second;
+        assert(created_id > 0);
+        assert(scene.layerNodes.count(created_id) == 1);
+        assert(scene.layerNodes.at(created_id) != nullptr);
+        assert(scene.layerNodes.at(created_id)->Name() == "DynamicShapeFallback");
+        assert(scene.objectRuntimeNodes.count(created_id) == 1);
+        assert(scene.imageLayers.count(created_id) == 0);
+        assert(scene.initialLayerConfigJson.at(created_id).find("\"shape\":\"rectangle\"") !=
+               std::string::npos);
+        assert(scene.GetLayerParentBinding(created_id).parent_id == 50);
+        assert(scene.IsLayerVisible(created_id));
+        assert(scene.renderGraphTopologyDirty);
+    }
+
     return 0;
 }
