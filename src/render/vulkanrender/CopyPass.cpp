@@ -15,6 +15,17 @@ std::string CopyPass::residencyKey() const {
     return "CopyPass|src=" + m_desc.src + "|dst=" + m_desc.dst;
 }
 
+void CopyPass::absorbResidencyGraphState(const VulkanPass& next_pass) {
+    VulkanPass::absorbResidencyGraphState(next_pass);
+    const auto* next = dynamic_cast<const CopyPass*>(&next_pass);
+    if (next == nullptr) return;
+    m_desc.should_execute = next->m_desc.should_execute;
+}
+
+bool CopyPass::referencesRenderTarget(std::string_view render_target) const {
+    return m_desc.src == render_target || m_desc.dst == render_target;
+}
+
 void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& rr) {
     if (scene.renderTargets.count(m_desc.src) == 0) {
         LOG_ERROR("%s not found", m_desc.src.c_str());
@@ -53,6 +64,27 @@ void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& r
 
     setPrepared();
 };
+
+void CopyPass::refreshResources(Scene& scene, const Device& device, RenderingResources&) {
+    std::array<std::string, 2>      textures    = { m_desc.src, m_desc.dst };
+    std::array<ImageParameters*, 2> vk_textures = { &m_desc.vk_src, &m_desc.vk_dst };
+    for (usize i = 0; i < textures.size(); i++) {
+        auto& tex_name = textures[i];
+        if (tex_name.empty()) continue;
+
+        if (scene.renderTargets.count(tex_name) == 0) {
+            setPrepared(false);
+            return;
+        }
+        auto& rt  = scene.renderTargets.at(tex_name);
+        auto  opt = device.tex_cache().Query(tex_name, ToTexKey(rt), ! rt.allowReuse);
+        if (!opt.has_value()) {
+            setPrepared(false);
+            return;
+        }
+        *vk_textures[i] = opt.value();
+    }
+}
 void CopyPass::execute(const Device& device, RenderingResources& rr) {
     if (m_desc.should_execute && ! m_desc.should_execute()) return;
 

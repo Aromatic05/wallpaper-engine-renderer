@@ -29,6 +29,7 @@ public:
 
     void clearLastRenderGraph();
     void compileRenderGraph(Scene&, rg::RenderGraph&, bool refresh_resources_only = false);
+    void warmupRenderGraphPipelines(Scene&, rg::RenderGraph&);
     void UpdateCameraFillMode(Scene&, wallpaper::FillMode);
 
     ExSwapchain* exSwapchain() const;

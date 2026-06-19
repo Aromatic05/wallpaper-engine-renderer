@@ -103,10 +103,14 @@ int main() {
     wallpaper::vulkan::ClearPass other_clear(clear_desc);
     assert(clear_pass->canReuseForResidency(matching_clear));
     assert(!clear_pass->canReuseForResidency(other_clear));
+    assert(clear_pass->referencesRenderTarget("_rt_text"));
+    assert(!clear_pass->referencesRenderTarget("_rt_other"));
 
     wallpaper::vulkan::CopyPass::Desc copy_desc;
     copy_desc.src = "_rt_a";
     copy_desc.dst = "_rt_b";
+    bool copy_should_execute = true;
+    copy_desc.should_execute = [&copy_should_execute] { return copy_should_execute; };
     wallpaper::vulkan::CopyPass copy(copy_desc);
     wallpaper::vulkan::CopyPass matching_copy(copy_desc);
     copy_desc.src = "_rt_b";
@@ -115,6 +119,22 @@ int main() {
     assert(copy.residencyKey() == "CopyPass|src=_rt_a|dst=_rt_b");
     assert(copy.canReuseForResidency(matching_copy));
     assert(!copy.canReuseForResidency(other_copy));
+    assert(copy.referencesRenderTarget("_rt_a"));
+    assert(copy.referencesRenderTarget("_rt_b"));
+    assert(!copy.referencesRenderTarget("_rt_c"));
+    bool replacement_should_execute = false;
+    wallpaper::vulkan::CopyPass::Desc copy_gate_desc;
+    copy_gate_desc.src = "_rt_a";
+    copy_gate_desc.dst = "_rt_b";
+    copy_gate_desc.should_execute = [&replacement_should_execute] {
+        return replacement_should_execute;
+    };
+    wallpaper::vulkan::CopyPass replacement_gate(copy_gate_desc);
+    copy.absorbResidencyGraphState(replacement_gate);
+    assert(copy.desc().should_execute);
+    assert(!copy.desc().should_execute());
+    replacement_should_execute = true;
+    assert(copy.desc().should_execute());
 
     wallpaper::SceneNode text_node_state;
     wallpaper::vulkan::TextPass::Desc text_desc;

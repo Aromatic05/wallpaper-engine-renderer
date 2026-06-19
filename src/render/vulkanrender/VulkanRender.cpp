@@ -35,7 +35,7 @@
 using namespace wallpaper::vulkan;
 
 constexpr uint64_t vk_wait_time { 10u * 1000u * 1000000u };
-constexpr uint32_t vk_command_num { 2 };
+constexpr uint32_t vk_command_num { 1 };
 
 constexpr std::array base_inst_exts {
     Extension { false, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME },
@@ -83,6 +83,7 @@ struct VulkanRender::Impl {
 
     void clearLastRenderGraph();
     void compileRenderGraph(Scene&, rg::RenderGraph&, bool refresh_resources_only);
+    void warmupRenderGraphPipelines(Scene&, rg::RenderGraph&);
     void UpdateCameraFillMode(Scene&, wallpaper::FillMode);
 
     bool initRes();
@@ -103,7 +104,6 @@ struct VulkanRender::Impl {
     std::unique_ptr<StagingBuffer> m_dyn_buf { nullptr };
 
     vvk::CommandBuffers m_cmds;
-    vvk::CommandBuffer  m_upload_cmd;
     vvk::CommandBuffer  m_render_cmd;
 
     bool m_with_surface { false };
@@ -128,6 +128,9 @@ void VulkanRender::drawFrame(Scene& scene) { pImpl->drawFrame(scene); };
 void VulkanRender::clearLastRenderGraph() { pImpl->clearLastRenderGraph(); };
 void VulkanRender::compileRenderGraph(Scene& scene, rg::RenderGraph& rg, bool refresh_resources_only) {
     pImpl->compileRenderGraph(scene, rg, refresh_resources_only);
+};
+void VulkanRender::warmupRenderGraphPipelines(Scene& scene, rg::RenderGraph& rg) {
+    pImpl->warmupRenderGraphPipelines(scene, rg);
 };
 void VulkanRender::UpdateCameraFillMode(Scene& scene, wallpaper::FillMode fill) {
     pImpl->UpdateCameraFillMode(scene, fill);
@@ -247,8 +250,7 @@ bool VulkanRender::Impl::initRes() {
     {
         auto& pool = m_device->cmd_pool();
         VVK_CHECK_BOOL_RE(pool.Allocate(vk_command_num, VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_cmds));
-        m_upload_cmd = vvk::CommandBuffer(m_cmds[0], m_device->handle().Dispatch());
-        m_render_cmd = vvk::CommandBuffer(m_cmds[1], m_device->handle().Dispatch());
+        m_render_cmd = vvk::CommandBuffer(m_cmds[0], m_device->handle().Dispatch());
     }
     if (! CreateRenderingResource(m_rendering_resources)) return false;
 
@@ -351,6 +353,7 @@ void VulkanRender::Impl::drawFrameSwapchain() {
         .pNext = nullptr,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     });
+    m_vertex_buf->recordUpload(rr.command);
     m_dyn_buf->recordUpload(rr.command);
     for (auto* p : m_passes) {
         if (p->prepared()) {
@@ -398,6 +401,7 @@ void VulkanRender::Impl::drawFrameOffscreen() {
         .pNext = nullptr,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     });
+    m_vertex_buf->recordUpload(rr.command);
     m_dyn_buf->recordUpload(rr.command);
 
     for (auto* p : m_passes) {
@@ -635,22 +639,24 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
     }
     glslang::FinalizeProcess();
 
-    VVK_CHECK_VOID_RE(m_upload_cmd.Begin(VkCommandBufferBeginInfo {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = nullptr,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    }));
-    m_vertex_buf->recordUpload(m_upload_cmd);
-    VVK_CHECK_VOID_RE(m_upload_cmd.End());
-    {
-        VkSubmitInfo sub_info {
-            .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext              = nullptr,
-            .commandBufferCount = 1,
-            .pCommandBuffers    = m_upload_cmd.address(),
-        };
-        VVK_CHECK_VOID_RE(m_device->graphics_queue().handle.Submit(sub_info, {}));
-        VVK_CHECK_VOID_RE(m_device->handle().WaitIdle());
-    }
+    // Upload work queued by prepare() is recorded in the next frame command buffer before any
+    // prepared pass executes. Avoiding a compile-time submit and DeviceWaitIdle keeps graph
+    // refreshes on the frame path instead of turning visibility changes into scene-load stalls.
     m_pass_loaded = true;
 };
+
+void VulkanRender::Impl::warmupRenderGraphPipelines(Scene& scene, rg::RenderGraph& rg) {
+    if (!m_inited) return;
+
+    auto nodes = rg.topologicalOrder();
+    setRenderTargetSize(scene, rg);
+
+    glslang::InitializeProcess();
+    for (const auto node_id : nodes) {
+        auto pass_ref = rg.getPassShared(node_id);
+        auto vpass = std::dynamic_pointer_cast<VulkanPass>(pass_ref);
+        if (!vpass) continue;
+        vpass->warmupPipeline(scene, *m_device, m_rendering_resources);
+    }
+    glslang::FinalizeProcess();
+}

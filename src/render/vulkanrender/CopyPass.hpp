@@ -26,9 +26,12 @@ public:
     virtual ~CopyPass();
 
     void prepare(Scene&, const Device&, RenderingResources&) override;
+    void refreshResources(Scene&, const Device&, RenderingResources&) override;
     void execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
     std::string residencyKey() const override;
+    void absorbResidencyGraphState(const VulkanPass&) override;
+    bool referencesRenderTarget(std::string_view) const override;
 
     const Desc& desc() const { return m_desc; }
 

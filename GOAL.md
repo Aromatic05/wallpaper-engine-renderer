@@ -222,8 +222,16 @@ Planned commit:
      pass objects alive across topology rebuilds through `canReuseForResidency` and
      `absorbResidencyGraphState`, replaces graph pass references with resident
      instances, and destroys retired pass instances.
+   - `feat(render): move render graph uploads onto frame command path` removes the
+     compile-time staging-buffer submit/`DeviceWaitIdle`, records prepared static and
+     dynamic uploads in the frame command buffer before pass execution, exposes pipeline
+     warmup over the current render graph, and gives ClearPass/CopyPass real
+     render-target reference, refresh, and residency-gate handoff behavior.
    Remaining:
-   - Deferred preparation and pipeline warmup still need their reference behavior.
+   - Deferred runtime preparation still needs the reference frame-budgeted queue and
+     resource-wait state.
+   - Pipeline warmup still needs the reference hidden-layer warmup render graph, not only
+     the public warmup entry over the active graph.
    Acceptance:
    - Render graph construction covers the reference `SceneToRenderGraph` behavior.
    - `VulkanPass` subclasses expose deferred prepare, refresh, warmup, and residency

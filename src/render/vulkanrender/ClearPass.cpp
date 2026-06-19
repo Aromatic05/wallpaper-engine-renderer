@@ -14,6 +14,10 @@ std::string ClearPass::residencyKey() const {
     return "ClearPass|target=" + m_desc.target;
 }
 
+bool ClearPass::referencesRenderTarget(std::string_view render_target) const {
+    return m_desc.target == render_target;
+}
+
 void ClearPass::prepare(Scene& scene, const Device& device, RenderingResources&) {
     if (scene.renderTargets.count(m_desc.target) == 0) {
         LOG_ERROR("ClearPass: target render target not found: %s", m_desc.target.c_str());
@@ -30,6 +34,21 @@ void ClearPass::prepare(Scene& scene, const Device& device, RenderingResources&)
     }
 
     setPrepared();
+}
+
+void ClearPass::refreshResources(Scene& scene, const Device& device, RenderingResources&) {
+    if (scene.renderTargets.count(m_desc.target) == 0) {
+        setPrepared(false);
+        return;
+    }
+
+    const auto& rt = scene.renderTargets.at(m_desc.target);
+    if (auto opt = device.tex_cache().Query(m_desc.target, ToTexKey(rt), ! rt.allowReuse);
+        opt.has_value()) {
+        m_desc.vk_target = opt.value();
+    } else {
+        setPrepared(false);
+    }
 }
 
 void ClearPass::execute(const Device&, RenderingResources& rr) {
