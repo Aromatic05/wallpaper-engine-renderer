@@ -4,7 +4,9 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneMaterial.h"
@@ -12,7 +14,10 @@
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
 #include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
+#include "common/fs/include/fs/Fs.h"
+#include "common/fs/include/fs/MemBinaryStream.h"
 #include "common/fs/include/fs/VFS.h"
+#include "host/audio/include/audio/SoundManager.h"
 
 namespace
 {
@@ -51,6 +56,30 @@ std::shared_ptr<wallpaper::SceneNode> MakeLayerNode(int32_t id, std::string name
     node->SetName(std::move(name));
     return node;
 }
+
+class MemoryFs final : public wallpaper::fs::Fs {
+public:
+    explicit MemoryFs(std::unordered_map<std::string, std::string> files)
+        : m_files(std::move(files)) {}
+
+    bool Contains(std::string_view path) const override {
+        return m_files.count(std::string(path)) != 0;
+    }
+
+    std::shared_ptr<wallpaper::fs::IBinaryStream> Open(std::string_view path) override {
+        const auto it = m_files.find(std::string(path));
+        if (it == m_files.end()) return nullptr;
+        return std::make_shared<wallpaper::fs::MemBinaryStream>(
+            std::vector<uint8_t>(it->second.begin(), it->second.end()));
+    }
+
+    std::shared_ptr<wallpaper::fs::IBinaryStreamW> OpenW(std::string_view) override {
+        return nullptr;
+    }
+
+private:
+    std::unordered_map<std::string, std::string> m_files;
+};
 
 void RegisterLayer(wallpaper::Scene& scene,
                    int32_t id,
@@ -348,6 +377,61 @@ int main() {
                std::string::npos);
         assert(scene.GetLayerParentBinding(created_id).parent_id == 50);
         assert(scene.IsLayerVisible(created_id));
+        assert(scene.renderGraphTopologyDirty);
+    }
+
+    {
+        Scene scene;
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        scene.vfs = std::make_unique<wallpaper::fs::VFS>();
+        assert(scene.vfs->Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(
+                std::unordered_map<std::string, std::string> { { "/silent.wav", "not-a-wav" } })));
+        auto sound_manager = std::make_unique<wallpaper::audio::SoundManager>();
+        scene.soundManager = sound_manager.get();
+
+        auto root_node = MakeLayerNode(60, "SoundRoot");
+        scene.sceneGraph->AppendChild(root_node);
+        RegisterLayer(scene, 60, root_node, R"({"id":60,"name":"SoundRoot"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(60,
+                                             "SoundRoot",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = root_node.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                const created = thisScene.createLayer({
+                    name: 'DynamicSound',
+                    sound: ['silent.wav'],
+                    volume: 0.25,
+                    startsilent: true,
+                    visible: true
+                });
+                if (!created) return 0;
+                return thisScene.getInitialLayerConfig(created).sound[0] === 'silent.wav' ? value : 0;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        const auto created_it = scene.layerNameToId.find("DynamicSound");
+        assert(created_it != scene.layerNameToId.end());
+        const int32_t created_id = created_it->second;
+        assert(created_id > 0);
+        assert(scene.layerNodes.count(created_id) == 0 || scene.layerNodes.at(created_id) == nullptr);
+        assert(scene.objectRuntimeSoundHandles.count(created_id) == 1);
+        const auto handle = scene.objectRuntimeSoundHandles.at(created_id);
+        assert(handle != 0);
+        assert(!sound_manager->IsPlaying(handle));
+        assert(NearlyEqual(sound_manager->StreamVolume(handle), 0.25));
+        assert(scene.initialLayerConfigJson.at(created_id).find("\"sound\":[\"silent.wav\"]") !=
+               std::string::npos);
         assert(scene.renderGraphTopologyDirty);
     }
 
