@@ -1316,7 +1316,7 @@ void ParseSpecTexName(std::string& name, const wpscene::WPMaterial& wpmat, const
             }
             */
         } else if (sstart_with(name, WE_IMAGE_LAYER_COMPOSITE_PREFIX)) {
-            LOG_INFO("link tex \"%s\"", name.c_str());
+            LOG_VERBOSE("link tex \"%s\"", name.c_str());
             int         wpid { -1 };
             std::regex  reImgId { R"(_rt_imageLayerComposite_([0-9]+))" };
             std::smatch match;

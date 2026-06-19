@@ -21,7 +21,7 @@
 
 #include "rendergraph/RenderGraph.hpp"
 
-#include "WESceneRenderPlanBuilder.hpp"
+#include "vulkanrender/SceneToRenderGraph.hpp"
 #include "render/vulkanrender/VulkanRender.hpp"
 #include <atomic>
 #include <charconv>
@@ -321,7 +321,7 @@ private:
 
             if (m_scene->renderGraphTopologyDirty) {
                 if (m_rg) m_render->clearLastRenderGraph();
-                m_rg = BuildWESceneRenderPlan(*m_scene);
+                m_rg = sceneToRenderGraph(*m_scene);
                 if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
                 m_render->compileRenderGraph(*m_scene, *m_rg);
                 m_scene->ClearRenderGraphDirty();
@@ -369,10 +369,10 @@ private:
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
             {
-                auto warmup_rg = BuildWEScenePipelineWarmupRenderPlan(*m_scene);
+                auto warmup_rg = sceneToPipelineWarmupRenderGraph(*m_scene);
                 m_render->warmupRenderGraphPipelines(*m_scene, *warmup_rg);
             }
-            m_rg = BuildWESceneRenderPlan(*m_scene);
+            m_rg = sceneToRenderGraph(*m_scene);
 
             if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
             m_render->compileRenderGraph(*m_scene, *m_rg);
