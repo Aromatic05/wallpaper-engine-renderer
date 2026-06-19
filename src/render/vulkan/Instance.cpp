@@ -2,6 +2,9 @@
 #include "Device.hpp"
 
 #include <cstdio>
+#include <algorithm>
+#include <utility>
+#include <vector>
 #include "utils/Logging.h"
 
 using namespace wallpaper::vulkan;
@@ -86,7 +89,8 @@ void EnumateLayers(wallpaper::Set<std::string>& set, const vvk::InstanceDispatch
 } // namespace
 
 bool Instance::ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
-                                    std::span<const std::uint8_t> uuid) {
+                                    std::span<const std::uint8_t> uuid,
+                                    PhysicalDevicePreference      preference) {
     auto deviceList = m_vinst.EnumeratePhysicalDevices();
 
     VkInstanceCreateInfo crea;
@@ -97,17 +101,29 @@ bool Instance::ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
     vvk::PhysicalDevice        final_gpu;
     VkPhysicalDeviceProperties final_props;
 
-    // choose deiscrete device
+    auto preferenceMatches = [](VkPhysicalDeviceType type, PhysicalDevicePreference preference) {
+        switch (preference) {
+        case PhysicalDevicePreference::PreferIntegrated:
+            return type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+        case PhysicalDevicePreference::PreferDiscrete:
+            return type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+        case PhysicalDevicePreference::Default:
+            return true;
+        }
+        return true;
+    };
+
+    std::vector<std::pair<vvk::PhysicalDevice, VkPhysicalDeviceProperties>> candidates;
     for (const auto& d : deviceList) {
+        VkPhysicalDeviceIDProperties device_id_props {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, .pNext = NULL
+        };
+        VkPhysicalDeviceProperties2 props2 { .sType =
+                                                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                             .pNext = &device_id_props };
+        d.GetProperties2KHR(props2);
+        auto& props = props2.properties;
         if (uuid.size() > 0) {
-            VkPhysicalDeviceIDProperties device_id_props {
-                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, .pNext = NULL
-            };
-            VkPhysicalDeviceProperties2 props2 { .sType =
-                                                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                                 .pNext = &device_id_props };
-            d.GetProperties2KHR(props2);
-            auto& props = props2.properties;
             decltype(uuid) device_uuid { device_id_props.deviceUUID };
             if (std::equal(uuid.begin(), uuid.end(), device_uuid.begin(), device_uuid.end())) {
                 /*
@@ -120,13 +136,19 @@ bool Instance::ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
                 break;
             }
         } else {
-            auto props = d.GetProperties();
             if (checkgpu(d)) {
-                final_props = props;
-                final_gpu   = d;
-                break;
+                candidates.emplace_back(d, props);
             }
         }
+    }
+    if (! final_gpu && ! candidates.empty()) {
+        auto preferred =
+            std::find_if(candidates.begin(), candidates.end(), [&](const auto& candidate) {
+                return preferenceMatches(candidate.second.deviceType, preference);
+            });
+        if (preferred == candidates.end()) preferred = candidates.begin();
+        final_gpu   = preferred->first;
+        final_props = preferred->second;
     }
     if (final_gpu) {
         logGpu(final_props);
@@ -152,6 +174,12 @@ bool Instance::supportExt(std::string_view name) const { return exists(m_extensi
 bool Instance::supportLayer(std::string_view name) const { return exists(m_layers, name); }
 
 void Instance::Destroy() {}
+
+void Instance::Abandon() {
+    m_surface.abandon();
+    m_debug_utils.abandon();
+    m_vinst.abandon();
+}
 
 bool Instance::Create(Instance& inst, std::span<const Extension> instExts,
                       std::span<const InstanceLayer> instLayers) {

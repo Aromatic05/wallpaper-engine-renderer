@@ -64,6 +64,7 @@ struct InstanceDispatch {
     PFN_vkEnumeratePhysicalDevices                vkEnumeratePhysicalDevices {};
     PFN_vkGetDeviceProcAddr                       vkGetDeviceProcAddr {};
     PFN_vkGetPhysicalDeviceFeatures2KHR           vkGetPhysicalDeviceFeatures2KHR {};
+    PFN_vkGetPhysicalDeviceFormatProperties2      vkGetPhysicalDeviceFormatProperties2 {};
     PFN_vkGetPhysicalDeviceFormatProperties       vkGetPhysicalDeviceFormatProperties {};
     PFN_vkGetPhysicalDeviceMemoryProperties       vkGetPhysicalDeviceMemoryProperties {};
     PFN_vkGetPhysicalDeviceMemoryProperties2      vkGetPhysicalDeviceMemoryProperties2 {};
@@ -171,7 +172,9 @@ struct DeviceDispatch : InstanceDispatch {
     PFN_vkGetDeviceQueue                      vkGetDeviceQueue {};
     PFN_vkGetEventStatus                      vkGetEventStatus {};
     PFN_vkGetFenceStatus                      vkGetFenceStatus {};
+    PFN_vkGetImageDrmFormatModifierPropertiesEXT vkGetImageDrmFormatModifierPropertiesEXT {};
     PFN_vkGetImageMemoryRequirements          vkGetImageMemoryRequirements {};
+    PFN_vkGetImageSubresourceLayout           vkGetImageSubresourceLayout {};
     PFN_vkGetMemoryFdKHR                      vkGetMemoryFdKHR {};
     PFN_vkGetPipelineExecutablePropertiesKHR  vkGetPipelineExecutablePropertiesKHR {};
     PFN_vkGetPipelineExecutableStatisticsKHR  vkGetPipelineExecutableStatisticsKHR {};
@@ -342,6 +345,8 @@ class Image : public Handle<VkImage, VkDevice, DeviceDispatch> {
 
 public:
     VkResult BindMemory(VkDeviceMemory memory, VkDeviceSize offset) const noexcept;
+    VkSubresourceLayout GetSubresourceLayout(const VkImageSubresource&) const noexcept;
+    VkResult GetDrmFormatModifierProperties(VkImageDrmFormatModifierPropertiesEXT&) const noexcept;
 };
 
 class ImageView : public Handle<VkImageView, VkDevice, DeviceDispatch> {
@@ -383,6 +388,8 @@ public:
     void GetFeatures2KHR(VkPhysicalDeviceFeatures2KHR&) const noexcept;
 
     VkFormatProperties GetFormatProperties(VkFormat) const noexcept;
+    void GetFormatProperties2(VkFormat, VkFormatProperties2&) const noexcept;
+    std::vector<VkDrmFormatModifierProperties2EXT> GetDrmFormatModifierProperties2(VkFormat) const;
 
     VkResult EnumerateDeviceExtensionProperties(std::vector<VkExtensionProperties>&) const;
 
@@ -411,7 +418,7 @@ class DeviceMemory : public Handle<VkDeviceMemory, VkDevice, DeviceDispatch> {
     using Handle<VkDeviceMemory, VkDevice, DeviceDispatch>::Handle;
 
 public:
-    VkResult GetMemoryFdKHR(int*) const;
+    VkResult GetMemoryFdKHR(VkExternalMemoryHandleTypeFlagBits, int*) const;
 
     VkResult Map(VkDeviceSize offset, VkDeviceSize size, uint8_t** data) const {
         return (dld->vkMapMemory(owner, handle, offset, size, 0, (void**)data));

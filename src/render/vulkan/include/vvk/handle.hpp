@@ -39,6 +39,9 @@ public:
         handle = nullptr;
     }
 
+    /// Forgets the held object without destroying it.
+    void abandon() noexcept { handle = nullptr; }
+
     /// Returns the address of the held object.
     /// Intended for Vulkan structures that expect a pointer to an array.
     const Type* address() const noexcept { return std::addressof(handle); }
@@ -95,6 +98,9 @@ public:
         handle = nullptr;
     }
 
+    /// Forgets the held object without destroying it.
+    void abandon() noexcept { handle = nullptr; }
+
     /// Returns the address of the held object.
     /// Intended for Vulkan structures that expect a pointer to an array.
     const Type* address() const noexcept { return std::addressof(handle); }
@@ -135,6 +141,9 @@ public:
 
     /// Destroys any held object.
     void reset() noexcept { handle = nullptr; }
+
+    /// Forgets the held object without destroying it.
+    void abandon() noexcept { handle = nullptr; }
 
     /// Returns the address of the held object.
     /// Intended for Vulkan structures that expect a pointer to an array.

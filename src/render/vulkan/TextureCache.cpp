@@ -10,7 +10,7 @@
 #include "core/ArrayHelper.hpp"
 #include "utils/AutoDeletor.hpp"
 #include "utils/Hash.h"
-#include "include/Vulkan/Parameters.hpp"
+#include "Parameters.hpp"
 #include "vvk/vulkan_wrapper.hpp"
 
 #include <drm/drm_fourcc.h>

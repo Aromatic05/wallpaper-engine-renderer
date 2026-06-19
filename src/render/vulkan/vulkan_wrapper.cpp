@@ -43,6 +43,7 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
     X(vkDestroyDebugUtilsMessengerEXT);
     X(vkDestroySurfaceKHR);
     X(vkGetPhysicalDeviceFeatures2KHR);
+    X(vkGetPhysicalDeviceFormatProperties2);
     X(vkGetPhysicalDeviceProperties2KHR);
     X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
     X(vkGetPhysicalDeviceSurfaceFormatsKHR);
@@ -152,7 +153,9 @@ bool Load(VkDevice device, DeviceDispatch& dld) noexcept {
     X(vkGetDeviceQueue);
     X(vkGetEventStatus);
     X(vkGetFenceStatus);
+    X(vkGetImageDrmFormatModifierPropertiesEXT);
     X(vkGetImageMemoryRequirements);
+    X(vkGetImageSubresourceLayout);
     X(vkGetMemoryFdKHR);
     X(vkGetQueryPoolResults);
     X(vkGetPipelineExecutablePropertiesKHR);
@@ -446,6 +449,17 @@ VkResult Image::BindMemory(VkDeviceMemory memory, VkDeviceSize offset) const noe
     return dld->vkBindImageMemory(owner, handle, memory, offset);
 }
 
+VkSubresourceLayout Image::GetSubresourceLayout(const VkImageSubresource& subresource) const noexcept {
+    VkSubresourceLayout layout {};
+    dld->vkGetImageSubresourceLayout(owner, handle, &subresource, &layout);
+    return layout;
+}
+
+VkResult
+Image::GetDrmFormatModifierProperties(VkImageDrmFormatModifierPropertiesEXT& properties) const noexcept {
+    return dld->vkGetImageDrmFormatModifierPropertiesEXT(owner, handle, &properties);
+}
+
 VkResult SwapchainKHR::GetImages(std::vector<VkImage>& images) const {
     uint32_t num;
     if (auto res = dld->vkGetSwapchainImagesKHR(owner, handle, &num, nullptr); res != VK_SUCCESS)
@@ -462,6 +476,46 @@ VkPhysicalDeviceProperties PhysicalDevice::GetProperties() const noexcept {
 
 void PhysicalDevice::GetProperties2KHR(VkPhysicalDeviceProperties2KHR& props) const noexcept {
     dld->vkGetPhysicalDeviceProperties2KHR(handle, &props);
+}
+
+VkPhysicalDeviceFeatures PhysicalDevice::GetFeatures() const noexcept {
+    VkPhysicalDeviceFeatures2KHR features2 {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR,
+    };
+    GetFeatures2KHR(features2);
+    return features2.features;
+}
+
+void PhysicalDevice::GetFeatures2KHR(VkPhysicalDeviceFeatures2KHR& features) const noexcept {
+    dld->vkGetPhysicalDeviceFeatures2KHR(handle, &features);
+}
+
+VkFormatProperties PhysicalDevice::GetFormatProperties(VkFormat format) const noexcept {
+    VkFormatProperties properties {};
+    dld->vkGetPhysicalDeviceFormatProperties(handle, format, &properties);
+    return properties;
+}
+
+void PhysicalDevice::GetFormatProperties2(VkFormat format, VkFormatProperties2& properties) const noexcept {
+    dld->vkGetPhysicalDeviceFormatProperties2(handle, format, &properties);
+}
+
+std::vector<VkDrmFormatModifierProperties2EXT>
+PhysicalDevice::GetDrmFormatModifierProperties2(VkFormat format) const {
+    VkDrmFormatModifierPropertiesList2EXT modifier_list {
+        .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT,
+    };
+    VkFormatProperties2 properties {
+        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext = &modifier_list,
+    };
+    GetFormatProperties2(format, properties);
+    if (modifier_list.drmFormatModifierCount == 0) return {};
+
+    std::vector<VkDrmFormatModifierProperties2EXT> modifiers(modifier_list.drmFormatModifierCount);
+    modifier_list.pDrmFormatModifierProperties = modifiers.data();
+    GetFormatProperties2(format, properties);
+    return modifiers;
 }
 
 VkResult PhysicalDevice::EnumerateDeviceExtensionProperties(
@@ -545,12 +599,12 @@ VkResult CommandPool::Allocate(std::size_t num_buffers, VkCommandBufferLevel lev
     return res;
 }
 
-VkResult DeviceMemory::GetMemoryFdKHR(int* fd) const {
+VkResult DeviceMemory::GetMemoryFdKHR(VkExternalMemoryHandleTypeFlagBits handle_type, int* fd) const {
     const VkMemoryGetFdInfoKHR get_fd_info {
         .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
         .pNext      = nullptr,
         .memory     = handle,
-        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR,
+        .handleType = handle_type,
     };
     return dld->vkGetMemoryFdKHR(owner, &get_fd_info, fd);
 }

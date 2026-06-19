@@ -64,6 +64,8 @@ class VmaBuffer : public Handle<VkBuffer, VmaOwner, int> {
 
 public:
     VmaAllocation Allocation() const noexcept { return owner.allocation; }
+    VkDeviceSize  AllocationSize() const noexcept { return owner.allocationInfo.size; }
+    const VmaAllocationInfo& AllocationInfo() const noexcept { return owner.allocationInfo; }
 
     VkResult MapMemory(void** data) const {
         return vmaMapMemory(owner.allocator, owner.allocation, data);
@@ -77,6 +79,8 @@ class VmaImage : public Handle<VkImage, VmaOwner, int> {
 
 public:
     VmaAllocation Allocation() const noexcept { return owner.allocation; }
+    VkDeviceSize  AllocationSize() const noexcept { return owner.allocationInfo.size; }
+    const VmaAllocationInfo& AllocationInfo() const noexcept { return owner.allocationInfo; }
 
     VkResult MapMemory(void** data) const {
         return vmaMapMemory(owner.allocator, owner.allocation, data);

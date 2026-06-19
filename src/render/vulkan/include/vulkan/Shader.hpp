@@ -1,14 +1,11 @@
 #pragma once
 #include "Instance.hpp"
 #include "ShaderComp.hpp"
-#include <glslang/Include/BaseTypes.h>
 
 namespace wallpaper
 {
 namespace vulkan
 {
-
-VkFormat ToVkType(glslang::TBasicType, size_t);
 
 struct ShaderReflected {
     struct BlockedUniform {

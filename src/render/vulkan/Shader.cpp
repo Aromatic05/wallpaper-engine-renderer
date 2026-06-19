@@ -1,45 +1,44 @@
 #include "Shader.hpp"
 
 #include <cassert>
-#include <glslang/Include/Types.h>
-#include <glslang/MachineIndependent/localintermediate.h>
-#include <glslang/MachineIndependent/iomapper.h>
-#include <glslang/SPIRV/GlslangToSpv.h>
 #include "Spv.hpp"
 #include "TextureCache.hpp"
 #include "utils/Logging.h"
+#include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 #include "core/StringHelper.hpp"
 #include "utils/Sha.hpp"
 #include "core/MapSet.hpp"
 #include <SPIRV-Reflect/spirv_reflect.h>
 
+#if defined(HANABI_HAS_DXC)
+#include <dxc/dxcapi.h>
+#endif
+
 using namespace wallpaper;
 using namespace wallpaper::vulkan;
-
-#define _VK_FORMAT_1(s, sign, type, x)          VK_FORMAT_##x##s##sign##type;
-#define _VK_FORMAT_2(s, sign, type, x, y)       VK_FORMAT_##x##s##y##s##sign##type;
-#define _VK_FORMAT_3(s, sign, type, x, y, z)    VK_FORMAT_##x##s##y##s##z##s##sign##type;
-#define _VK_FORMAT_4(s, sign, type, x, y, z, w) VK_FORMAT_##x##s##y##s##z##s##w##s##sign##type;
-
-constexpr int ClientInputSemanticsVersion = 100;
 
 namespace
 {
 inline wallpaper::ShaderType ToGeneType(VkShaderStageFlagBits stage) {
     switch (stage) {
     case VK_SHADER_STAGE_VERTEX_BIT: return wallpaper::ShaderType::VERTEX;
+    case VK_SHADER_STAGE_GEOMETRY_BIT: return wallpaper::ShaderType::GEOMETRY;
     case VK_SHADER_STAGE_FRAGMENT_BIT: return wallpaper::ShaderType::FRAGMENT;
     default: assert(false); return wallpaper::ShaderType::VERTEX;
     }
 }
 
-inline VkShaderStageFlagBits ToVkType(EShLanguage lan) {
-    switch (lan) {
-    case EShLangVertex: return VK_SHADER_STAGE_VERTEX_BIT;
-    case EShLangFragment: return VK_SHADER_STAGE_FRAGMENT_BIT;
+inline VkShaderStageFlagBits ToVkType(wallpaper::ShaderType stage) {
+    switch (stage) {
+    case wallpaper::ShaderType::VERTEX: return VK_SHADER_STAGE_VERTEX_BIT;
+    case wallpaper::ShaderType::GEOMETRY: return VK_SHADER_STAGE_GEOMETRY_BIT;
+    case wallpaper::ShaderType::FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
     default: assert(false); return VK_SHADER_STAGE_VERTEX_BIT;
     }
 }
@@ -49,6 +48,7 @@ inline VkFormat ToVkType(SpvReflectFormat type) { return static_cast<VkFormat>(t
 inline VkShaderStageFlagBits ToVkType(SpvReflectShaderStageFlagBits s) {
     switch (s) {
     case SPV_REFLECT_SHADER_STAGE_VERTEX_BIT: return VK_SHADER_STAGE_VERTEX_BIT;
+    case SPV_REFLECT_SHADER_STAGE_GEOMETRY_BIT: return VK_SHADER_STAGE_GEOMETRY_BIT;
     case SPV_REFLECT_SHADER_STAGE_FRAGMENT_BIT: return VK_SHADER_STAGE_FRAGMENT_BIT;
     default: assert(false); return VK_SHADER_STAGE_VERTEX_BIT;
     }
@@ -65,253 +65,79 @@ bool EnumAllRef(VEC& vec, FUNC&& func) {
     return result == SPV_REFLECT_RESULT_SUCCESS;
 }
 
-inline glslang::EShClient getClient(glslang::EShTargetClientVersion ClientVersion) {
-    switch (ClientVersion) {
-    case glslang::EShTargetVulkan_1_0:
-    case glslang::EShTargetVulkan_1_1:
-    case glslang::EShTargetVulkan_1_2: return glslang::EShClientVulkan;
-    case glslang::EShTargetOpenGL_450: return glslang::EShClientOpenGL;
-    default: return glslang::EShClientVulkan;
+inline const char* ShaderSourceLanguageName(ShaderSourceLanguage language) {
+    switch (language) {
+    case ShaderSourceLanguage::HLSL: return "hlsl";
+    default: return "unknown";
     }
-}
-inline glslang::EShTargetLanguageVersion
-getTargetVersion(glslang::EShTargetClientVersion ClientVersion) {
-    glslang::EShTargetLanguageVersion TargetVersion { glslang::EShTargetSpv_1_0 };
-    switch (ClientVersion) {
-    case glslang::EShTargetVulkan_1_0: TargetVersion = glslang::EShTargetSpv_1_0; break;
-    case glslang::EShTargetVulkan_1_1: TargetVersion = glslang::EShTargetSpv_1_3; break;
-    case glslang::EShTargetVulkan_1_2: TargetVersion = glslang::EShTargetSpv_1_5; break;
-    case glslang::EShTargetVulkan_1_3: TargetVersion = glslang::EShTargetSpv_1_6; break;
-    case glslang::EShTargetOpenGL_450: TargetVersion = glslang::EShTargetSpv_1_0; break;
-    default: break;
-    }
-    return TargetVersion;
 }
 
-inline bool parse(const ShaderCompUnit& unit, const ShaderCompOpt& opt, EShMessages emsg,
-                  glslang::TShader& shader) {
-    auto* data   = unit.src.c_str();
-    auto  client = getClient(opt.client_ver);
-    shader.setStrings(&data, 1);
-    shader.setEnvInput(opt.hlsl ? glslang::EShSourceHlsl : glslang::EShSourceGlsl,
-                       EShLanguage::EShLangVertex,
-                       client,
-                       ClientInputSemanticsVersion);
-    shader.setEnvClient(client, opt.client_ver);
-    shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, getTargetVersion(opt.client_ver));
-    if (opt.auto_map_locations) shader.setAutoMapLocations(true);
-    if (opt.auto_map_bindings) shader.setAutoMapBindings(true);
-    if (opt.relaxed_rules_vulkan) {
-        shader.setGlobalUniformBinding(opt.global_uniform_binding);
-        shader.setEnvInputVulkanRulesRelaxed();
+inline const wchar_t* ToDxcTargetEnv(ShaderTargetEnv target_env) {
+    switch (target_env) {
+    case ShaderTargetEnv::VULKAN_1_0: return L"vulkan1.0";
+    case ShaderTargetEnv::VULKAN_1_1: return L"vulkan1.1";
+    case ShaderTargetEnv::VULKAN_1_2: return L"vulkan1.2";
+    case ShaderTargetEnv::VULKAN_1_3: return L"vulkan1.3";
+    default: return L"vulkan1.1";
     }
-    const int        default_ver = 110; // 100 for es, 110 for desktop
-    TBuiltInResource resource    = DefaultTBuiltInResource;
-    if (! shader.parse(&resource, default_ver, false, emsg)) {
-        std::string tmp_name = logToTmpfileWithSha1(unit.src, "%s", unit.src.c_str());
-        LOG_INFO("--- shader compile failed ---");
-        LOG_ERROR("shader source is at %s", tmp_name.c_str());
-        LOG_ERROR("glslang(parse): %s", shader.getInfoLog());
-        LOG_INFO("--- end ---");
-        return false;
-    }
-    return true;
 }
 
-inline void SetMessageOptions(const ShaderCompOpt& opt, EShMessages& emsg) {
-    emsg = (EShMessages)(EShMsgDefault | EShMsgSpvRules);
-    if (opt.relaxed_errors_glsl) emsg = (EShMessages)(emsg | EShMsgRelaxedErrors);
-    if (opt.suppress_warnings_glsl) emsg = (EShMessages)(emsg | EShMsgSuppressWarnings);
-    if (getClient(opt.client_ver) == glslang::EShClientVulkan)
-        emsg = (EShMessages)(emsg | EShMsgVulkanRules);
+inline const wchar_t* ToDxcProfile(wallpaper::ShaderType stage) {
+    switch (stage) {
+    case wallpaper::ShaderType::VERTEX: return L"vs_6_0";
+    case wallpaper::ShaderType::FRAGMENT: return L"ps_6_0";
+    case wallpaper::ShaderType::GEOMETRY: return L"gs_6_0";
+    default: return L"vs_6_0";
+    }
 }
 
-inline i32 GetTypeNum(const glslang::TType* type) {
-    i32 num { 1 };
-    if (type->isArray()) num *= type->getCumulativeArraySize();
-    if (type->isVector()) num *= type->getVectorSize();
-    if (type->isMatrix()) num *= type->getMatrixCols() * type->getMatrixRows();
-    return num;
+inline std::wstring ToWide(std::string_view value) {
+    return std::wstring(value.begin(), value.end());
 }
+
+inline const char* DefaultEntryPoint(wallpaper::ShaderType stage) {
+    switch (stage) {
+    case wallpaper::ShaderType::VERTEX: return "main";
+    case wallpaper::ShaderType::FRAGMENT: return "main";
+    case wallpaper::ShaderType::GEOMETRY: return "main";
+    default: return "main";
+    }
+}
+
+inline std::string EffectiveEntryPoint(const ShaderCompUnit& unit) {
+    return unit.entry_point.empty() ? DefaultEntryPoint(unit.stage) : unit.entry_point;
+}
+
+inline std::string_view EffectiveDebugName(const ShaderCompUnit& unit) {
+    return unit.debug_name.empty() ? std::string_view { "<shader>" }
+                                   : std::string_view { unit.debug_name };
+}
+
+inline std::string_view EffectiveDebugName(std::string_view debug_name) {
+    return debug_name.empty() ? std::string_view { "<shader>" } : debug_name;
+}
+
+inline std::string StripHlslStructPrefix(std::string_view name) {
+    const auto dot = name.rfind('.');
+    if (dot == std::string_view::npos || dot + 1 >= name.size()) return std::string(name);
+    return std::string(name.substr(dot + 1));
+}
+
+inline std::string ReflectedDescriptorName(const SpvReflectDescriptorBinding& binding) {
+    auto bind_name = std::string(binding.name).empty() && binding.type_description != nullptr &&
+            binding.type_description->type_name != nullptr
+        ? std::string(binding.type_description->type_name)
+        : std::string(binding.name);
+
+    constexpr std::string_view sampler_suffix { "_ww_sampler" };
+    if (bind_name.size() > sampler_suffix.size() &&
+        bind_name.compare(bind_name.size() - sampler_suffix.size(), sampler_suffix.size(), sampler_suffix) == 0) {
+        bind_name.resize(bind_name.size() - sampler_suffix.size());
+    }
+    return StripHlslStructPrefix(bind_name);
+}
+
 } // namespace
-const TBuiltInResource wallpaper::vulkan::DefaultTBuiltInResource {
-    .maxLights =  32,
-    .maxClipPlanes =  6,
-    .maxTextureUnits =  32,
-    .maxTextureCoords =  32,
-    .maxVertexAttribs =  64,
-    .maxVertexUniformComponents =  4096,
-    .maxVaryingFloats =  64,
-    .maxVertexTextureImageUnits =  32,
-    .maxCombinedTextureImageUnits =  80,
-    .maxTextureImageUnits =  32,
-    .maxFragmentUniformComponents =  4096,
-    .maxDrawBuffers =  32,
-    .maxVertexUniformVectors =  128,
-    .maxVaryingVectors =  8,
-    .maxFragmentUniformVectors =  16,
-    .maxVertexOutputVectors =  16,
-    .maxFragmentInputVectors =  15,
-    .minProgramTexelOffset =  -8,
-    .maxProgramTexelOffset =  7,
-    .maxClipDistances =  8,
-    .maxComputeWorkGroupCountX =  65535,
-    .maxComputeWorkGroupCountY =  65535,
-    .maxComputeWorkGroupCountZ =  65535,
-    .maxComputeWorkGroupSizeX =  1024,
-    .maxComputeWorkGroupSizeY =  1024,
-    .maxComputeWorkGroupSizeZ =  64,
-    .maxComputeUniformComponents =  1024,
-    .maxComputeTextureImageUnits =  16,
-    .maxComputeImageUniforms =  8,
-    .maxComputeAtomicCounters =  8,
-    .maxComputeAtomicCounterBuffers =  1,
-    .maxVaryingComponents =  60,
-    .maxVertexOutputComponents =  64,
-    .maxGeometryInputComponents =  64,
-    .maxGeometryOutputComponents =  128,
-    .maxFragmentInputComponents =  128,
-    .maxImageUnits =  8,
-    .maxCombinedImageUnitsAndFragmentOutputs =  8,
-    .maxCombinedShaderOutputResources =  8,
-    .maxImageSamples =  0,
-    .maxVertexImageUniforms =  0,
-    .maxTessControlImageUniforms =  0,
-    .maxTessEvaluationImageUniforms =  0,
-    .maxGeometryImageUniforms =  0,
-    .maxFragmentImageUniforms =  8,
-    .maxCombinedImageUniforms =  8,
-    .maxGeometryTextureImageUnits =  16,
-    .maxGeometryOutputVertices =  256,
-    .maxGeometryTotalOutputComponents =  1024,
-    .maxGeometryUniformComponents =  1024,
-    .maxGeometryVaryingComponents =  64,
-    .maxTessControlInputComponents =  128,
-    .maxTessControlOutputComponents =  128,
-    .maxTessControlTextureImageUnits =  16,
-    .maxTessControlUniformComponents =  1024,
-    .maxTessControlTotalOutputComponents =  4096,
-    .maxTessEvaluationInputComponents =  128,
-    .maxTessEvaluationOutputComponents =  128,
-    .maxTessEvaluationTextureImageUnits =  16,
-    .maxTessEvaluationUniformComponents =  1024,
-    .maxTessPatchComponents =  120,
-    .maxPatchVertices =  32,
-    .maxTessGenLevel =  64,
-    .maxViewports =  16,
-    .maxVertexAtomicCounters =  0,
-    .maxTessControlAtomicCounters =  0,
-    .maxTessEvaluationAtomicCounters =  0,
-    .maxGeometryAtomicCounters =  0,
-    .maxFragmentAtomicCounters =  8,
-    .maxCombinedAtomicCounters =  8,
-    .maxAtomicCounterBindings =  1,
-    .maxVertexAtomicCounterBuffers =  0,
-    .maxTessControlAtomicCounterBuffers =  0,
-    .maxTessEvaluationAtomicCounterBuffers =  0,
-    .maxGeometryAtomicCounterBuffers =  0,
-    .maxFragmentAtomicCounterBuffers =  1,
-    .maxCombinedAtomicCounterBuffers =  1,
-    .maxAtomicCounterBufferSize =  16384,
-    .maxTransformFeedbackBuffers =  4,
-    .maxTransformFeedbackInterleavedComponents =  64,
-    .maxCullDistances =  8,
-    .maxCombinedClipAndCullDistances =  8,
-    .maxSamples =  4,
-    .maxMeshOutputVerticesNV =  256,
-    .maxMeshOutputPrimitivesNV =  512,
-    .maxMeshWorkGroupSizeX_NV =  32,
-    .maxMeshWorkGroupSizeY_NV =  1,
-    .maxMeshWorkGroupSizeZ_NV =  1,
-    .maxTaskWorkGroupSizeX_NV =  32,
-    .maxTaskWorkGroupSizeY_NV =  1,
-    .maxTaskWorkGroupSizeZ_NV =  1,
-    .maxMeshViewCountNV =  4,
-    .maxDualSourceDrawBuffersEXT =  1,
-
-    .limits = 
-    {
-        /* .nonInductiveForLoops = */ 1,
-        /* .whileLoops = */ 1,
-        /* .doWhileLoops = */ 1,
-        /* .generalUniformIndexing = */ 1,
-        /* .generalAttributeMatrixVectorIndexing = */ 1,
-        /* .generalVaryingIndexing = */ 1,
-        /* .generalSamplerIndexing = */ 1,
-        /* .generalVariableIndexing = */ 1,
-        /* .generalConstantMatrixVectorIndexing = */ 1,
-    }
-};
-
-/*
-static bool GetReflectedInfo(glslang::TProgram& pro, ShaderReflected& ref, const ShaderCompOpt& opt)
-{ EShReflectionOptions reflect_opt {EShReflectionDefault}; if(opt.reflect_all_io_var) reflect_opt =
-(decltype(reflect_opt))(reflect_opt | EShReflectionAllIOVariables); if(opt.reflect_all_block_var)
-        reflect_opt = (decltype(reflect_opt))(reflect_opt | EShReflectionAllBlockVariables);
-
-    if(!pro.buildReflection(reflect_opt)) return false;
-    int numBlocks = pro.getNumUniformBlocks();
-    int numUnfis = pro.getNumUniformVariables();
-    for(int i=0;i<numBlocks;i++) {
-        auto& block = pro.getUniformBlock(i);
-        ref.blocks.push_back(ShaderReflected::Block{
-            .index = i,
-            .size = block.size,
-            .name = block.name,
-            .member_map = {}
-        });
-        vk::DescriptorSetLayoutBinding binding;
-        binding.setBinding(block.getBinding())
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setStageFlags(ToVkType(block.stages));
-        ref.binding_map[block.name] = binding;
-    }
-    for(int i=0;i<numUnfis;i++) {
-        auto& unif = pro.getUniform(i);
-        auto* type = unif.getType();
-        auto basic_type = type->getBasicType();
-        if(type->isTexture()) {
-            vk::DescriptorSetLayoutBinding binding;
-            binding.setBinding(unif.getBinding())
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-                .setStageFlags(ToVkType(unif.stages));
-            ref.binding_map[unif.name] = binding;
-        } else if(!type->isStruct()) {
-            // in block
-            if(unif.index >= ref.blocks.size())
-                return false;
-            auto& block = ref.blocks[unif.index];
-            ShaderReflected::BlockedUniform bunif {};
-            {
-                bunif.num = GetTypeNum(type);
-                bunif.type = type->getBasicType();
-                bunif.block_index = unif.index;
-                bunif.offset = unif.offset;
-            }
-            block.member_map[unif.name] = bunif;
-        }
-    }
-    int numInputs = pro.getNumPipeInputs();
-    for(int i=0;i<numInputs;i++) {
-        auto& input = pro.getPipeInput(i);
-        auto* type = input.getType();
-        auto& qual = type->getQualifier();
-        if(wallpaper::sstart_with(input.name, "gl_")) continue;
-        if(!qual.hasAnyLocation())  {
-            LOG_ERROR("shader input %s no location", input.name.c_str());
-            return false;
-        }
-        ShaderReflected::Input rinput;
-        rinput.location = qual.layoutLocation;
-        rinput.format = ToVkType(type->getBasicType(), GetTypeNum(type));
-        ref.input_location_map[input.name] = rinput;
-    }
-
-    return true;
-};
-*/
 
 bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
                                    std::vector<Uni_ShaderSpv>& spvs, ShaderReflected& ref) {
@@ -322,6 +148,9 @@ bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
         {
             Uni_ShaderSpv spv = std::make_unique<ShaderSpv>();
             spv->stage        = ::ToGeneType(stage);
+            if (spv_ref.GetEntryPointCount() > 0 && spv_ref.GetEntryPointName() != nullptr) {
+                spv->entry_point = spv_ref.GetEntryPointName();
+            }
             spv->spirv        = code;
             spvs.emplace_back(std::move(spv));
         }
@@ -340,13 +169,14 @@ bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
             auto& b = *pb;
             if (! b.accessed) continue;
 
-            auto bind_name = std::string(b.name).empty() && b.type_description->type_name != nullptr
-                                 ? b.type_description->type_name
-                                 : b.name;
+            auto bind_name = ReflectedDescriptorName(b);
 
             if (exists(ref.binding_map, bind_name)) {
                 auto& bind = ref.binding_map[bind_name];
                 bind.stageFlags |= stage;
+                continue;
+            }
+            if (b.descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER) {
                 continue;
             }
             if (b.descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
@@ -354,9 +184,9 @@ bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
                 auto  block_name = std::string(block.name).empty() ? bind_name : block.name;
                 ref.blocks.push_back(ShaderReflected::Block { //.index = i,
                                                               .size       = block.size,
-                                                              .name       = block.name,
+                                                              .name       = block_name,
                                                               .member_map = {} });
-                auto& ref_block = ref.blocks.front();
+                auto& ref_block = ref.blocks.back();
 
                 vkbinding.binding         = b.binding;
                 vkbinding.descriptorCount = 1;
@@ -370,9 +200,10 @@ bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
                         bunif.size   = unif.size;
                         bunif.offset = unif.offset;
                     }
-                    ref_block.member_map[unif.name] = bunif;
+                    ref_block.member_map[StripHlslStructPrefix(unif.name)] = bunif;
                 }
-            } else if (b.descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+            } else if (b.descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+                       b.descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE) {
                 vkbinding.binding         = b.binding;
                 vkbinding.descriptorCount = 1;
                 vkbinding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -401,85 +232,261 @@ bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
                 rinput.location = input.location;
                 rinput.format   = ::ToVkType(input.format);
 
-                ref.input_location_map[input.name] = rinput;
+                ref.input_location_map[StripHlslStructPrefix(input.name)] = rinput;
             }
         }
     }
     return true;
 }
 
-bool wallpaper::vulkan::CompileAndLinkShaderUnits(std::span<const ShaderCompUnit>  compUnits,
-                                                  const ShaderCompOpt&        opt,
-                                                  std::vector<Uni_ShaderSpv>& spvs) {
-    glslang::TProgram program;
-    EShMessages       emsg;
-    SetMessageOptions(opt, emsg);
-    std::vector<std::unique_ptr<glslang::TShader>> shaders;
-    for (auto& unit : compUnits) {
-        shaders.emplace_back(std::make_unique<glslang::TShader>(unit.stage));
-        auto& shader = *(shaders.back());
-        if (! parse(unit, opt, emsg, shader)) return false;
-        program.addShader(&shader);
-    }
+#if defined(HANABI_HAS_DXC)
+static bool DxcSucceeded(HRESULT hr, std::string_view what) {
+    if (SUCCEEDED(hr)) return true;
+    LOG_ERROR("dxc(%.*s): HRESULT=0x%08x",
+              static_cast<int>(what.size()),
+              what.data(),
+              static_cast<unsigned int>(hr));
+    return false;
+}
 
-    if (! program.link(emsg)) {
-        LOG_ERROR("glslang(link): %s\n", program.getInfoLog());
+static std::string DxcErrorText(IDxcResult* result) {
+    if (result == nullptr) return {};
+
+    CComPtr<IDxcBlobUtf8> errors;
+    if (FAILED(result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr)) ||
+        errors == nullptr ||
+        errors->GetStringLength() == 0) {
+        return {};
+    }
+    return std::string(errors->GetStringPointer(), errors->GetStringLength());
+}
+
+bool wallpaper::vulkan::PreprocessShaderSourceWithDxc(const std::string& src,
+                                                      const ShaderCompOpt& opt,
+                                                      std::string& out,
+                                                      std::string_view debug_name) {
+    CComPtr<IDxcCompiler3> compiler;
+    if (! DxcSucceeded(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+                       "create-preprocess-compiler")) {
         return false;
     }
 
-    for (auto& unit : compUnits) {
-        (void)program.getIntermediate(unit.stage);
+    std::vector<std::wstring> owned_args;
+    owned_args.reserve(opt.definitions.size());
+    std::vector<LPCWSTR> args { L"-P" };
+    for (const auto& definition : opt.definitions) {
+        owned_args.emplace_back(L"-D" + ToWide(definition));
+        args.push_back(owned_args.back().c_str());
     }
-    glslang::TIntermediate*         firstIm = program.getIntermediate(compUnits[0].stage);
-    glslang::TDefaultGlslIoResolver resolver(*firstIm);
-    glslang::TGlslIoMapper          ioMapper;
 
-    if (! (program.mapIO(&resolver, &ioMapper))) {
-        LOG_ERROR("glslang(mapIo): %s\n", program.getInfoLog());
+    DxcBuffer source {
+        .Ptr      = src.data(),
+        .Size     = src.size(),
+        .Encoding = DXC_CP_UTF8,
+    };
+
+    CComPtr<IDxcResult> result;
+    const auto          preprocess_hr =
+        compiler->Compile(&source,
+                          args.data(),
+                          static_cast<UINT32>(args.size()),
+                          nullptr,
+                          IID_PPV_ARGS(&result));
+    if (! DxcSucceeded(preprocess_hr, "preprocess-call")) return false;
+
+    const auto errors = DxcErrorText(result);
+    if (! errors.empty()) {
+        const auto effective_debug_name = EffectiveDebugName(debug_name);
+        LOG_INFO("dxc-preprocess(%.*s): %s",
+                 static_cast<int>(effective_debug_name.size()),
+                 effective_debug_name.data(),
+                 errors.c_str());
+    }
+
+    HRESULT status = S_OK;
+    if (! DxcSucceeded(result->GetStatus(&status), "preprocess-status")) return false;
+    if (FAILED(status)) {
+        std::string tmp_name = logToTmpfileWithSha1(src, "%s", src.c_str());
+        const auto effective_debug_name = EffectiveDebugName(debug_name);
+        LOG_ERROR("dxc-preprocess(%.*s): shader source is at %s",
+                  static_cast<int>(effective_debug_name.size()),
+                  effective_debug_name.data(),
+                  tmp_name.c_str());
         return false;
     }
 
-    spv::SpvBuildLogger logger;
-    glslang::SpvOptions spvOptions;
-    spvOptions.validate          = true;
-    spvOptions.generateDebugInfo = false;
-
-    spvs.clear();
-    for (auto& unit : compUnits) {
-        Uni_ShaderSpv spv = std::make_unique<ShaderSpv>();
-        spv->stage        = ::ToGeneType(::ToVkType(unit.stage));
-        auto im           = program.getIntermediate(unit.stage);
-        im->setOriginUpperLeft();
-        glslang::GlslangToSpv(*im, spv->spirv, &logger, &spvOptions);
-        spvs.emplace_back(std::move(spv));
-
-        auto messages = logger.getAllMessages();
-        if (messages.length() > 0) LOG_ERROR("glslang(spv): %s\n", messages.c_str());
+    CComPtr<IDxcBlobUtf8> text;
+    if (! DxcSucceeded(result->GetOutput(DXC_OUT_HLSL, IID_PPV_ARGS(&text), nullptr),
+                       "preprocess-output") ||
+        text == nullptr) {
+        return false;
     }
 
+    out.assign(text->GetStringPointer(), text->GetStringLength());
     return true;
 }
 
-VkFormat wallpaper::vulkan::ToVkType(glslang::TBasicType type, size_t size) {
-#define FORMAT_SWITCH(in, s, sign, type)                       \
-    switch (in) {                                              \
-    case 1: return _VK_FORMAT_1(s, _##sign, type, R);          \
-    case 2: return _VK_FORMAT_2(s, _##sign, type, R, G);       \
-    case 3: return _VK_FORMAT_3(s, _##sign, type, R, G, B);    \
-    case 4: return _VK_FORMAT_4(s, _##sign, type, R, G, B, A); \
-    }                                                          \
-    break;
-
-    switch (type) {
-    case glslang::TBasicType::EbtFloat: FORMAT_SWITCH(size, 32, S, FLOAT);
-    case glslang::TBasicType::EbtInt: FORMAT_SWITCH(size, 32, S, INT);
-    case glslang::TBasicType::EbtUint: FORMAT_SWITCH(size, 32, U, INT);
-    default: break;
+static bool CompileShaderUnitWithDxc(const ShaderCompUnit& unit,
+                                     const ShaderCompOpt& opt,
+                                     Uni_ShaderSpv& spv) {
+    CComPtr<IDxcUtils>     utils;
+    CComPtr<IDxcCompiler3> compiler;
+    if (! DxcSucceeded(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
+                       "create-utils")) {
+        return false;
     }
-    LOG_ERROR("can't covert glslang type \"%s\" of size %d to vulkan format",
-              glslang::TType::getBasicString(type),
-              size);
-    assert(false);
-    return VK_FORMAT_UNDEFINED;
-#undef FORMAT_SWITCH
+    if (! DxcSucceeded(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+                       "create-compiler")) {
+        return false;
+    }
+
+    CComPtr<IDxcIncludeHandler> include_handler;
+    if (! DxcSucceeded(utils->CreateDefaultIncludeHandler(&include_handler),
+                       "create-include-handler")) {
+        return false;
+    }
+
+    const auto         entry_point = EffectiveEntryPoint(unit);
+    const auto         entry_point_w = ToWide(entry_point);
+    const std::wstring target_env = std::wstring(L"-fspv-target-env=") + ToDxcTargetEnv(opt.target_env);
+    std::vector<std::wstring> owned_args;
+    owned_args.reserve(opt.definitions.size());
+    std::vector<LPCWSTR> args {
+        L"-E",
+        entry_point_w.c_str(),
+        L"-T",
+        ToDxcProfile(unit.stage),
+        L"-spirv",
+        target_env.c_str(),
+        L"-fvk-bind-globals",
+        L"0",
+        L"0",
+    };
+    if (opt.auto_map_bindings) {
+        args.push_back(L"-auto-binding-space");
+        args.push_back(L"0");
+    }
+    for (const auto& definition : opt.definitions) {
+        owned_args.emplace_back(L"-D" + ToWide(definition));
+        args.push_back(owned_args.back().c_str());
+    }
+
+    DxcBuffer source {
+        .Ptr      = unit.src.data(),
+        .Size     = unit.src.size(),
+        .Encoding = DXC_CP_UTF8,
+    };
+
+    CComPtr<IDxcResult> result;
+    const auto          compile_hr =
+        compiler->Compile(&source,
+                          args.data(),
+                          static_cast<UINT32>(args.size()),
+                          include_handler,
+                          IID_PPV_ARGS(&result));
+    if (! DxcSucceeded(compile_hr, "compile-call")) return false;
+
+    HRESULT status = S_OK;
+    if (! DxcSucceeded(result->GetStatus(&status), "get-status")) return false;
+    const auto errors = DxcErrorText(result);
+    if (FAILED(status)) {
+        if (! errors.empty()) {
+            const auto debug_name = EffectiveDebugName(unit);
+            LOG_ERROR("dxc(%.*s): %s",
+                      static_cast<int>(debug_name.size()),
+                      debug_name.data(),
+                      errors.c_str());
+        }
+        std::string tmp_name = logToTmpfileWithSha1(unit.src, "%s", unit.src.c_str());
+        const auto debug_name = EffectiveDebugName(unit);
+        LOG_ERROR("dxc(%.*s): shader source is at %s",
+                  static_cast<int>(debug_name.size()),
+                  debug_name.data(),
+                  tmp_name.c_str());
+        return false;
+    }
+    if (! errors.empty()) {
+        const auto debug_name = EffectiveDebugName(unit);
+        LOG_WARN("dxc(%.*s): %s",
+                 static_cast<int>(debug_name.size()),
+                 debug_name.data(),
+                 errors.c_str());
+    }
+
+    CComPtr<IDxcBlob> object;
+    if (! DxcSucceeded(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&object), nullptr),
+                       "get-object") ||
+        object == nullptr) {
+        return false;
+    }
+
+    const auto byte_size = object->GetBufferSize();
+    if (byte_size % sizeof(unsigned int) != 0) {
+        const auto debug_name = EffectiveDebugName(unit);
+        LOG_ERROR("dxc(%.*s): SPIR-V byte size %zu is not word-aligned",
+                  static_cast<int>(debug_name.size()),
+                  debug_name.data(),
+                  byte_size);
+        return false;
+    }
+
+    spv              = std::make_unique<ShaderSpv>();
+    spv->stage       = unit.stage;
+    spv->entry_point = entry_point;
+    const auto words = byte_size / sizeof(unsigned int);
+    spv->spirv.resize(words);
+    std::memcpy(spv->spirv.data(), object->GetBufferPointer(), byte_size);
+    return true;
+}
+#else
+bool wallpaper::vulkan::PreprocessShaderSourceWithDxc(const std::string& src,
+                                                      const ShaderCompOpt& opt,
+                                                      std::string& out,
+                                                      std::string_view debug_name) {
+    (void)src;
+    (void)opt;
+    (void)out;
+    const auto effective_debug_name = EffectiveDebugName(debug_name);
+    LOG_ERROR("dxc-preprocess(%.*s): Hanabi was built without a staged DXC SDK",
+              static_cast<int>(effective_debug_name.size()),
+              effective_debug_name.data());
+    return false;
+}
+#endif
+
+static bool CompileShaderUnitsWithDxc(std::span<const ShaderCompUnit> compUnits,
+                                      const ShaderCompOpt& opt,
+                                      std::vector<Uni_ShaderSpv>& spvs) {
+#if defined(HANABI_HAS_DXC)
+    spvs.clear();
+    spvs.reserve(compUnits.size());
+    for (const auto& unit : compUnits) {
+        Uni_ShaderSpv spv;
+        if (! CompileShaderUnitWithDxc(unit, opt, spv)) return false;
+        spvs.emplace_back(std::move(spv));
+    }
+    return true;
+#else
+    (void)compUnits;
+    (void)opt;
+    (void)spvs;
+    LOG_ERROR("DXC compiler requested but Hanabi was built without a staged DXC SDK");
+    return false;
+#endif
+}
+
+bool wallpaper::vulkan::CompileAndLinkShaderUnits(std::span<const ShaderCompUnit> compUnits,
+                                                  const ShaderCompOpt& opt,
+                                                  std::vector<Uni_ShaderSpv>& spvs) {
+    LOG_INFO("ShaderCompiler: units=%zu", compUnits.size());
+    for (const auto& unit : compUnits) {
+        LOG_INFO("ShaderCompiler: unit stage=%d language=%s name='%s' bytes=%zu",
+                 static_cast<int>(unit.stage),
+                 ShaderSourceLanguageName(unit.source_language),
+                 unit.debug_name.empty() ? "<shader>" : unit.debug_name.c_str(),
+                 unit.src.size());
+    }
+
+    LOG_INFO("ShaderCompiler: selected=dxc reason=renderer-dxc-only");
+    return CompileShaderUnitsWithDxc(compUnits, opt, spvs);
 }

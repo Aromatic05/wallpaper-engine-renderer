@@ -23,6 +23,9 @@ class Device;
 
 enum class VideoTextureGpuPipeline {
     Cpu,
+    Nvidia = Cpu,
+    NvidiaStateless = Cpu,
+    Va = Cpu,
 };
 
 struct VideoTexturePipelineSettings {

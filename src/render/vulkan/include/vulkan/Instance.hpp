@@ -27,6 +27,12 @@ using InstanceLayer = Extension;
 
 using CheckGpuOp = std::function<bool(vvk::PhysicalDevice)>;
 
+enum class PhysicalDevicePreference {
+    Default,
+    PreferIntegrated,
+    PreferDiscrete,
+};
+
 constexpr std::string_view VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
 
 constexpr uint32_t    WP_VULKAN_VERSION { VK_API_VERSION_1_1 };
@@ -39,9 +45,12 @@ public:
     ~Instance() = default;
 
     void Destroy();
+    void Abandon();
 
     static bool Create(Instance&, std::span<const Extension>, std::span<const InstanceLayer>);
-    bool ChoosePhysicalDevice(const CheckGpuOp& checkgpu, std::span<const std::uint8_t> uuid = {});
+    bool ChoosePhysicalDevice(const CheckGpuOp&             checkgpu,
+                              std::span<const std::uint8_t> uuid = {},
+                              PhysicalDevicePreference preference = PhysicalDevicePreference::Default);
 
     const vvk::Instance&       inst() const;
     const vvk::PhysicalDevice& gpu() const;
