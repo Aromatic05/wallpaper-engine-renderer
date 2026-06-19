@@ -101,8 +101,21 @@ elseif(HANABI_DXC_ROOT)
         message(WARNING "HANABI_DXC_ROOT was set to '${HANABI_DXC_ROOT}', but dxcapi.h or libdxcompiler was not found")
     endif()
 else()
-    set(HANABI_HAS_DXC OFF CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
-    message(WARNING "Hanabi vendored DXC checkout was not found at '${HANABI_DXC_SOURCE_DIR}'")
+    find_path(HANABI_DXC_INCLUDE_DIR NAMES dxc/dxcapi.h)
+    find_library(HANABI_DXCOMPILER_LIBRARY NAMES dxcompiler)
+    find_program(HANABI_DXC_EXECUTABLE NAMES dxc)
+
+    if(HANABI_DXC_INCLUDE_DIR AND HANABI_DXCOMPILER_LIBRARY)
+        add_library(Hanabi::DxCompiler SHARED IMPORTED GLOBAL)
+        set_target_properties(Hanabi::DxCompiler PROPERTIES
+            IMPORTED_LOCATION "${HANABI_DXCOMPILER_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${HANABI_DXC_INCLUDE_DIR}")
+        set(HANABI_HAS_DXC ON CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+        message(STATUS "Hanabi system DXC SDK: ${HANABI_DXCOMPILER_LIBRARY}")
+    else()
+        set(HANABI_HAS_DXC OFF CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+        message(WARNING "Hanabi DXC SDK was not found; set HANABI_DXC_ROOT or install DirectXShaderCompiler")
+    endif()
 endif()
 
 set(WP_QUICKJS_DIR
