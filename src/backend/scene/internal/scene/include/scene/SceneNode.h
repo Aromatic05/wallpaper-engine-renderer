@@ -74,6 +74,15 @@ public:
         MarkTransDirty();
     }
 
+    bool Visible() const noexcept {
+        return m_localVisible && m_layerVisible && (m_parent == nullptr || m_parent->Visible());
+    }
+    bool LocalVisible() const noexcept { return m_localVisible; }
+    bool LayerVisible() const noexcept { return m_layerVisible; }
+    void SetVisible(bool value) noexcept { SetLocalVisible(value); }
+    void SetLocalVisible(bool value) noexcept { m_localVisible = value; }
+    void SetLayerVisible(bool value) noexcept { m_layerVisible = value; }
+
     // update self modle trans (will update parent before)
     void            UpdateTrans();
     Eigen::Matrix4d ModelTrans() const { return m_trans; };
@@ -87,6 +96,7 @@ public:
 
     const auto& GetChildren() const { return m_children; }
     auto&       GetChildren() { return m_children; }
+    SceneNode*  Parent() const noexcept { return m_parent; }
 
     i32& ID() { return m_id; }
 
@@ -98,6 +108,8 @@ private:
     std::string m_name;
 
     bool            m_dirty;
+    bool            m_localVisible { true };
+    bool            m_layerVisible { true };
     Eigen::Matrix4d m_trans;
 
     Eigen::Vector3f m_translate { 0.0f, 0.0f, 0.0f };

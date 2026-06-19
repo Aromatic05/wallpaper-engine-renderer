@@ -67,6 +67,7 @@ public:
     std::vector<int32_t>                 layerOrder;
     std::unordered_map<int32_t, SceneNode*> layerNodes;
     std::unordered_map<int32_t, LayerParentBinding> layerParentBindings;
+    std::unordered_map<int32_t, bool>    layerLocalVisibility;
     std::unordered_map<int32_t, std::string> initialLayerConfigJson;
     std::unordered_map<std::string, int32_t> layerNameToId;
     bool renderGraphTopologyDirty { false };
@@ -136,6 +137,11 @@ public:
     bool    SortLayer(int32_t layer_id, int32_t target_index);
     int32_t ResolveLayer(std::string_view name) const;
     int32_t LayerIndex(int32_t layer_id) const;
+    void    SetLayerLocalVisibility(int32_t layer_id, bool visible);
+    bool    GetLayerLocalVisibility(int32_t layer_id) const;
+    bool    IsLayerVisible(int32_t layer_id) const;
+    void    ApplyLayerVisibility(int32_t layer_id);
+    void    ApplyAllLayerVisibility();
     void    SetLayerParentBinding(int32_t layer_id,
                                   int32_t parent_id,
                                   std::string attachment = {});

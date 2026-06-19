@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "scene/Scene.h"
 #include "scene/SceneMaterial.h"
 #include "scene/SceneMesh.h"
@@ -14,6 +16,8 @@
 
 #include "parser/WPSyntheticImageParser.hpp"
 #include "scenescript/WPScriptRuntime.hpp"
+#include "text/WPTextLayer.hpp"
+#include "wpscene/WPTextObject.h"
 
 namespace wallpaper
 {
@@ -320,6 +324,10 @@ std::vector<WPScriptLayerState> BuildLayerStates(const Scene& scene) {
     return states;
 }
 
+bool TryCreateRuntimeTextLayer(Scene& scene,
+                               const WPScriptLayerEvent& event,
+                               int32_t* out_layer_id);
+
 void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextureEvent>& events) {
     for (const auto& event : events) {
         if (event.key.empty()) {
@@ -344,7 +352,10 @@ void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextur
 void ApplyLayerEvents(Scene& scene, const std::vector<WPScriptLayerEvent>& events) {
     for (const auto& event : events) {
         if (event.method == "create") {
-            scene.CreateRuntimeLayer(event.name, event.initial_config_json);
+            int32_t layer_id = 0;
+            if (! TryCreateRuntimeTextLayer(scene, event, &layer_id)) {
+                scene.CreateRuntimeLayer(event.name, event.initial_config_json);
+            }
         } else if (event.method == "destroy") {
             scene.DestroyLayer(event.layer_id);
         } else if (event.method == "sort") {
@@ -416,6 +427,88 @@ bool MediaPropertiesChanged(const WPSceneScriptMediaState& lhs, const WPSceneScr
            lhs.sub_title != rhs.sub_title ||
            lhs.genres != rhs.genres ||
            lhs.content_type != rhs.content_type;
+}
+
+bool TryCreateRuntimeTextLayer(Scene& scene,
+                               const WPScriptLayerEvent& event,
+                               int32_t* out_layer_id) {
+    if (event.initial_config_json.empty() || scene.vfs == nullptr) {
+        return false;
+    }
+
+    std::shared_ptr<SceneNode> parent_node;
+    if (scene.cameras.count("global") != 0 && scene.cameras.at("global") != nullptr) {
+        parent_node = scene.cameras.at("global")->GetAttachedNode();
+    }
+    if (parent_node == nullptr && scene.activeCamera != nullptr) {
+        parent_node = scene.activeCamera->GetAttachedNode();
+    }
+    if (parent_node == nullptr) {
+        return false;
+    }
+
+    nlohmann::json config;
+    try {
+        config = nlohmann::json::parse(event.initial_config_json);
+    } catch (const nlohmann::json::parse_error& e) {
+        LOG_ERROR("SceneScript: dynamic layer config parse failed: %s", e.what());
+        return false;
+    }
+    if (! config.is_object() || ! config.contains("text") || config.at("text").is_null()) {
+        return false;
+    }
+
+    wpscene::WPTextObject text_object;
+    if (! text_object.FromJson(config, *scene.vfs)) {
+        return false;
+    }
+
+    const int32_t layer_id = scene.AllocateLayerId();
+    text_object.id = layer_id;
+    if (text_object.name.empty()) {
+        text_object.name = event.name.empty() ? std::string("DynamicTextLayer") : event.name;
+    }
+    config["id"] = layer_id;
+    config["name"] = text_object.name;
+
+    std::shared_ptr<SceneTextPrimitive> primitive;
+    std::string                         error;
+    if (! BuildSceneTextPrimitive(
+            *scene.vfs, text_object, 0, scene.textRenderScale, &primitive, &error)) {
+        LOG_ERROR("SceneScript: dynamic text layer '%s' build failed: %s",
+                  text_object.name.c_str(),
+                  error.c_str());
+        return false;
+    }
+
+    auto node = std::make_shared<SceneNode>(Eigen::Vector3f(text_object.origin.data()),
+                                            Eigen::Vector3f(text_object.scale.data()),
+                                            Eigen::Vector3f(text_object.angles.data()),
+                                            text_object.name);
+    node->ID() = layer_id;
+    node->AddText(primitive);
+    TextLayerRuntimeState state {
+        .object = text_object,
+        .primitive = primitive,
+        .applied_alignment = ResolveTextLayerSceneAlignment(text_object),
+    };
+    ApplyTextLayerNodePlacement(node.get(), state, text_object.origin);
+
+    SceneNode* raw_node = node.get();
+    parent_node->AppendChild(std::move(node));
+    scene.RegisterLayer(layer_id, text_object.name, raw_node, config.dump());
+    scene.SetLayerParentBinding(layer_id, text_object.parent, text_object.attachment);
+    scene.SetLayerLocalVisibility(layer_id, text_object.visible);
+    scene.textPrimitives[layer_id] = primitive;
+    scene.textLayers[layer_id] = std::move(state);
+    scene.objectRuntimeNodes[layer_id].push_back(raw_node);
+    scene.ApplyLayerVisibility(layer_id);
+    scene.MarkRenderGraphTopologyDirty();
+    scene.MarkTextLayerResourcesDirty(layer_id);
+    if (out_layer_id != nullptr) {
+        *out_layer_id = layer_id;
+    }
+    return true;
 }
 
 } // namespace
@@ -615,7 +708,40 @@ void WPSceneScriptHost::Initialize() {
 }
 
 void WPSceneScriptHost::MaterializeDeferredRuntimeLayersForResidency() {
-    (void)m_scene;
+    if (!m_impl || !m_impl->initialized || m_scene == nullptr) {
+        return;
+    }
+
+    std::vector<int32_t> layer_ids;
+    layer_ids.reserve(m_scene->deferredRuntimeTextLayerIds.size());
+    for (const auto layer_id : m_scene->layerOrder) {
+        if (m_scene->deferredRuntimeTextLayerIds.count(layer_id) != 0) {
+            layer_ids.push_back(layer_id);
+        }
+    }
+    for (const auto layer_id : m_scene->deferredRuntimeTextLayerIds) {
+        if (std::find(layer_ids.begin(), layer_ids.end(), layer_id) == layer_ids.end()) {
+            layer_ids.push_back(layer_id);
+        }
+    }
+    if (layer_ids.empty()) {
+        return;
+    }
+
+    for (const auto layer_id : layer_ids) {
+        if (m_scene->deferredRuntimeTextLayerIds.count(layer_id) == 0) {
+            continue;
+        }
+        if (m_scene->textLayers.count(layer_id) == 0) {
+            continue;
+        }
+        m_scene->deferredRuntimeTextLayerIds.erase(layer_id);
+        if (!RebuildTextLayerSceneLayout(*m_scene, layer_id)) {
+            m_scene->deferredRuntimeTextLayerIds.insert(layer_id);
+            continue;
+        }
+        m_scene->MarkTextLayerResourcesDirty(layer_id);
+    }
 }
 
 void WPSceneScriptHost::FrameBegin(double frame_time) {

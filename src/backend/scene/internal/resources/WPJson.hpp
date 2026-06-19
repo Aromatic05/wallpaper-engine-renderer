@@ -43,13 +43,15 @@ bool ParseJson(const char* file, const char* func, int line, const std::string& 
 
 class ScopedJsonUserProperties {
 public:
-    explicit ScopedJsonUserProperties(const UserPropertyMap* properties);
+    explicit ScopedJsonUserProperties(const UserPropertyMap* properties,
+                                      const nlohmann::json*  root = nullptr);
     ~ScopedJsonUserProperties();
 
-    ScopedJsonUserProperties(const ScopedJsonUserProperties&) = delete;
+    ScopedJsonUserProperties(const ScopedJsonUserProperties&)            = delete;
     ScopedJsonUserProperties& operator=(const ScopedJsonUserProperties&) = delete;
 
 private:
     const UserPropertyMap* m_previous { nullptr };
+    const nlohmann::json*  m_previous_root { nullptr };
 };
 } // namespace wallpaper

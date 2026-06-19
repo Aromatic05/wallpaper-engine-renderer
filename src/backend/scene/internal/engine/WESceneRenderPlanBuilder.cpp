@@ -93,6 +93,7 @@ static TexNode::Desc createTexDesc(std::string path, const Scene* scene = nullpt
 } // namespace wallpaper::rg
 
 static void TraverseNode(const std::function<void(SceneNode*)>& func, SceneNode* node) {
+    if (node == nullptr || ! node->Visible()) return;
     func(node);
     for (auto& child : node->GetChildren()) TraverseNode(func, child.get());
 }

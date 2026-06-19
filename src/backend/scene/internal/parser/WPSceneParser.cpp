@@ -945,6 +945,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
     context.object_nodes[wpimgobj.id] = spImgNode;
     context.scene->RegisterLayer(
         wpimgobj.id, wpimgobj.name, spImgNode.get(), MakeLayerInitialConfig(wpimgobj.id, wpimgobj.name).dump());
+    context.scene->SetLayerLocalVisibility(wpimgobj.id, wpimgobj.visible);
 
     SceneMaterial     material;
     WPShaderValueData svData;
@@ -1251,6 +1252,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                     context, wpmat, wpEffShaderInfo, spEffNode.get(), wpimgobj.id, wpimgobj.name);
 
                 context.shader_updater->SetNodeData(spEffNode.get(), svData);
+                context.scene->objectRuntimeNodes[wpimgobj.id].push_back(spEffNode.get());
                 imgEffect->nodes.push_back({ .authored_output = matOutRT,
                                              .output          = matOutRT,
                                              .authored_textures = spMesh->Material()->textures,
@@ -1265,6 +1267,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
         }
     }
     context.scene->sceneGraph->AppendChild(spImgNode);
+    context.scene->objectRuntimeNodes[wpimgobj.id].push_back(spImgNode.get());
+    context.scene->ApplyLayerVisibility(wpimgobj.id);
 }
 
 struct ParticleChildPtr {
@@ -1313,6 +1317,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                      wppartobj.name,
                                      spNode.get(),
                                      MakeLayerInitialConfig(wppartobj.id, wppartobj.name).dump());
+        context.scene->SetLayerLocalVisibility(wppartobj.id, wppartobj.visible);
     }
 
     wpscene::ParticleInstanceoverride override =
@@ -1460,12 +1465,15 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         context.scene->runtimeParticleSubsystemsByObjectId[wppartobj.id].push_back(particleSub.get());
         context.scene->runtimeParticleObjectIdsByName[wppartobj.name] = wppartobj.id;
         context.scene->paritileSys->subsystems.emplace_back(std::move(particleSub));
+        context.scene->objectRuntimeNodes[wppartobj.id].push_back(spNode.get());
     }
 
     if (is_child)
         child_ptr.node_parent->AppendChild(spNode);
-    else
+    else {
         context.scene->sceneGraph->AppendChild(spNode);
+        context.scene->ApplyLayerVisibility(wppartobj.id);
+    }
 }
 
 void ParseLightObj(ParseContext& context, wpscene::WPLightObject& light_obj) {
@@ -1494,7 +1502,10 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
     context.object_nodes[text_obj.id] = node;
     context.scene->RegisterLayer(
         text_obj.id, text_obj.name, node.get(), MakeLayerInitialConfig(text_obj.id, text_obj.name).dump());
+    context.scene->SetLayerParentBinding(text_obj.id, text_obj.parent, text_obj.attachment);
+    context.scene->SetLayerLocalVisibility(text_obj.id, text_obj.visible);
     context.global_camera_node->AppendChild(node);
+    context.scene->objectRuntimeNodes[text_obj.id].push_back(node.get());
 
     auto primitive = std::make_shared<SceneTextPrimitive>();
     primitive->object = text_obj;
@@ -1507,6 +1518,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
         .primitive = context.scene->textPrimitives[text_obj.id],
         .applied_alignment = ResolveTextLayerSceneAlignment(text_obj),
     };
+    context.scene->ApplyLayerVisibility(text_obj.id);
 }
 
 template<typename T>
@@ -1547,12 +1559,10 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
                                             audio::SoundManager&   sm,
                                             const UserPropertyMap* user_properties,
                                             double                 text_render_scale) {
-    (void)text_render_scale;
-
     nlohmann::json json;
     if (! PARSE_JSON(buf, json)) return nullptr;
 
-    ScopedJsonUserProperties json_user_scope(user_properties);
+    ScopedJsonUserProperties json_user_scope(user_properties, &json);
     wpscene::WPScene sc;
     sc.FromJson(json);
     //	LOG_INFO(nlohmann::json(sc).dump(4));
@@ -1592,6 +1602,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
     }
 
     InitContext(context, vfs, sc);
+    context.scene->textRenderScale = std::max(1.0, text_render_scale);
     context.scene->userProperties = user_properties == nullptr ? UserPropertyMap {} : *user_properties;
     ParseCamera(context, sc.general);
 
@@ -1668,6 +1679,8 @@ void wallpaper::RegisterSceneScriptBindingsForTest(Scene& scene, const nlohmann:
                 context.object_nodes[object_id] =
                     std::shared_ptr<SceneNode>(node, [](SceneNode*) {});
                 scene.RegisterLayer(object_id, object_name, node, object_json.dump());
+                scene.objectRuntimeNodes[object_id].push_back(node);
+                scene.ApplyLayerVisibility(object_id);
             }
         }
     }

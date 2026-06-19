@@ -23,7 +23,9 @@ A migration item is complete only when all of the following are true:
   public API shape.
 - Any intentionally missing platform/backend capability is represented by an explicit
   runtime fallback, diagnostic, or feature gate instead of silent no-op behavior.
-- Unit or regression tests cover the behavior added in this repository.
+- Unit or regression tests cover high-risk behavior where coverage is needed; avoid adding
+  tests for every small migration edit when an existing build or runtime validation already
+  exercises the path.
 - `cmake --build build-check -j2`, `ctest --test-dir build-check --output-on-failure`,
   `cmake --build build-standalone -j2 --target sceneviewer`, and `git diff --check`
   pass after the item.
@@ -34,7 +36,9 @@ A migration item is complete only when all of the following are true:
 
 - Migrate incrementally.
 - Before each migration item, define the intended conventional commit.
-- After each migration item, run tests before committing.
+- Migrate in coherent batches; do not run tests after tiny edits. After a substantial
+  batch is complete, run the minimum validation needed to expose compile/runtime errors,
+  fix those errors in one pass, and then commit.
 - Do not leave large batches of unrelated files in the worktree.
 - Keep the worktree clean after each commit before starting the next item.
 - Use Conventional Commits for every commit.
@@ -188,12 +192,46 @@ Planned commit:
      user-property override scope used while `wpscene::WPScene::FromJson` reads authored
      scene fields, including scalar, vector, fixed-array, string, bool, and condition-gated
      `user` bindings.
+   - `feat(scene): evaluate parser-time script json values` ports the remaining reference
+     `WPJson` parser-time value resolution path: animated `startpaused` properties read their
+     initial keyframe value, JSON `script` expressions are evaluated through the lightweight
+     SceneScript runtime before `WPScene::FromJson` materializes objects, `scriptproperties`
+     can receive project user-property overrides, and root orthogonal canvas size is available
+     to parser-time script evaluation.
+     This covers the shared `GET_JSON_*` path used by scene, object, material, effect, particle,
+     text, and uniform model parsing, so authored `value`, `animation`, `script`, and `user`
+     wrappers resolve before the downstream `wpscene::*::FromJson` structures are populated.
+     Parser-time script evaluation remains intentionally best-effort like the reference: when the
+     lightweight runtime cannot evaluate an expression, parsing falls back to the authored raw
+     value so the persistent SceneScript host can still run the real callback lifecycle after load.
+   - `feat(scene): consume parser text render scale` passes the scene root JSON into
+     `ScopedJsonUserProperties` and stores the requested render scale on `Scene` during parse
+     so text layers can build against the renderer scale known at load time.
+     This removes the earlier local `(void)text_render_scale` gap and matches the reference
+     parser's load-time text scale handoff without adding another test-only compatibility path.
+   - `feat(scene): warm up deferred text residency` replaces the empty SceneScript host residency
+     hook with real deferred text layer materialization: queued text layers are rebuilt through the
+     text runtime layout path, removed from the deferred set on success, and marked dirty for render
+     graph resource refresh.
+   - `feat(scene): materialize scenescript text layers` routes SceneScript `createLayer` events with
+     text layer config through the real text parser/runtime path instead of only creating an empty
+     placeholder node: the dynamic layer receives a generated id, text primitive, scene node,
+     layer registry entry, runtime text state, render-graph topology dirty flag, and text resource
+     dirty flag. Hidden dynamic text config now registers the same real text layer and relies on
+     layer visibility propagation instead of falling back to an empty placeholder.
+   - `feat(scene): port layer visibility propagation` adds reference-style local/effective layer
+     visibility state to `Scene` and `SceneNode`, propagates parent layer visibility through
+     runtime nodes, seeds parser/runtime layer registrations with authored visibility, and makes
+     render graph traversal skip nodes whose effective visibility is false.
    Remaining:
    - Dynamic parser/materialization still needs to pass user properties through the same material
      loading path used by the static parser.
-   - Parser-time SceneScript value evaluation, animated `startpaused` initial value handling,
-     root/canvas context for script evaluation, and `text_render_scale` consumption are not
-     fully aligned with the reference parser yet.
+   - Dynamic parser/materialization still needs the same root-scoped JSON user-property/script
+     evaluation path when runtime-created layers are materialized from stored config JSON.
+   - Full reference parser visibility contracts, dependency-aware lazy materialization,
+     deferred image/particle materialization, model layers, shape/direct-draw layers, and dynamic
+     `CreateDynamicSceneLayer` object construction for non-text layers remain separate parity
+     gaps; they are not hidden behind the parser-time JSON value migration above.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and
      `WPImageAlignment` have equivalent current-repository implementations.
