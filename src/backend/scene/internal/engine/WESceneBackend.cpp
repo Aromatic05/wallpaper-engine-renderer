@@ -108,18 +108,19 @@ Result<void> WESceneBackend::load(const WallpaperSource& source) {
 
     installFirstFrameCallback();
 
-    auto sourceResult = applyProperty(WE_SCENE_PROPERTY_SOURCE, source.uri);
-    if (! sourceResult) {
-        m_sharedState->readyState.store(BackendReadyState::Error);
-        return sourceResult;
-    }
-
     for (const auto& [name, value] : source.initialProperties) {
+        if (name == WE_SCENE_PROPERTY_SOURCE) continue;
         auto propertyResult = applyProperty(name, value);
         if (! propertyResult) {
             m_sharedState->readyState.store(BackendReadyState::Error);
             return propertyResult;
         }
+    }
+
+    auto sourceResult = applyProperty(WE_SCENE_PROPERTY_SOURCE, source.uri);
+    if (! sourceResult) {
+        m_sharedState->readyState.store(BackendReadyState::Error);
+        return sourceResult;
     }
 
     return Result<void>::success();

@@ -176,10 +176,11 @@ Planned commit:
      image and particle material loading, applies `usershadervalues` to cold-start material
      uniforms, and registers `MaterialUniform` bindings for live SceneScript/user-property
      dispatch.
+   - `feat(scene): route project user properties through runtime loading` exposes the
+     load-time/live user-property property names, stages load-time values before `source`
+     triggers parsing, passes the active `UserPropertyMap` into `WPSceneParser::Parse`, and
+     forwards live user-property updates to the render-thread SceneScript host.
    Remaining:
-   - Runtime scene loading still needs the reference `SceneWallpaper`/driver path that stores
-     active project user properties and passes them into `WPSceneParser::Parse`; `sceneviewer`
-     currently calls the legacy overload with no user-property map.
    - Effect pass material `usershadervalues` need the same registration/indexing coverage as
      the reference effect material path.
    - Dynamic parser/materialization still needs to pass user properties through the same material

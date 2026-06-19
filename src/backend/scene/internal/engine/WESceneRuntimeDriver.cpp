@@ -9,6 +9,7 @@
 #include "parser/WPSceneParser.hpp"
 #include "scenescript/WPSceneScriptHost.hpp"
 #include "scene/Scene.h"
+#include "settings/WPUserProperties.hpp"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
 
@@ -233,6 +234,7 @@ private:
     WPSceneParser                        m_scene_parser;
     std::unique_ptr<audio::SoundManager> m_sound_manager;
     FirstFrameCallback                   m_first_frame_callback;
+    UserPropertyMap                      m_user_properties;
 
 private:
     std::shared_ptr<looper::Looper> m_main_loop;
@@ -250,6 +252,7 @@ public:
         CMD_SET_SCENE,
         CMD_SET_FILLMODE,
         CMD_SET_SPEED,
+        CMD_APPLY_USER_PROPERTIES,
         CMD_STOP,
         CMD_DRAW,
         CMD_NO
@@ -277,6 +280,7 @@ public:
                 CASE_CMD(SET_FILLMODE);
                 CASE_CMD(SET_SCENE);
                 CASE_CMD(SET_SPEED);
+                CASE_CMD(APPLY_USER_PROPERTIES);
                 CASE_CMD(INIT_VULKAN);
             default: break;
             }
@@ -371,6 +375,18 @@ private:
         }
     }
     MHANDLER_CMD(SET_SPEED) { msg->findFloat("value", &m_speed); }
+    MHANDLER_CMD(APPLY_USER_PROPERTIES) {
+        std::shared_ptr<UserPropertyMap> user_properties;
+        if (! msg->findObject("value", &user_properties) || ! user_properties || ! m_scene) return;
+
+#if WP_ENABLE_SCENESCRIPT_RUNTIME
+        if (m_scene->scriptHost) {
+            m_scene->scriptHost->ApplyUserProperties(*user_properties, false);
+            return;
+        }
+#endif
+        m_scene->userProperties = *user_properties;
+    }
     MHANDLER_CMD(INIT_VULKAN) {
         std::shared_ptr<RenderInitInfo> info;
         if (msg->findObject("info", &info)) {
@@ -475,11 +491,12 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
     if (msg->findString("property", &property)) {
         if (property == PROPERTY_SOURCE) {
             msg->findString("value", &m_source);
-            LOG_INFO("source: %s", m_source.c_str());
+            LOG_INFO("source: %s user-properties=%zu",
+                     m_source.c_str(),
+                     m_user_properties.size());
             CALL_MHANDLER_CMD(LOAD_SCENE, msg);
         } else if (property == PROPERTY_ASSETS) {
             msg->findString("value", &m_assets);
-            CALL_MHANDLER_CMD(LOAD_SCENE, msg);
         } else if (property == PROPERTY_FPS) {
             int32_t fps { 15 };
             msg->findInt32("value", &fps);
@@ -512,6 +529,26 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             std::shared_ptr<FirstFrameCallback> cb;
             msg->findObject("value", &cb);
             m_first_frame_callback = *cb;
+        } else if (property == PROPERTY_LOAD_USER_PROPERTIES) {
+            std::shared_ptr<UserPropertyMap> user_properties;
+            if (msg->findObject("value", &user_properties) && user_properties) {
+                m_user_properties = *user_properties;
+            } else {
+                m_user_properties.clear();
+            }
+            LOG_INFO("staged load user-properties count=%zu", m_user_properties.size());
+        } else if (property == PROPERTY_USER_PROPERTIES) {
+            std::shared_ptr<UserPropertyMap> user_properties;
+            if (msg->findObject("value", &user_properties) && user_properties) {
+                m_user_properties = *user_properties;
+            } else {
+                m_user_properties.clear();
+            }
+            LOG_INFO("live user-properties count=%zu", m_user_properties.size());
+            auto nmsg =
+                CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_USER_PROPERTIES);
+            nmsg->setObject("value", std::make_shared<UserPropertyMap>(m_user_properties));
+            nmsg->post();
         } else if (property == PROPERTY_SPEED) {
             float speed { 1.0f };
             if (msg->findFloat("value", &speed)) {
@@ -547,7 +584,9 @@ MHANDLER_CMD_IMPL(MainHandler, FIRST_FRAME) {
 void MainHandler::loadScene() {
     if (m_source.empty() || m_assets.empty()) return;
 
-    LOG_INFO("loading scene: %s", m_source.c_str());
+    LOG_INFO("loading scene: %s user-properties=%zu",
+             m_source.c_str(),
+             m_user_properties.size());
 
     if (! m_sound_manager->IsInited()) {
         m_sound_manager->Init();
@@ -625,7 +664,7 @@ void MainHandler::loadScene() {
             LOG_ERROR("Not supported scene type");
             return;
         }
-        scene = m_scene_parser.Parse(scene_id, scene_src, vfs, *m_sound_manager);
+        scene = m_scene_parser.Parse(scene_id, scene_src, vfs, *m_sound_manager, &m_user_properties);
         m_scene = scene;
         scene->vfs.swap(pVfs);
     }
