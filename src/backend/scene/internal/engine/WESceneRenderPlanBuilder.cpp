@@ -203,8 +203,9 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
         rgraph.addPass<vulkan::TextPass>(
             "text",
             rg::PassNode::Type::Text,
-            [node, output = std::string(output), imgId](
+            [node, output = std::string(output), imgId, &scene](
                 rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
+                pdesc.scene    = &scene;
                 pdesc.node     = node;
                 pdesc.layer_id = imgId;
                 pdesc.output   = output;
@@ -229,8 +230,9 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
             rgraph.addPass<vulkan::TextPass>(
                 "text",
                 rg::PassNode::Type::Text,
-                [node, target_name = target.name, imgId](
+                [node, target_name = target.name, imgId, &scene](
                     rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
+                    pdesc.scene        = &scene;
                     pdesc.node         = node;
                     pdesc.layer_id     = imgId;
                     pdesc.output       = target_name;

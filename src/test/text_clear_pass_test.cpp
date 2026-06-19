@@ -78,7 +78,6 @@ int main() {
     wallpaper::vulkan::Device device;
     wallpaper::vulkan::RenderingResources resources;
     text_pass->execute(device, resources);
-    assert(text_pass->executionDiagnosticEmitted());
     assert(!text_pass->prepared());
 
     wallpaper::vulkan::ClearPass::Desc clear_desc;

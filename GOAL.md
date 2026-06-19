@@ -167,16 +167,14 @@ Planned commit:
    - `feat(scene): port text layout and glyph rasterization`
    - `feat(render): render text glyph atlases in text pass`
    Progress:
-   - `feat(render): diagnose unsupported text pass execution` makes `TextPass::execute`
-     emit an explicit unsupported diagnostic and mark the pass unprepared instead of
-     silently succeeding without drawing.
+   - `feat(render): render text glyph atlases in text pass` now routes TextPass through
+     scene-owned text primitives, dedicated text shaders, atlas page textures, dynamic
+     mesh uploads, and real background/glyph draw submission.
    Remaining:
-   - Dedicated text shader compilation, glyph atlas texture loading, text mesh buffer
-     uploads, framebuffer creation, and real glyph/background draw submission still need
-     migration from the reference `TextPass`.
+   - Text layout, atlas generation, and the remaining scene-side text rasterization flow
+     still need to match the reference implementation.
    Acceptance:
-   - `TextPass::execute` performs real rendering work or emits an explicit unsupported
-     diagnostic behind a disabled feature gate.
+   - `TextPass::execute` performs real rendering work.
    - Text layout, font selection, glyph atlas/cache behavior, alignment, color, and
      effects match the reference implementation within the available backend.
 
