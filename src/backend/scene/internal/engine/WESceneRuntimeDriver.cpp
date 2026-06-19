@@ -108,8 +108,8 @@ bool ResolveParticleRuntimeProperty(std::string_view property, std::string* targ
 
 std::vector<ParticleSubSystem*> ResolveParticleTargets(Scene& scene, std::string_view target) {
     auto appendTargets = [&](int32_t object_id, std::vector<ParticleSubSystem*>* out) {
-        auto it = scene.runtimeParticleSubsystemsByObjectId.find(object_id);
-        if (it == scene.runtimeParticleSubsystemsByObjectId.end()) return;
+        auto it = scene.objectRuntimeParticleSubsystems.find(object_id);
+        if (it == scene.objectRuntimeParticleSubsystems.end()) return;
         out->insert(out->end(), it->second.begin(), it->second.end());
     };
 
@@ -122,8 +122,8 @@ std::vector<ParticleSubSystem*> ResolveParticleTargets(Scene& scene, std::string
         return result;
     }
 
-    auto name_it = scene.runtimeParticleObjectIdsByName.find(std::string(target));
-    if (name_it == scene.runtimeParticleObjectIdsByName.end()) return result;
+    auto name_it = scene.layerNameToId.find(std::string(target));
+    if (name_it == scene.layerNameToId.end()) return result;
 
     appendTargets(name_it->second, &result);
     return result;
@@ -354,7 +354,7 @@ private:
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
 #if WP_ENABLE_SCENESCRIPT_RUNTIME
-            m_scene->scriptHost = std::make_shared<WPSceneScriptHost>(m_scene.get());
+            m_scene->scriptHost = std::make_unique<WPSceneScriptHost>(m_scene.get());
             for (const auto& registration : m_scene->bindingRegistrations) {
                 m_scene->scriptHost->RegisterPropertyBinding(registration);
             }

@@ -135,7 +135,7 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     auto& scene  = *extra.scene;
 
     auto loadEffect = [node, &rgraph, &scene, &extra](SceneImageEffectLayer* effs) {
-        effs->ResolveEffect(scene.default_effect_mesh, "effect");
+        effs->ResolveEffect(scene.default_effect_mesh, "effect", {}, SpecTex_Default);
 
         for (usize i = 0; i < effs->EffectCount(); i++) {
             auto& eff     = effs->GetEffect(i);
@@ -164,15 +164,6 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                 [eff = eff.get()] {
                     return ! eff->LocalVisible();
                 });
-            if (! eff->FinalBypassTarget().empty() && eff->FinalBypassTarget() != eff->BypassTarget()) {
-                rg::addCopyPass(
-                    rgraph,
-                    rg::createTexDesc(eff->BypassSource(), &scene),
-                    rg::createTexDesc(eff->FinalBypassTarget(), &scene),
-                    [eff = eff.get()] {
-                        return ! eff->LocalVisible();
-                    });
-            }
         }
 
         if (effs->HasFinalComposite()) {
@@ -286,18 +277,17 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
             pdesc.node       = node;
             pdesc.output     = output;
             if (effect_node != nullptr) {
-                pdesc.cameraOverride = effect_node->camera_override;
-                pdesc.clearBeforeDraw = effect_node->clear_before_draw;
-                pdesc.forceAlphaWrite = effect_node->force_alpha_write;
-                pdesc.premultipliedSourceBlend = effect_node->premultiplied_source_blend;
+                pdesc.camera_override = effect_node->camera_override;
+                pdesc.clear_before_draw = effect_node->clear_before_draw;
+                pdesc.force_alpha_write = effect_node->force_alpha_write;
                 pdesc.should_execute = [effect_owner] {
                     return effect_owner == nullptr || effect_owner->LocalVisible();
                 };
             } else {
-                pdesc.cameraOverride           = camera_override;
-                pdesc.clearBeforeDraw          = clear_before_draw;
-                pdesc.forceAlphaWrite          = force_alpha_write;
-                pdesc.premultipliedSourceBlend = premultiplied_source_blend;
+                pdesc.camera_override           = camera_override;
+                pdesc.clear_before_draw          = clear_before_draw;
+                pdesc.force_alpha_write          = force_alpha_write;
+                pdesc.premultiplied_source_blend = premultiplied_source_blend;
             }
             CheckAndSetSprite(scene, pdesc, material->textures);
             for (usize i = 0; i < material->textures.size(); i++) {
