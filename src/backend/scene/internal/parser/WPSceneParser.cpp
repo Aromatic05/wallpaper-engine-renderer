@@ -1551,6 +1551,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
 
     nlohmann::json json;
     if (! PARSE_JSON(buf, json)) return nullptr;
+
+    ScopedJsonUserProperties json_user_scope(user_properties);
     wpscene::WPScene sc;
     sc.FromJson(json);
     //	LOG_INFO(nlohmann::json(sc).dump(4));

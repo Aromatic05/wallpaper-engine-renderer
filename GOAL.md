@@ -184,10 +184,15 @@ Planned commit:
      `usershadervalues` as `MaterialUniform` bindings after each effect material is attached,
      so live project user-property updates reach effect shader uniforms instead of only the
      image-layer base material.
+   - `feat(scene): apply user properties during json parsing` adds the parser-wide JSON
+     user-property override scope used while `wpscene::WPScene::FromJson` reads authored
+     scene fields, including scalar, vector, fixed-array, string, bool, and condition-gated
+     `user` bindings.
    Remaining:
    - Dynamic parser/materialization still needs to pass user properties through the same material
      loading path used by the static parser.
-   - Parser-wide JSON user-property override scope and `text_render_scale` consumption are not
+   - Parser-time SceneScript value evaluation, animated `startpaused` initial value handling,
+     root/canvas context for script evaluation, and `text_render_scale` consumption are not
      fully aligned with the reference parser yet.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and

@@ -4,6 +4,7 @@
 #include <string_view>
 #include <type_traits>
 
+#include "settings/WPUserProperties.hpp"
 #include "utils/Logging.h"
 
 #define GET_JSON_VALUE(json, value) \
@@ -39,4 +40,16 @@ GetJsonValue(const char* file, const char* func, int line, const nlohmann::json&
 
 bool ParseJson(const char* file, const char* func, int line, const std::string& source,
                nlohmann::json& result);
+
+class ScopedJsonUserProperties {
+public:
+    explicit ScopedJsonUserProperties(const UserPropertyMap* properties);
+    ~ScopedJsonUserProperties();
+
+    ScopedJsonUserProperties(const ScopedJsonUserProperties&) = delete;
+    ScopedJsonUserProperties& operator=(const ScopedJsonUserProperties&) = delete;
+
+private:
+    const UserPropertyMap* m_previous { nullptr };
+};
 } // namespace wallpaper
