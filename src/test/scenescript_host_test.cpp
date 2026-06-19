@@ -282,6 +282,44 @@ int main() {
         Scene scene;
         scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
         scene.vfs = std::make_unique<wallpaper::fs::VFS>();
+        auto plain_node = MakeLayerNode(33, "Plain");
+        auto deferred_node = MakeLayerNode(34, "Deferred");
+        scene.sceneGraph->AppendChild(plain_node);
+        scene.sceneGraph->AppendChild(deferred_node);
+        RegisterLayer(scene, 33, plain_node, R"({"id":33,"name":"Plain"})");
+        RegisterLayer(scene, 34, deferred_node, R"({"id":34,"name":"Deferred"})");
+        scene.deferredRuntimeImageLayerIds.insert(34);
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(33,
+                                             "Plain",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = plain_node.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                const plain = thisScene.getLayer('Plain');
+                const deferred = thisScene.getLayer('Deferred');
+                if (plain.getTextureAnimation() !== undefined) return 0;
+                const animation = deferred.getTextureAnimation();
+                if (!animation || animation.isPlaying() || animation.frameCount !== 0) return 0;
+                thisScene.createLayer({ name: 'TextureAnimationProbeOk', visible: true });
+                return value;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        assert(scene.layerNameToId.count("TextureAnimationProbeOk") == 1);
+    }
+
+    {
+        Scene scene;
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        scene.vfs = std::make_unique<wallpaper::fs::VFS>();
 
         auto root_node = MakeLayerNode(40, "Root");
         scene.sceneGraph->AppendChild(root_node);
