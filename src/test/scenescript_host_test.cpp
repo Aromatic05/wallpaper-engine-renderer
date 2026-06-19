@@ -11,6 +11,8 @@
 #include "backend/scene/internal/scene/include/scene/SceneMesh.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
+#include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
+#include "common/fs/include/fs/VFS.h"
 
 namespace
 {
@@ -244,6 +246,55 @@ int main() {
         layer_host.FrameBegin(0.1);
 
         assert(scene.layerNameToId.count("Front") == 0);
+        assert(scene.renderGraphTopologyDirty);
+    }
+
+    {
+        Scene scene;
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        scene.vfs = std::make_unique<wallpaper::fs::VFS>();
+
+        auto root_node = MakeLayerNode(40, "Root");
+        scene.sceneGraph->AppendChild(root_node);
+        RegisterLayer(scene, 40, root_node, R"({"id":40,"name":"Root"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(40,
+                                             "Root",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = root_node.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                const created = thisScene.createLayer({
+                    name: 'DynamicEmpty',
+                    origin: [4, 5, 0],
+                    scale: [1, 1, 1],
+                    angles: [0, 0, 0],
+                    parent: 'Root',
+                    visible: true
+                });
+                if (!created) return 0;
+                return thisScene.getInitialLayerConfig(created).name === 'DynamicEmpty' ? value : 0;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        const auto created_it = scene.layerNameToId.find("DynamicEmpty");
+        assert(created_it != scene.layerNameToId.end());
+        const int32_t created_id = created_it->second;
+        assert(created_id > 0);
+        assert(scene.layerNodes.count(created_id) == 1);
+        assert(scene.layerNodes.at(created_id) != nullptr);
+        assert(scene.layerNodes.at(created_id)->Name() == "DynamicEmpty");
+        assert(scene.objectRuntimeNodes.count(created_id) == 1);
+        assert(scene.initialLayerConfigJson.count(created_id) == 1);
+        assert(scene.GetLayerParentBinding(created_id).parent_id == 40);
+        assert(scene.IsLayerVisible(created_id));
         assert(scene.renderGraphTopologyDirty);
     }
 
