@@ -16,12 +16,6 @@ namespace wallpaper
 
 class Image;
 
-enum class VideoTexturePlaybackState {
-    Playing,
-    Paused,
-    Stopped,
-};
-
 namespace vulkan
 {
 

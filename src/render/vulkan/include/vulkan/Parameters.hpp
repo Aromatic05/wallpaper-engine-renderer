@@ -2,6 +2,7 @@
 
 #include "Instance.hpp"
 #include "Swapchain.hpp"
+#include "wallpaper/swapchain/ExSwapchain.hpp"
 #include "core/NoCopyMove.hpp"
 #include "vk_mem_alloc.h"
 #include "vvk/vma_wrapper.hpp"
@@ -57,7 +58,13 @@ struct ExImageParameters : NoCopy {
     vvk::Sampler   sampler;
     VkExtent3D     extent;
     uint           mipmap_level { 1 };
-    int            fd { 0 };
+    int            fd { -1 };
+    ExternalFrameHandleType          handle_type { ExternalFrameHandleType::NONE };
+    uint32_t                         drm_fourcc { 0 };
+    uint64_t                         drm_modifier { ExHandle::INVALID_DRM_MODIFIER };
+    uint32_t                         n_planes { 0 };
+    bool                             premultiplied { false };
+    std::array<ExPlane, ExHandle::MAX_PLANES> planes {};
 
     ExImageParameters();
     ~ExImageParameters();

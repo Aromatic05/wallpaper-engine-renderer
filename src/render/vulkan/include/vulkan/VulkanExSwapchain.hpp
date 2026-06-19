@@ -3,6 +3,7 @@
 #include "output/swapchain/ExSwapchain.hpp"
 #include "Device.hpp"
 #include <cstdio>
+#include <span>
 
 namespace wallpaper
 {
@@ -37,10 +38,16 @@ public:
         for (auto& h : m_handles) {
             auto& handle  = h.handle;
             handle        = ExHandle(index++);
+            handle.handle_type = h.image.handle_type;
             handle.width  = (i32)h.image.extent.width;
             handle.height = (i32)h.image.extent.height;
             handle.fd     = h.image.fd;
             handle.size   = h.image.mem_reqs.size;
+            handle.drm_fourcc = h.image.drm_fourcc;
+            handle.drm_modifier = h.image.drm_modifier;
+            handle.n_planes = h.image.n_planes;
+            handle.premultiplied = h.image.premultiplied;
+            handle.planes = h.image.planes;
         }
         m_presented  = &m_handles[0].handle;
         m_ready      = &m_handles[1].handle;
@@ -72,11 +79,23 @@ private:
     VkExtent2D                    m_extent;
 };
 
-inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device, uint w, uint h,
-                                                            VkImageTiling tiling) {
+inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device,
+                                                            uint          w,
+                                                            uint          h,
+                                                            VkImageTiling tiling,
+                                                            ExternalFrameExportMode export_mode,
+                                                            uint32_t export_drm_fourcc = 0,
+                                                            std::span<const uint64_t> export_drm_modifiers = {}) {
     std::array<VulkanExHandle, 3> handles;
     for (auto& handle : handles) {
-        if (auto rv = device.tex_cache().CreateExTex(w, h, VK_FORMAT_R8G8B8A8_UNORM, tiling);
+        if (auto rv = device.tex_cache().CreateExTex(
+                w,
+                h,
+                VK_FORMAT_R8G8B8A8_UNORM,
+                tiling,
+                export_mode,
+                export_drm_fourcc,
+                export_drm_modifiers);
             rv.has_value())
             handle.image = std::move(rv.value());
         else
