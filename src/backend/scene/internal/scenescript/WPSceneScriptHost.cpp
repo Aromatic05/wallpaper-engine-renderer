@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "audio/SoundManager.h"
 #include "scene/Scene.h"
 #include "scene/SceneMaterial.h"
 #include "scene/SceneMesh.h"
@@ -249,14 +250,31 @@ void ApplyMaterialUniformValue(const WPSceneScriptRegistration& registration,
     registration.node->Mesh()->SetDirty();
 }
 
+bool ApplySoundPropertyValue(Scene* scene, const WPSceneScriptRegistration& registration,
+                             const WPDynamicValue& resolved) {
+    if (scene == nullptr || scene->soundManager == nullptr ||
+        registration.property_name != "volume") {
+        return false;
+    }
+    const auto handle_it = scene->objectRuntimeSoundHandles.find(registration.object_id);
+    if (handle_it == scene->objectRuntimeSoundHandles.end()) return false;
+
+    float volume = 0.0f;
+    if (! resolved.tryGet(&volume)) return false;
+    return scene->soundManager->SetStreamVolume(handle_it->second, volume);
+}
+
 void ApplyResolvedRegistrationValue(const WPSceneScriptRegistration& registration,
-                                    const WPDynamicValue& resolved) {
+                                    const WPDynamicValue& resolved,
+                                    Scene* scene) {
     switch (registration.target_kind) {
     case WPSceneScriptTargetKind::MaterialUniform:
         ApplyMaterialUniformValue(registration, resolved);
         break;
-    case WPSceneScriptTargetKind::Scene:
     case WPSceneScriptTargetKind::Sound:
+        (void)ApplySoundPropertyValue(scene, registration, resolved);
+        break;
+    case WPSceneScriptTargetKind::Scene:
     case WPSceneScriptTargetKind::Camera:
     case WPSceneScriptTargetKind::Layer:
     case WPSceneScriptTargetKind::AnimationLayer:
@@ -398,6 +416,13 @@ void ApplyLayerEvents(Scene& scene, const UserPropertyMap* user_properties,
                           event.initial_config_json.c_str());
             }
         } else if (event.method == "destroy") {
+            if (const auto sound_it = scene.objectRuntimeSoundHandles.find(event.layer_id);
+                sound_it != scene.objectRuntimeSoundHandles.end()) {
+                if (scene.soundManager != nullptr) {
+                    scene.soundManager->UnmountStream(sound_it->second);
+                }
+                scene.objectRuntimeSoundHandles.erase(sound_it);
+            }
             scene.DestroyLayer(event.layer_id);
         } else if (event.method == "sort") {
             scene.SortLayer(event.layer_id, event.target_index);
@@ -548,7 +573,7 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
                 : registration.value_type;
             const auto resolved = ToDynamicValue(*evaluated, value_type);
             resolved_values[key] = resolved;
-            ApplyResolvedRegistrationValue(registration, resolved);
+            ApplyResolvedRegistrationValue(registration, resolved, scene);
         }
     }
     dispatch_media_thumbnail = false;
@@ -583,7 +608,7 @@ bool WPSceneScriptHost::RegisterPropertyBinding(WPSceneScriptRegistration regist
     if (m_impl->initialized) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
-        ApplyResolvedRegistrationValue(registration, resolved);
+        ApplyResolvedRegistrationValue(registration, resolved, m_scene);
     }
 
     m_impl->binding_registrations.push_back(std::move(registration));
@@ -598,7 +623,7 @@ bool WPSceneScriptHost::RegisterPropertyScript(WPSceneScriptRegistration registr
     if (m_impl->initialized) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
-        ApplyResolvedRegistrationValue(registration, resolved);
+        ApplyResolvedRegistrationValue(registration, resolved, m_scene);
     }
 
     m_impl->script_registrations.push_back(std::move(registration));
@@ -620,7 +645,7 @@ bool WPSceneScriptHost::RegisterPropertyAnimation(WPSceneScriptRegistration regi
         InitializeAnimationInstance(instance);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
-        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value, m_scene);
     }
 
     const std::string key =
@@ -647,19 +672,19 @@ void WPSceneScriptHost::Initialize() {
         InitializeAnimationInstance(instance);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
-        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value, m_scene);
     }
 
     for (const auto& registration : m_impl->binding_registrations) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
-        ApplyResolvedRegistrationValue(registration, resolved);
+        ApplyResolvedRegistrationValue(registration, resolved, m_scene);
     }
 
     for (const auto& registration : m_impl->script_registrations) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
-        ApplyResolvedRegistrationValue(registration, resolved);
+        ApplyResolvedRegistrationValue(registration, resolved, m_scene);
     }
 
     m_impl->initialized = true;
@@ -736,7 +761,7 @@ void WPSceneScriptHost::ApplyUserProperties(const UserPropertyMap& user_properti
 
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
-        ApplyResolvedRegistrationValue(registration, resolved);
+        ApplyResolvedRegistrationValue(registration, resolved, m_scene);
     };
 
     for (auto& registration : m_impl->binding_registrations) {
@@ -756,7 +781,7 @@ void WPSceneScriptHost::ApplyUserProperties(const UserPropertyMap& user_properti
             instance.registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
-        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value, m_scene);
     }
 
     if (!initial_dispatch || m_impl->user_property_dispatch_count == 0) {

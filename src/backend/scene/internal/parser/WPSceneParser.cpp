@@ -719,7 +719,10 @@ void RegisterLayerSceneScriptProperty(ParseContext& context, const nlohmann::jso
     if (! GetObjectIdAndName(object_json, &object_id, &object_name)) return;
 
     const auto node_it = context.object_nodes.find(object_id);
-    if (node_it == context.object_nodes.end()) return;
+    const bool sound_volume_binding =
+        property_name == "volume" && context.scene != nullptr &&
+        context.scene->objectRuntimeSoundHandles.count(object_id) != 0;
+    if (node_it == context.object_nodes.end() && ! sound_volume_binding) return;
 
     const auto& property_json = object_json.at(property_name);
     WPUserSetting setting;
@@ -729,8 +732,9 @@ void RegisterLayerSceneScriptProperty(ParseContext& context, const nlohmann::jso
         .object_id     = object_id,
         .object_name   = std::move(object_name),
         .property_name = std::string(property_name),
-        .node          = node_it->second.get(),
-        .target_kind   = WPSceneScriptTargetKind::Layer,
+        .node          = node_it == context.object_nodes.end() ? nullptr : node_it->second.get(),
+        .target_kind   = sound_volume_binding ? WPSceneScriptTargetKind::Sound
+                                               : WPSceneScriptTargetKind::Layer,
         .target_index  = 0,
         .value_type    = hint,
         .base_value    = ParsePropertyBaseValue(property_json, hint).value_or(setting.value),
@@ -1675,6 +1679,24 @@ bool ParseDynamicSceneObject(ParseContext& context, nlohmann::json& object_json,
         return context.object_nodes.count(object.id) != 0;
     }
 
+    if (object_json.contains("sound") && ! object_json.at("sound").is_null()) {
+        wpscene::WPSoundObject object;
+        if (! object.FromJson(object_json, *context.vfs)) return false;
+        object.id = object_id;
+        if (object.name.empty()) object.name = object_name;
+        if (context.scene->soundManager == nullptr) return false;
+        const auto sound_handle =
+            WPSoundParser::Parse(object, *context.vfs, *context.scene->soundManager);
+        if (sound_handle == 0) return false;
+        context.scene->objectRuntimeSoundHandles[object.id] = sound_handle;
+        context.scene->RegisterLayer(
+            object.id, object.name, nullptr, MakeLayerInitialConfig(context, object.id, object.name));
+        context.scene->SetLayerLocalVisibility(object.id, object.visible);
+        context.scene->ApplyLayerVisibility(object.id);
+        if (out_layer_id != nullptr) *out_layer_id = object.id;
+        return true;
+    }
+
     return false;
 }
 } // namespace
@@ -1827,6 +1849,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
     }
 
     InitContext(context, vfs, sc);
+    context.scene->soundManager = &sm;
     context.scene->textRenderScale = std::max(1.0, text_render_scale);
     context.scene->userProperties = user_properties == nullptr ? UserPropertyMap {} : *user_properties;
     ParseCamera(context, sc.general);
@@ -1871,7 +1894,14 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
                            ParseParticleObj(context, obj);
                        },
                        [&context, &sm](wpscene::WPSoundObject& obj) {
-                           WPSoundParser::Parse(obj, *context.vfs, sm);
+                           const auto sound_handle = WPSoundParser::Parse(obj, *context.vfs, sm);
+                           if (sound_handle != 0) {
+                               context.scene->objectRuntimeSoundHandles[obj.id] = sound_handle;
+                               context.scene->RegisterLayer(
+                                   obj.id, obj.name, nullptr, MakeLayerInitialConfig(context, obj.id, obj.name));
+                               context.scene->SetLayerLocalVisibility(obj.id, obj.visible);
+                               context.scene->ApplyLayerVisibility(obj.id);
+                           }
                        },
                        [&context](wpscene::WPLightObject& obj) {
                            ParseLightObj(context, obj);

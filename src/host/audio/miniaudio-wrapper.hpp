@@ -64,6 +64,10 @@ public:
         return result == MA_SUCCESS ? readed : 0;
     }
     bool IsInited() { return m_inited; }
+    void Reset() {
+        if (! m_inited) return;
+        ma_decoder_seek_to_pcm_frame(&m_decoder, 0);
+    }
 
 private:
     static ma_result Read(ma_decoder* pMaDecoder, void* pBufferOut, size_t bytesToRead,
@@ -89,6 +93,10 @@ public:
 
     virtual ma_uint64 NextPcmData(void* pData, ma_uint32 frameCount) = 0;
     virtual void      PassDeviceDesc(const DeviceDesc&)              = 0;
+    virtual bool      IsPlaying() const                              = 0;
+    virtual bool      IsEnded() const                                = 0;
+    virtual bool      ShouldRemove() const                           = 0;
+    virtual float     Volume() const                                 = 0;
 };
 
 class Device : NoCopy {
@@ -212,20 +220,21 @@ private:
 
             float* pOutput_float = static_cast<float*>(pOutput);
             float* pBuffer_float = reinterpret_cast<float*>(m_frameBuffer.data());
+            std::fill_n(pOutput_float, framesSize, 0.0f);
             for (ma_uint32 i = 0; i < m_channels.size(); i++) {
+                if (! m_channels[i].chn->IsPlaying()) continue;
                 ma_uint64 framesReaded =
                     m_channels[i].chn->NextPcmData(m_frameBuffer.data(), frameCount);
-                if (framesReaded == 0) {
-                    m_channels[i].end = true;
-                } else {
+                if (framesReaded != 0) {
+                    const float channel_volume = m_channels[i].chn->Volume();
                     for (size_t i = 0; i < framesSize; i++)
-                        pOutput_float[i] += m_volume * pBuffer_float[i];
+                        pOutput_float[i] += m_volume * channel_volume * pBuffer_float[i];
                 }
             }
             m_channels.erase(std::remove_if(m_channels.begin(),
                                             m_channels.end(),
                                             [](auto& c) {
-                                                return c.end;
+                                                return c.chn == nullptr || c.chn->ShouldRemove();
                                             }),
                              m_channels.end());
         }
@@ -242,7 +251,6 @@ private:
 
 private:
     struct ChannelWrap {
-        bool                     end { false };
         std::shared_ptr<Channel> chn;
     };
     ma_device         m_device {}; // must init c struct

@@ -14,6 +14,8 @@ class IBinaryStream;
 namespace audio
 {
 
+using SoundHandle = uint32_t;
+
 class SoundStream : NoCopy, NoMove {
 public:
     struct Desc {
@@ -27,6 +29,7 @@ public:
 
     virtual uint64_t NextPcmData(void* pData, uint32_t frameCount) = 0;
     virtual void     PassDesc(const Desc&)                         = 0;
+    virtual void     Reset()                                       = 0;
 };
 std::unique_ptr<SoundStream> CreateSoundStream(std::shared_ptr<fs::IBinaryStream>,
                                                const SoundStream::Desc&);
@@ -35,7 +38,14 @@ class SoundManager : NoCopy, NoMove {
 public:
     SoundManager();
     ~SoundManager();
-    void MountStream(std::unique_ptr<SoundStream>&&);
+    SoundHandle MountStream(std::unique_ptr<SoundStream>&&, float volume = 1.0f, bool autoplay = true);
+    bool        UnmountStream(SoundHandle);
+    bool        Play(SoundHandle);
+    bool        Pause(SoundHandle);
+    bool        Stop(SoundHandle);
+    bool        IsPlaying(SoundHandle) const;
+    float       StreamVolume(SoundHandle) const;
+    bool        SetStreamVolume(SoundHandle, float);
     void UnMountAll();
     void Test(std::shared_ptr<fs::IBinaryStream>);
     bool Init();

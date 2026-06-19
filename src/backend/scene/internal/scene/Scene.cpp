@@ -4,7 +4,6 @@
 #include "interface/IImageParser.h"
 #include "interface/IShaderValueUpdater.h"
 #include "particle/ParticleSystem.h"
-
 #include <algorithm>
 #include <unordered_set>
 
@@ -139,6 +138,7 @@ bool Scene::DestroyLayer(int32_t layer_id) {
     textLayers.erase(layer_id);
     textPrimitives.erase(layer_id);
     dirtyTextLayerIds.erase(layer_id);
+    objectRuntimeSoundHandles.erase(layer_id);
     runtimeParticleSubsystemsByObjectId.erase(layer_id);
     for (auto it = runtimeParticleObjectIdsByName.begin(); it != runtimeParticleObjectIdsByName.end();) {
         if (it->second == layer_id) {

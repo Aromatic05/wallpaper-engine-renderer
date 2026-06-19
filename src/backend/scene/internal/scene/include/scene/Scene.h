@@ -27,6 +27,11 @@ namespace fs
 {
 class VFS;
 }
+namespace audio
+{
+class SoundManager;
+using SoundHandle = uint32_t;
+}
 class Scene : NoCopy, NoMove {
 public:
     struct LayerParentBinding {
@@ -78,6 +83,8 @@ public:
 
     std::unordered_map<int32_t, std::vector<ParticleSubSystem*>> runtimeParticleSubsystemsByObjectId;
     std::unordered_map<std::string, int32_t>                     runtimeParticleObjectIdsByName;
+    std::unordered_map<int32_t, audio::SoundHandle>              objectRuntimeSoundHandles;
+    audio::SoundManager*                                         soundManager { nullptr };
 
     SceneMesh default_effect_mesh;
 

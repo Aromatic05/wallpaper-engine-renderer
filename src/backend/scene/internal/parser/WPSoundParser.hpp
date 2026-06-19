@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audio/SoundManager.h"
+
 namespace wallpaper 
 {
 
@@ -8,6 +10,6 @@ namespace fs { class VFS; }
 namespace wpscene { class WPSoundObject; }
 class WPSoundParser {
 public:
-	static void Parse(const wpscene::WPSoundObject&, fs::VFS&, audio::SoundManager&);
+	static audio::SoundHandle Parse(const wpscene::WPSoundObject&, fs::VFS&, audio::SoundManager&);
 };
 }

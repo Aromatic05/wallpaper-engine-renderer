@@ -234,13 +234,21 @@ Planned commit:
      JSON as the layer initial config instead of the earlier `{id,name}` compatibility shell, so
      SceneScript layer enumeration and `getInitialLayerConfig` see the same config shape that
      dynamic materialization consumes.
+   - `feat(scene): port sound layer runtime handles` gives sound layers real runtime residency in
+     `Scene`: `SoundManager::MountStream` returns per-stream handles, streams can be unmounted and
+     controlled independently, `WPSoundParser` registers authored/dynamic sound layers by handle,
+     `Scene::DestroyLayer` unloads the matching sound stream, SceneScript-created sound configs are
+     materialized instead of rejected, and live `volume` bindings write through to the mounted
+     channel.
    Remaining:
    - Dynamic parser/materialization now receives the active user-property map for supported
-     image/particle/text/light configs, but still needs the full reference root-scoped scene JSON
-     context for dynamic configs whose script expressions depend on broader scene metadata.
+     image/particle/text/light/sound configs, but still needs the full reference root-scoped scene
+     JSON context for dynamic configs whose script expressions depend on broader scene metadata.
+   - Sound random playback now avoids immediate repeats, but the reference min/max random ambient
+     delay scheduling still needs to be migrated.
    - Full reference parser visibility contracts, dependency-aware lazy materialization,
      deferred image/particle materialization, model layers, shape/direct-draw layers, and dynamic
-     `CreateDynamicSceneLayer` object construction for sound, shape/direct-draw, model, and empty
+     `CreateDynamicSceneLayer` object construction for shape/direct-draw, model, and empty
      layers remain separate parity gaps; they are not hidden behind the parser-time JSON value
      migration above.
    Acceptance:
