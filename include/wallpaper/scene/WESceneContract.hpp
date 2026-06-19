@@ -19,4 +19,5 @@ constexpr std::string_view WE_SCENE_PROPERTY_CACHE_PATH           = "cache_path"
 constexpr std::string_view WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK = "first_frame_callback";
 constexpr std::string_view WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES = "load_user_properties";
 constexpr std::string_view WE_SCENE_PROPERTY_USER_PROPERTIES      = "user_properties";
+constexpr std::string_view WE_SCENE_PROPERTY_AUDIO_SAMPLES        = "audio_samples";
 } // namespace wallpaper

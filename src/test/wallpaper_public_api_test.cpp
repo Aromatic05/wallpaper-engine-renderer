@@ -66,6 +66,7 @@ int main() {
     auto session = runtime->createSession(config);
     static_assert(wallpaper::WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES == "load_user_properties");
     static_assert(wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES == "user_properties");
+    static_assert(wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES == "audio_samples");
     (void)source;
     (void)session;
     return 0;

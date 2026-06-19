@@ -213,6 +213,7 @@ public:
     void sendCmdLoadScene();
     void sendFirstFrameOk();
     bool isGenGraphviz() const { return m_gen_graphviz; }
+    const auto& audioSamples() const { return m_audio_samples; }
 
 private:
     void loadScene();
@@ -237,6 +238,7 @@ private:
     std::unique_ptr<audio::SoundManager> m_sound_manager;
     FirstFrameCallback                   m_first_frame_callback;
     UserPropertyMap                      m_user_properties;
+    std::shared_ptr<std::vector<float>>  m_audio_samples;
 
 private:
     std::shared_ptr<looper::Looper> m_main_loop;
@@ -255,6 +257,7 @@ public:
         CMD_SET_FILLMODE,
         CMD_SET_SPEED,
         CMD_APPLY_USER_PROPERTIES,
+        CMD_APPLY_AUDIO_SAMPLES,
         CMD_STOP,
         CMD_DRAW,
         CMD_NO
@@ -283,6 +286,7 @@ public:
                 CASE_CMD(SET_SCENE);
                 CASE_CMD(SET_SPEED);
                 CASE_CMD(APPLY_USER_PROPERTIES);
+                CASE_CMD(APPLY_AUDIO_SAMPLES);
                 CASE_CMD(INIT_VULKAN);
             default: break;
             }
@@ -380,6 +384,9 @@ private:
                 m_scene->scriptHost->RegisterPropertyScript(registration);
             }
             m_scene->scriptHost->Initialize();
+            if (main_handler.audioSamples()) {
+                m_scene->scriptHost->ApplyAudioSamples(*main_handler.audioSamples());
+            }
             m_scene->scriptHost->MaterializeDeferredRuntimeLayersForResidency();
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
@@ -396,6 +403,14 @@ private:
         }
     }
     MHANDLER_CMD(SET_SPEED) { msg->findFloat("value", &m_speed); }
+    MHANDLER_CMD(APPLY_AUDIO_SAMPLES) {
+        std::shared_ptr<std::vector<float>> audio_samples;
+        if (! msg->findObject("value", &audio_samples) || ! m_scene || ! m_scene->scriptHost ||
+            ! audio_samples)
+            return;
+
+        m_scene->scriptHost->ApplyAudioSamples(*audio_samples);
+    }
     MHANDLER_CMD(APPLY_USER_PROPERTIES) {
         std::shared_ptr<UserPropertyMap> user_properties;
         if (! msg->findObject("value", &user_properties) || ! user_properties || ! m_scene) return;
@@ -571,6 +586,12 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             auto nmsg =
                 CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_USER_PROPERTIES);
             nmsg->setObject("value", std::make_shared<UserPropertyMap>(m_user_properties));
+            nmsg->post();
+        } else if (property == PROPERTY_AUDIO_SAMPLES) {
+            msg->findObject("value", &m_audio_samples);
+            auto nmsg =
+                CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_AUDIO_SAMPLES);
+            nmsg->setObject("value", m_audio_samples);
             nmsg->post();
         } else if (property == PROPERTY_SPEED) {
             float speed { 1.0f };

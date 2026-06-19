@@ -28,6 +28,7 @@ constexpr std::string_view PROPERTY_CACHE_PATH           = WE_SCENE_PROPERTY_CAC
 constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
 constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES = WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES;
 constexpr std::string_view PROPERTY_USER_PROPERTIES      = WE_SCENE_PROPERTY_USER_PROPERTIES;
+constexpr std::string_view PROPERTY_AUDIO_SAMPLES        = WE_SCENE_PROPERTY_AUDIO_SAMPLES;
 
 #include "core/NoCopyMove.hpp"
 class MainHandler;
