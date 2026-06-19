@@ -1,6 +1,60 @@
 #include "WPMaterial.h"
+#include "WPPropertyAnimation.hpp"
 
 using namespace wallpaper::wpscene;
+
+namespace
+{
+
+wallpaper::WPDynamicValue::Type ShaderValueTypeForConstantVector(const std::vector<float>& value) {
+    switch (value.size()) {
+        case 1:
+            return wallpaper::WPDynamicValue::Type::Float;
+        case 2:
+            return wallpaper::WPDynamicValue::Type::Float2;
+        case 3:
+            return wallpaper::WPDynamicValue::Type::Float3;
+        case 4:
+            return wallpaper::WPDynamicValue::Type::Float4;
+        default:
+            return wallpaper::WPDynamicValue::Type::FloatVector;
+    }
+}
+
+void StoreDynamicConstantShaderValue(
+    std::unordered_map<std::string, WPConstantShaderValueBinding>& bindings,
+    const std::string&                                             name,
+    const nlohmann::json&                                          value_json,
+    const std::vector<float>&                                      resolved_value) {
+    if (! value_json.is_object()) return;
+
+    const auto value_type = ShaderValueTypeForConstantVector(resolved_value);
+
+    wallpaper::WPUserSetting setting;
+    if (! wallpaper::ParseUserSetting(value_json, setting, value_type)) {
+        return;
+    }
+
+    wallpaper::WPPropertyAnimationDefinition animation_definition;
+    const bool has_animation =
+        wallpaper::ParsePropertyAnimationDefinition(value_json, value_type, animation_definition);
+    if (! setting.hasUserBinding() && ! setting.hasScript() && ! has_animation) return;
+
+    // Constant shader values can be authored as plain numbers, arrays, user bindings, or scripts.
+    // The resolved numeric value is already stored in `constantshadervalues`; keeping this sidecar
+    // binding records the live runtime contract that would otherwise disappear after parse. That
+    // includes property animations because media-thumbnail transition scripts call
+    // thisObject.getAnimation().play() on the same material-uniform proxy.
+    WPConstantShaderValueBinding binding;
+    binding.setting = std::move(setting);
+    if (has_animation) {
+        binding.animation =
+            std::make_shared<wallpaper::WPPropertyAnimationDefinition>(std::move(animation_definition));
+    }
+    bindings[name] = std::move(binding);
+}
+
+} // namespace
 
 bool WPMaterialPassBindItem::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE(json, "name", name);
@@ -20,6 +74,7 @@ bool WPUserTextureBinding::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE_NOWARN(json, "type", type);
     return ! name.empty();
 }
+
 
 void WPMaterialPass::Update(const WPMaterialPass& p) {
     int32_t i = -1;
@@ -42,6 +97,9 @@ void WPMaterialPass::Update(const WPMaterialPass& p) {
     }
     for(const auto& el:p.constantshadervalues) {
         constantshadervalues[el.first] = el.second;
+    }
+    for (const auto& el : p.constantshadervaluebindings) {
+        constantshadervaluebindings[el.first] = el.second;
     }
     for(const auto& el:p.usershadervalues) {
         usershadervalues[el.first] = el.second;
@@ -73,6 +131,9 @@ void WPMaterial::MergePass(const WPMaterialPass& p) {
     for(const auto& el:p.constantshadervalues) {
         constantshadervalues[el.first] = el.second;
     }
+    for (const auto& el : p.constantshadervaluebindings) {
+        constantshadervaluebindings[el.first] = el.second;
+    }
     for(const auto& el:p.usershadervalues) {
         usershadervalues[el.first] = el.second;
     }
@@ -90,10 +151,10 @@ bool WPMaterialPass::FromJson(const nlohmann::json& json) {
             textures.push_back(tex);
         }
     }
-    if(json.contains("usertextures")) {
-        for(const auto& jT:json.at("usertextures")) {
+    if (json.contains("usertextures")) {
+        for (const auto& jT : json.at("usertextures")) {
             WPUserTextureBinding binding;
-            if(!jT.is_null())
+            if (! jT.is_null())
                 binding.FromJson(jT);
             usertextures.push_back(binding);
         }
@@ -105,6 +166,8 @@ bool WPMaterialPass::FromJson(const nlohmann::json& json) {
             GET_JSON_VALUE(jC.key(), name);
             GET_JSON_VALUE(jC.value(), value);
             constantshadervalues[name] = value;
+            StoreDynamicConstantShaderValue(
+                constantshadervaluebindings, name, jC.value(), value);
         }
     }
     if(json.contains("usershadervalues")) {
@@ -146,6 +209,10 @@ bool WPMaterial::FromJson(const nlohmann::json& json) {
         LOG_ERROR("material no shader");
         return false;
     }
+    blendingAuthored = jContent.contains("blending");
+    cullmodeAuthored = jContent.contains("cullmode");
+    depthtestAuthored = jContent.contains("depthtest");
+    depthwriteAuthored = jContent.contains("depthwrite");
 	GET_JSON_NAME_VALUE(jContent, "blending", blending);
 	GET_JSON_NAME_VALUE(jContent, "cullmode", cullmode);
 	GET_JSON_NAME_VALUE(jContent, "depthtest", depthtest);
@@ -159,10 +226,10 @@ bool WPMaterial::FromJson(const nlohmann::json& json) {
             textures.push_back(tex);
         }
     }
-    if(jContent.contains("usertextures")) {
-        for(const auto& jT:jContent.at("usertextures")) {
+    if (jContent.contains("usertextures")) {
+        for (const auto& jT : jContent.at("usertextures")) {
             WPUserTextureBinding binding;
-            if(!jT.is_null())
+            if (! jT.is_null())
                 binding.FromJson(jT);
             usertextures.push_back(binding);
         }
@@ -174,6 +241,8 @@ bool WPMaterial::FromJson(const nlohmann::json& json) {
             GET_JSON_VALUE(jC.key(), name);
             GET_JSON_VALUE(jC.value(), value);
             constantshadervalues[name] = value;
+            StoreDynamicConstantShaderValue(
+                constantshadervaluebindings, name, jC.value(), value);
         }
     }
     if(jContent.contains("usershadervalues")) {

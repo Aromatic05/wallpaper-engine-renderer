@@ -4,7 +4,32 @@
 #include "fs/VFS.h"
 #include "core/StringHelper.hpp"
 
+#include <string>
+
 using namespace wallpaper::wpscene;
+
+namespace
+{
+
+void ReadVisibleBinding(const nlohmann::json& json, wallpaper::VisibleBinding* binding) {
+    if (! json.is_object()) return;
+
+    GET_JSON_NAME_VALUE_NOWARN(json, "value", binding->value);
+    if (! json.contains("user") || json.at("user").is_null()) return;
+
+    const auto& user = json.at("user");
+    if (user.is_string()) {
+        GET_JSON_VALUE(user, binding->user.name);
+        return;
+    }
+
+    if (! user.is_object()) return;
+
+    GET_JSON_NAME_VALUE_NOWARN(user, "name", binding->user.name);
+    GET_JSON_NAME_VALUE_NOWARN(user, "condition", binding->user.condition);
+}
+
+} // namespace
 
 bool ParticleChild::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
     GET_JSON_NAME_VALUE(json, "name", name);
@@ -71,8 +96,9 @@ bool Emitter::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE_NOWARN(json, "audioprocessingmode", audioprocessingmode);
     GET_JSON_NAME_VALUE_NOWARN(json, "controlpoint", controlpoint);
 
-    if (controlpoint >= 8) LOG_ERROR("wrong controlpoint %d", controlpoint);
-    controlpoint = controlpoint % 8; // limited to 0-7
+    if (controlpoint >= static_cast<i32>(kParticleControlpointSlotCount))
+        LOG_ERROR("wrong controlpoint %d", controlpoint);
+    controlpoint = controlpoint % static_cast<i32>(kParticleControlpointSlotCount);
 
     uint32_t _raw_flags { 0 };
     GET_JSON_NAME_VALUE_NOWARN(json, "flags", _raw_flags);
@@ -101,6 +127,18 @@ bool ParticleInstanceoverride::FromJosn(const nlohmann::json& json) {
     } else if (json.contains("colorn")) {
         GET_JSON_NAME_VALUE(json, "colorn", colorn);
         overColorn = true;
+    }
+
+    // Wallpaper Engine stores per-layer particle control point overrides as
+    // `instanceoverride.controlpointN`. Parse them into an optional table so the scene parser can
+    // merge only authored layer overrides while preserving the particle asset's default slots.
+    for (std::size_t index = 0; index < controlpointOffsets.size(); index++) {
+        const std::string key = "controlpoint" + std::to_string(index);
+        if (! json.contains(key) || json.at(key).is_null()) continue;
+
+        std::array<float, 3> offset { 0.0f, 0.0f, 0.0f };
+        GET_JSON_NAME_VALUE(json, key, offset);
+        controlpointOffsets[index] = offset;
     }
     return true;
 };
@@ -180,9 +218,12 @@ bool Particle::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
 bool WPParticleObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
     GET_JSON_NAME_VALUE(json, "particle", particle);
     GET_JSON_NAME_VALUE_NOWARN(json, "visible", visible);
+    if (json.contains("visible")) ReadVisibleBinding(json.at("visible"), &visible_binding);
 
     GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
     GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
+    GET_JSON_NAME_VALUE_NOWARN(json, "parent", parent);
+    GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
     GET_JSON_NAME_VALUE(json, "origin", origin);
     GET_JSON_NAME_VALUE(json, "angles", angles);
     GET_JSON_NAME_VALUE(json, "scale", scale);

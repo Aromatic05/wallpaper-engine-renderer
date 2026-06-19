@@ -1,5 +1,6 @@
 #pragma once
 #include "resources/WPJson.hpp"
+#include "settings/WPUserProperties.hpp"
 #include <nlohmann/json.hpp>
 #include <vector>
 #include "animation/WPPuppet.hpp"
@@ -28,6 +29,8 @@ public:
     float                radius { 1000.0f };
     float                intensity { 1.0f };
     bool                 visible { true };
+    VisibleBinding       visible_binding;
+    int32_t              parent { 0 };
 };
 
 } // namespace wpscene

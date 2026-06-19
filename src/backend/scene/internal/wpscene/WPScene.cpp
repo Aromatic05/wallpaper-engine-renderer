@@ -18,6 +18,14 @@ bool WPSceneCamera::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE(json, "center", center);
     GET_JSON_NAME_VALUE(json, "eye", eye);
     GET_JSON_NAME_VALUE(json, "up", up);
+    if (json.contains("paths") && json.at("paths").is_array()) {
+        // Camera path assets are consumed only by the 3D model camera parser. Recording the list
+        // here is inert for 2D scenes until WPSceneParser explicitly enables model camera playback.
+        paths.clear();
+        for (const auto& path : json.at("paths")) {
+            if (path.is_string()) paths.push_back(path.get<std::string>());
+        }
+    }
     return true;
 }
 
@@ -25,6 +33,16 @@ bool WPSceneGeneral::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE(json, "ambientcolor", ambientcolor);
     GET_JSON_NAME_VALUE(json, "skylightcolor", skylightcolor);
 	GET_JSON_NAME_VALUE(json, "clearcolor", clearcolor);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloom", bloom);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomstrength", bloomstrength);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomthreshold", bloomthreshold);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomtint", bloomtint);
+	GET_JSON_NAME_VALUE_NOWARN(json, "hdr", hdr);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomhdrstrength", bloomhdrstrength);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomhdrthreshold", bloomhdrthreshold);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomhdrscatter", bloomhdrscatter);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomhdrfeather", bloomhdrfeather);
+	GET_JSON_NAME_VALUE_NOWARN(json, "bloomhdriterations", bloomhdriterations);
 	GET_JSON_NAME_VALUE(json, "cameraparallax", cameraparallax);
 	GET_JSON_NAME_VALUE(json, "cameraparallaxamount", cameraparallaxamount);
 	GET_JSON_NAME_VALUE(json, "cameraparallaxdelay", cameraparallaxdelay);

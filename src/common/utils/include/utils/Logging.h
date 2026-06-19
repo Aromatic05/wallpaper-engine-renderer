@@ -28,10 +28,12 @@ static constexpr const char* past_last_slash(const char* const path, const int p
 enum
 {
     LOGLEVEL_INFO  = 0,
-    LOGLEVEL_ERROR = 1
+    LOGLEVEL_WARN  = 1,
+    LOGLEVEL_ERROR = 2
 };
 
 #define LOG_INFO(...)  WallpaperLog(LOGLEVEL_INFO, "", 0, __VA_ARGS__)
+#define LOG_WARN(...)  WallpaperLog(LOGLEVEL_WARN, __SHORT_FILE__, __LINE__, __VA_ARGS__)
 #define LOG_ERROR(...) WallpaperLog(LOGLEVEL_ERROR, __SHORT_FILE__, __LINE__, __VA_ARGS__)
 
 void WallpaperLog(int level, const char* file, int line, const char* fmt, ...);
