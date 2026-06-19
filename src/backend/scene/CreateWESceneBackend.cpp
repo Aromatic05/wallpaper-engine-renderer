@@ -1,6 +1,6 @@
 #include "backend/scene/CreateWESceneBackend.hpp"
 
-#include "backend/scene/internal/CreateScenePackageFs.hpp"
+#include "backend/scene/internal/resources/CreateScenePackageFs.hpp"
 #include "backend/scene/internal/engine/WESceneBackend.hpp"
 #include "common/fs/include/fs/Fs.h"
 #include "common/fs/include/fs/PhysicalFs.h"

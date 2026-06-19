@@ -1,4 +1,4 @@
-#include "WPSceneScriptMedia.hpp"
+#include "scenescript/WPSceneScriptMedia.hpp"
 
 #include <algorithm>
 #include <atomic>

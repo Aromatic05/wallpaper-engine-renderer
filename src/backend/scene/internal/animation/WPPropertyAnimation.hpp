@@ -8,7 +8,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "WPDynamicValue.hpp"
+#include "settings/WPDynamicValue.hpp"
 
 namespace wallpaper
 {

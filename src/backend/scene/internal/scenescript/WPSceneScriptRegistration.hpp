@@ -4,8 +4,8 @@
 #include <memory>
 #include <string>
 
-#include "WPPropertyAnimation.hpp"
-#include "WPUserSetting.hpp"
+#include "animation/WPPropertyAnimation.hpp"
+#include "settings/WPUserSetting.hpp"
 
 namespace wallpaper
 {

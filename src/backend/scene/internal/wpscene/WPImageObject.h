@@ -1,10 +1,10 @@
 #pragma once
-#include "WPJson.hpp"
+#include "resources/WPJson.hpp"
 #include <nlohmann/json.hpp>
 #include "WPMaterial.h"
 #include "wpscene/WPEffect.h"
 #include <vector>
-#include "WPPuppet.hpp"
+#include "animation/WPPuppet.hpp"
 #include <string>
 
 namespace wallpaper

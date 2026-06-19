@@ -132,6 +132,22 @@ target_compile_options(scene-parity-foundation-test PRIVATE ${warn_opts})
 add_test(NAME scene-parity-foundation-test COMMAND scene-parity-foundation-test)
 
 add_executable(
+  node-transform-resolver-test
+  node_transform_resolver_test.cpp)
+
+target_link_libraries(node-transform-resolver-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  node-transform-resolver-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include)
+target_compile_options(node-transform-resolver-test PRIVATE ${warn_opts})
+
+add_test(NAME node-transform-resolver-test COMMAND node-transform-resolver-test)
+
+add_executable(
   text-scene-model-test
   text_scene_model_test.cpp)
 

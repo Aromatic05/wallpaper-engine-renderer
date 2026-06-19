@@ -1,4 +1,4 @@
-#include "WPScriptRuntime.hpp"
+#include "scenescript/WPScriptRuntime.hpp"
 
 #include <cmath>
 #include <sstream>

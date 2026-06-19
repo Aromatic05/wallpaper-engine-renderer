@@ -2,7 +2,9 @@
 #include <list>
 #include <vector>
 #include <memory>
+#include <string>
 #include <Eigen/Dense>
+#include <Eigen/Geometry>
 #include "SceneMesh.h"
 #include "SceneCamera.h"
 
@@ -39,6 +41,8 @@ public:
 
     const auto& Translate() const { return m_translate; }
     const auto& Rotation() const { return m_rotation; }
+    const auto& Scale() const { return m_scale; }
+    const auto& AlignmentOffset() const { return m_alignmentOffset; }
     void        SetRotation(Eigen::Vector3f v) {
         m_rotation = v;
         MarkTransDirty();
@@ -51,11 +55,18 @@ public:
         m_scale = v;
         MarkTransDirty();
     }
+    void        SetAlignmentOffset(Eigen::Vector3f v) {
+        m_alignmentOffset = v;
+        MarkTransDirty();
+    }
+    void        SetLocalAffine(const Eigen::Affine3f& affine);
 
     void CopyTrans(const SceneNode& node) {
-        m_translate = node.m_translate;
-        m_scale     = node.m_scale;
-        m_rotation  = node.m_rotation;
+        m_translate       = node.m_translate;
+        m_scale           = node.m_scale;
+        m_rotation        = node.m_rotation;
+        m_alignmentOffset = node.m_alignmentOffset;
+        MarkTransDirty();
     }
 
     // update self modle trans (will update parent before)
@@ -83,6 +94,7 @@ private:
     Eigen::Vector3f m_translate { 0.0f, 0.0f, 0.0f };
     Eigen::Vector3f m_scale { 1.0f, 1.0f, 1.0f };
     Eigen::Vector3f m_rotation { 0.0f, 0.0f, 0.0f };
+    Eigen::Vector3f m_alignmentOffset { 0.0f, 0.0f, 0.0f };
 
     std::shared_ptr<SceneMesh> m_mesh;
 

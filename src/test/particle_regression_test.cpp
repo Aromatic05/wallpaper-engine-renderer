@@ -1,5 +1,5 @@
-#include "backend/scene/internal/WPParticleParser.hpp"
-#include "backend/scene/internal/WPSceneParserTestHooks.hpp"
+#include "backend/scene/internal/parser/WPParticleParser.hpp"
+#include "backend/scene/internal/parser/WPSceneParserTestHooks.hpp"
 #include "backend/scene/internal/particle/include/particle/ParticleSystem.h"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 

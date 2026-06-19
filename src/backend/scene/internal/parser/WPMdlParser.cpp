@@ -7,7 +7,7 @@
 #include "scene/SceneMesh.h"
 #include "SpecTexs.hpp"
 #include "wpscene/WPMaterial.h"
-#include "WPShaderParser.hpp"
+#include "parser/WPShaderParser.hpp"
 
 using namespace wallpaper;
 

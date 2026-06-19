@@ -6,8 +6,8 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "WPSceneScriptRegistration.hpp"
-#include "WPSceneScriptMedia.hpp"
+#include "scenescript/WPSceneScriptMedia.hpp"
+#include "scenescript/WPSceneScriptRegistration.hpp"
 
 namespace wallpaper
 {

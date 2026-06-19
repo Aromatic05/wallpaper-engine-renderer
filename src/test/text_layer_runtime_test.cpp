@@ -1,4 +1,4 @@
-#include "backend/scene/internal/WPTextLayer.hpp"
+#include "backend/scene/internal/text/WPTextLayer.hpp"
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"

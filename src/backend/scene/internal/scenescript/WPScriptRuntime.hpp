@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "WPSceneScriptMedia.hpp"
+#include "scenescript/WPSceneScriptMedia.hpp"
 
 namespace wallpaper
 {

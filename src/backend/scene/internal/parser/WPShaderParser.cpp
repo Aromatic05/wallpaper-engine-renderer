@@ -2,7 +2,7 @@
 
 #include "fs/IBinaryStream.h"
 #include "utils/Logging.h"
-#include "WPJson.hpp"
+#include "resources/WPJson.hpp"
 
 #include "wpscene/WPUniform.h"
 #include "fs/VFS.h"

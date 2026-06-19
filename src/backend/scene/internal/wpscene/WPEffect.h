@@ -8,7 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "WPUserProperties.hpp"
+#include "settings/WPUserProperties.hpp"
 #include "wpscene/WPMaterial.h"
 
 namespace wallpaper

@@ -1,5 +1,5 @@
 #pragma once
-#include "WPJson.hpp"
+#include "resources/WPJson.hpp"
 #include <nlohmann/json.hpp>
 #include <unordered_map>
 #include <string>

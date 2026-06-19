@@ -6,15 +6,15 @@
 
 #include "timer/FrameTimer.hpp"
 #include "utils/FpsCounter.h"
-#include "WPSceneParser.hpp"
-#include "WPSceneScriptHost.hpp"
+#include "parser/WPSceneParser.hpp"
+#include "scenescript/WPSceneScriptHost.hpp"
 #include "scene/Scene.h"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
 
 #include "fs/VFS.h"
 #include "fs/PhysicalFs.h"
-#include "WPPkgFs.hpp"
+#include "resources/WPPkgFs.hpp"
 
 #include "audio/SoundManager.h"
 

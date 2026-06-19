@@ -7,7 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "WPJson.hpp"
+#include "resources/WPJson.hpp"
 #include "fs/VFS.h"
 #include "utils/Logging.h"
 

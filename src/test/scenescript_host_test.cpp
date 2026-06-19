@@ -1,5 +1,5 @@
-#include "backend/scene/internal/WPSceneScriptHost.hpp"
-#include "backend/scene/internal/WPSceneParser.hpp"
+#include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
+#include "backend/scene/internal/parser/WPSceneParser.hpp"
 
 #include <cmath>
 #include <cstdlib>

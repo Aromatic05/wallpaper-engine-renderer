@@ -1,4 +1,4 @@
-#include "backend/scene/internal/WPPropertyAnimation.hpp"
+#include "backend/scene/internal/animation/WPPropertyAnimation.hpp"
 
 #include <nlohmann/json.hpp>
 

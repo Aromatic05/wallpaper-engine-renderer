@@ -9,8 +9,8 @@
 #include "SceneRenderTarget.h"
 #include "SceneNode.h"
 #include "SceneLight.hpp"
-#include "WPSceneScriptRegistration.hpp"
-#include "WPTextLayer.hpp"
+#include "scenescript/WPSceneScriptRegistration.hpp"
+#include "text/WPTextLayer.hpp"
 
 #include "core/NoCopyMove.hpp"
 

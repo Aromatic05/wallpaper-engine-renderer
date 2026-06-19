@@ -6,7 +6,7 @@
 #include <string_view>
 #include <memory>
 
-#include "WPDynamicValue.hpp"
+#include "settings/WPDynamicValue.hpp"
 #include "scene/SceneTextPrimitive.h"
 #include "wpscene/WPTextObject.h"
 

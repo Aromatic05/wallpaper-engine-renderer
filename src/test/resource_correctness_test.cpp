@@ -4,7 +4,7 @@
 #include "common/fs/include/fs/VFS.h"
 #include "common/fs/include/fs/Fs.h"
 #include "host/audio/include/audio/SoundManager.h"
-#include "backend/scene/internal/WPTexImageParser.hpp"
+#include "backend/scene/internal/parser/WPTexImageParser.hpp"
 #include "render/vulkan/include/vulkan/Device.hpp"
 #include "render/vulkan/include/vulkan/Instance.hpp"
 

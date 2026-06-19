@@ -1,4 +1,4 @@
-#include "backend/scene/internal/WPScriptRuntime.hpp"
+#include "backend/scene/internal/scenescript/WPScriptRuntime.hpp"
 
 #include <cmath>
 #include <cstdlib>

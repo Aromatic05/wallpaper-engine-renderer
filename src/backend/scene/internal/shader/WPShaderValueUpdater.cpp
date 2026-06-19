@@ -242,4 +242,14 @@ void WPShaderValueUpdater::SetNodeData(void* nodeAddr, const WPShaderValueData& 
     m_nodeDataMap[nodeAddr] = data;
 }
 
+const WPShaderValueData* WPShaderValueUpdater::GetNodeData(const void* node_addr) const {
+    auto it = m_nodeDataMap.find(const_cast<void*>(node_addr));
+    return it == m_nodeDataMap.end() ? nullptr : std::addressof(it->second);
+}
+
+WPShaderValueData* WPShaderValueUpdater::GetNodeData(const void* node_addr) {
+    auto it = m_nodeDataMap.find(const_cast<void*>(node_addr));
+    return it == m_nodeDataMap.end() ? nullptr : std::addressof(it->second);
+}
+
 void WPShaderValueUpdater::SetTexelSize(float x, float y) { m_texelSize = { x, y }; }

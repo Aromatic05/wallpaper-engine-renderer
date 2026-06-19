@@ -1,4 +1,4 @@
-#include "backend/scene/internal/WPSyntheticImageParser.hpp"
+#include "backend/scene/internal/parser/WPSyntheticImageParser.hpp"
 
 #include <cassert>
 #include <memory>

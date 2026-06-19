@@ -1,5 +1,5 @@
-#include "backend/scene/internal/WPImageAlignment.hpp"
-#include "backend/scene/internal/WPSceneScriptMedia.hpp"
+#include "backend/scene/internal/scenescript/WPSceneScriptMedia.hpp"
+#include "backend/scene/internal/transform/WPImageAlignment.hpp"
 #include "backend/scene/internal/wpscene/WPEffect.h"
 #include "scene/Image.hpp"
 

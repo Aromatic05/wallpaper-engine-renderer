@@ -1,4 +1,4 @@
-#include "WPSceneScriptHost.hpp"
+#include "scenescript/WPSceneScriptHost.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,8 +11,8 @@
 #include "scene/SceneMesh.h"
 #include "scene/SceneNode.h"
 
-#include "WPSyntheticImageParser.hpp"
-#include "WPScriptRuntime.hpp"
+#include "parser/WPSyntheticImageParser.hpp"
+#include "scenescript/WPScriptRuntime.hpp"
 
 namespace wallpaper
 {

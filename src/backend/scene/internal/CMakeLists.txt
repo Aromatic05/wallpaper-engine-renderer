@@ -2,24 +2,25 @@ set(LIB_NAME wpSceneBackend)
 
 add_library(
   ${LIB_NAME} STATIC
-  CreateScenePackageFs.cpp
-  WPDynamicValue.cpp
-  WPJson.cpp
-  WPPkgFs.cpp
-  WPParticleParser.cpp
-  WPPropertyAnimation.cpp
-  WPSceneScriptHost.cpp
-  WPSceneScriptMedia.cpp
-  WPShaderParser.cpp
-  WPSceneParser.cpp
-  WPShaderValueUpdater.cpp
-  WPSyntheticImageParser.cpp
-  WPTexImageParser.cpp
-  WPTextLayer.cpp
-  WPUserSetting.cpp
-  WPSoundParser.cpp
-  WPMdlParser.cpp
-  WPPuppet.cpp
+  resources/CreateScenePackageFs.cpp
+  settings/WPDynamicValue.cpp
+  resources/WPJson.cpp
+  resources/WPPkgFs.cpp
+  transform/WPNodeTransformResolver.cpp
+  parser/WPParticleParser.cpp
+  animation/WPPropertyAnimation.cpp
+  scenescript/WPSceneScriptHost.cpp
+  scenescript/WPSceneScriptMedia.cpp
+  parser/WPShaderParser.cpp
+  parser/WPSceneParser.cpp
+  shader/WPShaderValueUpdater.cpp
+  parser/WPSyntheticImageParser.cpp
+  parser/WPTexImageParser.cpp
+  text/WPTextLayer.cpp
+  settings/WPUserSetting.cpp
+  parser/WPSoundParser.cpp
+  parser/WPMdlParser.cpp
+  animation/WPPuppet.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPEffect.cpp
   wpscene/WPParticleObject.cpp
@@ -35,7 +36,7 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
   target_sources(
     ${LIB_NAME}
     PRIVATE
-      WPScriptRuntime.cpp)
+      scenescript/WPScriptRuntime.cpp)
 endif()
 
 target_link_libraries(

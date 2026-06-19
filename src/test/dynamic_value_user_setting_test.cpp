@@ -1,5 +1,5 @@
-#include "backend/scene/internal/WPDynamicValue.hpp"
-#include "backend/scene/internal/WPUserSetting.hpp"
+#include "backend/scene/internal/settings/WPDynamicValue.hpp"
+#include "backend/scene/internal/settings/WPUserSetting.hpp"
 
 #include <nlohmann/json.hpp>
 

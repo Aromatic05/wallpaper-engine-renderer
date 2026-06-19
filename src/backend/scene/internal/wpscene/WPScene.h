@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <cstdint>
-#include "WPJson.hpp"
+#include "resources/WPJson.hpp"
 #include <nlohmann/json.hpp>
 
 namespace wallpaper
