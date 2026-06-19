@@ -25,13 +25,13 @@ public:
     VulkanPass()                                                     = default;
     virtual ~VulkanPass()                                            = default;
     virtual void prepare(Scene&, const Device&, RenderingResources&) = 0;
-    virtual void refreshResources(Scene&, const Device&, RenderingResources&) {}
+    virtual void refreshResources(Scene&, const Device&, RenderingResources&);
     virtual void execute(const Device&, RenderingResources&)         = 0;
     virtual void destory(const Device&, RenderingResources&)         = 0;
     virtual bool warmupPipeline(Scene&, const Device&, RenderingResources&) { return false; }
     virtual std::string residencyKey() const { return {}; }
     virtual bool canReuseForResidency(const VulkanPass& next_pass) const;
-    virtual void absorbResidencyGraphState(const VulkanPass&) {}
+    virtual void absorbResidencyGraphState(const VulkanPass&);
     virtual bool referencesRenderTarget(std::string_view) const { return false; }
     virtual bool referencesTextLayer(int32_t) const { return false; }
 

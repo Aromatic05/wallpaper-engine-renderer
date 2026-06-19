@@ -64,10 +64,18 @@ int main() {
 
     assert(wallpaper::RebuildTextLayerSceneLayout(scene, 12));
     assert(scene.dirtyTextLayerIds.count(12) == 1);
+    assert(scene.renderGraphResourcesDirty);
     assert(scene.textLayers[12].primitive->object.text == "after");
     assert(scene.textLayers[12].primitive->atlas_version == 2);
     assert(!scene.textLayers[12].primitive->layout.glyph_pages.empty());
     assert(!scene.textLayers[12].primitive->glyph_pages.empty());
+    scene.MarkRenderTargetResourcesDirty("_rt_text");
+    assert(scene.dirtyRenderTargetKeys.count("_rt_text") == 1);
+    scene.ClearRenderGraphDirty();
+    assert(!scene.renderGraphTopologyDirty);
+    assert(!scene.renderGraphResourcesDirty);
+    assert(scene.dirtyTextLayerIds.empty());
+    assert(scene.dirtyRenderTargetKeys.empty());
 
     return 0;
 }

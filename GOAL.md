@@ -172,20 +172,14 @@ Planned commit:
    - `feat(render): render text glyph atlases in text pass` now routes TextPass through
      scene-owned text primitives, dedicated text shaders, atlas page textures, dynamic
      mesh uploads, and real background/glyph draw submission.
+   - `feat(scene): port text layout and glyph rasterization` enabled the real text
+     rasterization dependencies and ported reference Pango/Cairo/fontconfig/FreeType
+     layout, font resolution, glyph bitmap caching, atlas packing, canonical text
+     primitive meshes, runtime relayout, screen-anchor placement, bridge sizing, and
+     regression coverage for non-empty atlas pages and glyph meshes.
    Remaining:
-   - Add required text rasterization libraries to the build instead of compiling a
-     geometry-only fallback.
-   - Port reference `WPTextLayer` Pango/Cairo/fontconfig/FreeType font resolution,
-     text measurement, wrapping, padding, crop, glyph bitmap cache, atlas packing, and
-     per-page glyph quad generation.
-   - Build canonical `SceneTextPrimitive` background and glyph-page meshes from the
-     rasterized layout; runtime text changes must replace atlas pages and mark text-layer
-     resources dirty.
-   - Port text placement, alignment offsets, screen-anchor adjustment, bridge target sizing,
-     and effect-camera geometry refresh from the reference implementation.
-   - Add regression coverage that proves text layout produces non-empty atlas pages and
-     real glyph meshes, and that runtime text/material/transform updates choose the
-     reference update path.
+   - Audit parser/effect integration against the reference after render-graph resource
+     refresh consumes text dirty keys.
    Acceptance:
    - `TextPass::execute` performs real rendering work.
    - Text layout, font selection, glyph atlas/cache behavior, alignment, color, and
@@ -220,9 +214,16 @@ Planned commit:
    - `feat(render): add text pass residency refresh hooks` adds pass-level
      `refreshResources`, `warmupPipeline`, render-target/text-layer reference queries,
      residency graph-state absorption, and TextPass-specific reuse/reference behavior.
+   - `feat(render): port targeted render graph resource refresh` makes
+     `VulkanRender` consume `Scene::dirtyRenderTargetKeys`, `dirtyTextLayerIds`, and
+     `renderGraphAllResourcesDirty`, refreshing only affected render-target/text-layer
+     dependencies and using a real destroy/prepare refresh path for generic passes.
+   - `feat(render): port render graph pass residency handoff` keeps reusable prepared
+     pass objects alive across topology rebuilds through `canReuseForResidency` and
+     `absorbResidencyGraphState`, replaces graph pass references with resident
+     instances, and destroys retired pass instances.
    Remaining:
-   - The renderer still needs to call these hooks for selective resource refresh, deferred
-     preparation, pipeline warmup, and full pass residency handoff across graph rebuilds.
+   - Deferred preparation and pipeline warmup still need their reference behavior.
    Acceptance:
    - Render graph construction covers the reference `SceneToRenderGraph` behavior.
    - `VulkanPass` subclasses expose deferred prepare, refresh, warmup, and residency

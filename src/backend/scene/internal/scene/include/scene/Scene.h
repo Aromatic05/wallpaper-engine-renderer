@@ -91,6 +91,12 @@ public:
     double textRenderScale { 1.0 };
     bool renderGraphResourcesDirty { false };
     bool renderGraphAllResourcesDirty { false };
+    void MarkRenderGraphResourcesDirty() {
+        renderGraphResourcesDirty = true;
+        renderGraphAllResourcesDirty = true;
+        dirtyRenderTargetKeys.clear();
+        dirtyTextLayerIds.clear();
+    }
     void MarkRenderTargetResourcesDirty(std::string render_target_key) {
         renderGraphResourcesDirty = true;
         if (!renderGraphAllResourcesDirty && !render_target_key.empty()) {
@@ -135,6 +141,16 @@ public:
                                   std::string attachment = {});
     LayerParentBinding GetLayerParentBinding(int32_t layer_id) const;
     void    ClearLayerParentBinding(int32_t layer_id);
-    void    MarkRenderGraphTopologyDirty() { renderGraphTopologyDirty = true; }
+    void    MarkRenderGraphTopologyDirty() {
+        renderGraphTopologyDirty = true;
+        renderGraphResourcesDirty = true;
+    }
+    void    ClearRenderGraphDirty() {
+        renderGraphTopologyDirty = false;
+        renderGraphResourcesDirty = false;
+        renderGraphAllResourcesDirty = false;
+        dirtyRenderTargetKeys.clear();
+        dirtyTextLayerIds.clear();
+    }
 };
 } // namespace wallpaper

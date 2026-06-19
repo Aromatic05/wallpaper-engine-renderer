@@ -314,6 +314,17 @@ private:
             }
             m_scene->paritileSys->Emitt();
 
+            if (m_scene->renderGraphTopologyDirty) {
+                if (m_rg) m_render->clearLastRenderGraph();
+                m_rg = BuildWESceneRenderPlan(*m_scene);
+                if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
+                m_render->compileRenderGraph(*m_scene, *m_rg);
+                m_scene->ClearRenderGraphDirty();
+            } else if (m_scene->renderGraphResourcesDirty) {
+                m_render->compileRenderGraph(*m_scene, *m_rg, true);
+                m_scene->ClearRenderGraphDirty();
+            }
+
             m_render->drawFrame(*m_scene);
 
             m_scene->shaderValueUpdater->FrameEnd();
@@ -355,6 +366,7 @@ private:
 
             if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
             m_render->compileRenderGraph(*m_scene, *m_rg);
+            m_scene->ClearRenderGraphDirty();
             m_render->UpdateCameraFillMode(*m_scene, m_fillmode);
         }
     }

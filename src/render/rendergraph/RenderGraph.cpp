@@ -31,6 +31,19 @@ Pass* RenderGraph::getPass(NodeID id) const {
     return nullptr;
 }
 
+std::shared_ptr<Pass> RenderGraph::getPassShared(NodeID id) const {
+    if (exists(m_map_pass, id)) {
+        return m_map_pass.at(id);
+    }
+    return {};
+}
+
+bool RenderGraph::replacePass(NodeID id, std::shared_ptr<Pass> pass) {
+    if (!exists(m_set_passnode, id) || pass == nullptr) return false;
+    m_map_pass[id] = std::move(pass);
+    return true;
+}
+
 std::vector<NodeID> RenderGraph::topologicalOrder() const {
   std::vector<NodeID> allnodes = m_dg.TopologicalOrder();
   std::vector<NodeID> passnodes;

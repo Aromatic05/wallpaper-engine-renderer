@@ -7,6 +7,7 @@
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 
 #include <cassert>
+#include <memory>
 #include <string>
 #include <unordered_set>
 
@@ -61,6 +62,21 @@ int main() {
     assert(clear_pass->desc().target == "_rt_text");
     assert(text_pass->desc().output == "_rt_text");
     assert(text_pass->desc().layer_id == 7);
+    auto original_text_ref = graph.getPassShared(text_node->ID());
+    assert(original_text_ref != nullptr);
+    wallpaper::SceneNode replacement_node;
+    wallpaper::vulkan::TextPass::Desc replacement_desc;
+    replacement_desc.node = &replacement_node;
+    replacement_desc.layer_id = 7;
+    replacement_desc.output = "_rt_text_replaced";
+    auto replacement_ref = std::make_shared<wallpaper::vulkan::TextPass>(replacement_desc);
+    assert(graph.replacePass(text_node->ID(), replacement_ref));
+    assert(graph.getPassShared(text_node->ID()) == replacement_ref);
+    assert(graph.getPass(text_node->ID()) == replacement_ref.get());
+    assert(graph.replacePass(text_node->ID(), original_text_ref));
+    text_pass = dynamic_cast<wallpaper::vulkan::TextPass*>(
+        graph.getPass(text_node->ID()));
+    assert(text_pass != nullptr);
     assert(clear_pass->residencyKey() == "ClearPass|target=_rt_text");
     assert(text_pass->residencyKey().find("TextPass|node=") == 0);
     assert(text_pass->residencyKey().find("|layer=7|output=_rt_text") != std::string::npos);

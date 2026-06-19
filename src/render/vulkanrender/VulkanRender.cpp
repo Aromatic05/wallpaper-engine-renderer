@@ -24,6 +24,9 @@
 #include <cassert>
 #include <vector>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #if ENABLE_RENDERDOC_API
 #    include "RenderDoc.h"
@@ -46,6 +49,26 @@ constexpr std::array base_device_exts {
     Extension { true, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME }
 };
 
+namespace
+{
+std::string MakeResidencyInstanceKey(
+    const VulkanPass& pass, std::unordered_map<std::string, std::size_t>& occurrence_counts) {
+    const auto base_key = pass.residencyKey();
+    if (base_key.empty()) return {};
+
+    const auto instance = occurrence_counts[base_key]++;
+    return base_key + "|instance=" + std::to_string(instance);
+}
+
+void DestroyPassOnce(VulkanPass* pass,
+                     const Device& device,
+                     RenderingResources& resources,
+                     std::unordered_set<VulkanPass*>& destroyed) {
+    if (pass == nullptr || !destroyed.insert(pass).second) return;
+    pass->destory(device, resources);
+}
+} // namespace
+
 struct VulkanRender::Impl {
     Impl()  = default;
     ~Impl() = default;
@@ -59,7 +82,7 @@ struct VulkanRender::Impl {
     void DestroyRenderingResource(RenderingResources&);
 
     void clearLastRenderGraph();
-    void compileRenderGraph(Scene&, rg::RenderGraph&);
+    void compileRenderGraph(Scene&, rg::RenderGraph&, bool refresh_resources_only);
     void UpdateCameraFillMode(Scene&, wallpaper::FillMode);
 
     bool initRes();
@@ -91,6 +114,7 @@ struct VulkanRender::Impl {
     RenderingResources                 m_rendering_resources;
 
     std::vector<VulkanPass*> m_passes;
+    std::vector<std::shared_ptr<rg::Pass>> m_compiled_pass_refs;
 };
 
 VulkanRender::VulkanRender(): pImpl(std::make_unique<Impl>()) {}
@@ -102,8 +126,8 @@ bool VulkanRender::init(RenderInitInfo info) { return pImpl->init(info); }
 void VulkanRender::destroy() { pImpl->destroy(); }
 void VulkanRender::drawFrame(Scene& scene) { pImpl->drawFrame(scene); };
 void VulkanRender::clearLastRenderGraph() { pImpl->clearLastRenderGraph(); };
-void VulkanRender::compileRenderGraph(Scene& scene, rg::RenderGraph& rg) {
-    pImpl->compileRenderGraph(scene, rg);
+void VulkanRender::compileRenderGraph(Scene& scene, rg::RenderGraph& rg, bool refresh_resources_only) {
+    pImpl->compileRenderGraph(scene, rg, refresh_resources_only);
 };
 void VulkanRender::UpdateCameraFillMode(Scene& scene, wallpaper::FillMode fill) {
     pImpl->UpdateCameraFillMode(scene, fill);
@@ -486,6 +510,7 @@ void VulkanRender::Impl::clearLastRenderGraph() {
         p->destory(*m_device, m_rendering_resources);
     }
     m_passes.clear();
+    m_compiled_pass_refs.clear();
     m_device->tex_cache().Clear();
     m_device->video_tex_cache().Clear();
 
@@ -496,9 +521,42 @@ void VulkanRender::Impl::clearLastRenderGraph() {
     m_dyn_buf->allocate();
 }
 
-void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg) {
+void VulkanRender::Impl::compileRenderGraph(Scene& scene,
+                                            rg::RenderGraph& rg,
+                                            bool refresh_resources_only) {
     if (! m_inited) return;
     m_pass_loaded = false;
+
+    if (refresh_resources_only && !m_passes.empty()) {
+        setRenderTargetSize(scene, rg);
+
+        const auto dirty_render_targets = scene.dirtyRenderTargetKeys;
+        const auto dirty_text_layers = scene.dirtyTextLayerIds;
+        const bool has_targeted_dirty_resources =
+            !dirty_render_targets.empty() || !dirty_text_layers.empty();
+        const bool refresh_all =
+            scene.renderGraphAllResourcesDirty || !has_targeted_dirty_resources;
+
+        glslang::InitializeProcess();
+        for (auto* p : m_passes) {
+            if (p == nullptr) continue;
+            const bool affected =
+                refresh_all || p->referencesAnyRenderTarget(dirty_render_targets) ||
+                p->referencesAnyTextLayer(dirty_text_layers);
+            if (!affected) continue;
+
+            if (p->prepared()) {
+                p->refreshResources(scene, *m_device, m_rendering_resources);
+            }
+            if (!p->prepared()) {
+                p->prepare(scene, *m_device, m_rendering_resources);
+            }
+        }
+        glslang::FinalizeProcess();
+
+        m_pass_loaded = true;
+        return;
+    }
 
     auto nodes             = rg.topologicalOrder();
     auto node_release_texs = rg.getLastReadTexs(nodes);
@@ -506,21 +564,60 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg) {
     m_passes.clear();
     m_passes.resize(nodes.size());
 
-    std::transform(nodes.begin(),
-                   nodes.end(),
-                   node_release_texs.begin(),
-                   m_passes.begin(),
-                   [&rg](auto& id, auto& texs) {
-                       auto* pass = rg.getPass(id);
-                       assert(pass != nullptr);
-                       VulkanPass* vpass = static_cast<VulkanPass*>(pass);
-                       // LOG_INFO("----release tex");
-                       for (auto& tex : texs) {
-                           vpass->addReleaseTexs(spanone<const std::string_view> { tex->key() });
-                           //    LOG_INFO("%s", tex->key().data());
-                       }
-                       return vpass;
-                   });
+    std::unordered_map<std::string, std::shared_ptr<rg::Pass>> reusable_passes;
+    std::unordered_map<std::string, std::size_t> old_key_counts;
+    std::vector<std::shared_ptr<rg::Pass>> old_compiled_pass_refs =
+        std::move(m_compiled_pass_refs);
+    for (const auto& old_pass_ref : old_compiled_pass_refs) {
+        auto old_pass = std::dynamic_pointer_cast<VulkanPass>(old_pass_ref);
+        if (!old_pass) continue;
+        const auto key = MakeResidencyInstanceKey(*old_pass, old_key_counts);
+        if (!key.empty()) reusable_passes.emplace(key, old_pass_ref);
+    }
+
+    std::unordered_map<std::string, std::size_t> new_key_counts;
+    std::unordered_set<VulkanPass*> reused_passes;
+    std::vector<std::shared_ptr<rg::Pass>> next_compiled_pass_refs;
+    next_compiled_pass_refs.reserve(nodes.size());
+
+    for (size_t index = 0; index < nodes.size(); ++index) {
+        const auto node_id = nodes[index];
+        auto pass_ref = rg.getPassShared(node_id);
+        assert(pass_ref != nullptr);
+        auto* vpass = dynamic_cast<VulkanPass*>(pass_ref.get());
+        assert(vpass != nullptr);
+
+        const auto key = MakeResidencyInstanceKey(*vpass, new_key_counts);
+        if (!key.empty()) {
+            if (auto reusable_it = reusable_passes.find(key);
+                reusable_it != reusable_passes.end()) {
+                auto reusable_vpass = std::dynamic_pointer_cast<VulkanPass>(reusable_it->second);
+                if (reusable_vpass && reusable_vpass->canReuseForResidency(*vpass)) {
+                    reusable_vpass->absorbResidencyGraphState(*vpass);
+                    pass_ref = reusable_it->second;
+                    vpass = reusable_vpass.get();
+                    rg.replacePass(node_id, pass_ref);
+                    reused_passes.insert(vpass);
+                    reusable_passes.erase(reusable_it);
+                }
+            }
+        }
+
+        vpass->clearReleaseTexs();
+        for (auto& tex : node_release_texs[index]) {
+            vpass->addReleaseTexs(spanone<const std::string_view> { tex->key() });
+        }
+        m_passes[index] = vpass;
+        next_compiled_pass_refs.push_back(std::move(pass_ref));
+    }
+
+    std::unordered_set<VulkanPass*> destroyed_passes;
+    for (const auto& old_pass_ref : old_compiled_pass_refs) {
+        auto old_pass = std::dynamic_pointer_cast<VulkanPass>(old_pass_ref);
+        if (!old_pass || reused_passes.count(old_pass.get()) != 0) continue;
+        DestroyPassOnce(old_pass.get(), *m_device, m_rendering_resources, destroyed_passes);
+    }
+    m_compiled_pass_refs = std::move(next_compiled_pass_refs);
 
     m_passes.insert(m_passes.begin(), m_prepass.get());
     m_passes.push_back(m_finpass.get());
@@ -529,6 +626,9 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg) {
 
     glslang::InitializeProcess();
     for (auto* p : m_passes) {
+        if (reused_passes.count(p) != 0 && p->prepared()) {
+            p->refreshResources(scene, *m_device, m_rendering_resources);
+        }
         if (! p->prepared()) {
             p->prepare(scene, *m_device, m_rendering_resources);
         }
