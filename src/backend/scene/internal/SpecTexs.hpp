@@ -32,6 +32,8 @@ constexpr std::string_view WE_EFFECT_PPONG_PREFIX_A { "_rt_effect_pingpong_a_" }
 constexpr std::string_view WE_EFFECT_PPONG_PREFIX_B { "_rt_effect_pingpong_b_" };
 
 constexpr std::string_view WE_IN_POSITION { "a_Position" };
+constexpr std::string_view WE_IN_NORMAL { "a_Normal" };
+constexpr std::string_view WE_IN_TANGENT4 { "a_Tangent4" };
 constexpr std::string_view WE_IN_TEXCOORD { "a_TexCoord" };
 constexpr std::string_view WE_IN_BLENDINDICES { "a_BlendIndices" };
 constexpr std::string_view WE_IN_BLENDWEIGHTS { "a_BlendWeights" };
@@ -50,10 +52,13 @@ constexpr std::string_view WE_IN_TEXCOORDC3 { "a_TexCoordC3" };
 constexpr std::string_view WE_IN_TEXCOORDC4 { "a_TexCoordC4" };
 constexpr std::string_view WE_CB_THICK_FORMAT { "THICKFORMAT" };
 constexpr std::string_view WE_PRENDER_ROPE { "PRENDER_ROPE" };
+constexpr std::string_view WE_PRENDER_ROPE_SUBDIVISION { "PRENDER_ROPE_SUBDIVISION" };
 
 constexpr std::string_view G_M { "g_ModelMatrix" };
 constexpr std::string_view G_VP { "g_ViewProjectionMatrix" };
 constexpr std::string_view G_MVP { "g_ModelViewProjectionMatrix" };
+constexpr std::string_view G_LMM { "g_LayerModelMatrix" };
+constexpr std::string_view G_EMVP { "g_EffectModelViewProjectionMatrix" };
 constexpr std::string_view G_AM { "g_AltModelMatrix" };
 constexpr std::string_view G_MI { "g_ModelMatrixInverse" };
 constexpr std::string_view G_MVPI { "g_ModelViewProjectionMatrixInverse" };
@@ -61,10 +66,25 @@ constexpr std::string_view G_ETVP { "g_EffectTextureProjectionMatrix" };
 constexpr std::string_view G_ETVPI { "g_EffectTextureProjectionMatrixInverse" };
 constexpr std::string_view G_LP { "g_LightsPosition" };
 constexpr std::string_view G_LCP { "g_LightsColorPremultiplied" };
+// First-party 3D model shaders read this separate color/radius payload instead of the older
+// premultiplied light vector used by existing 2D shaders, so the updater gates it to model nodes.
+constexpr std::string_view G_LCR { "g_LightsColorRadius" };
+constexpr std::string_view G_EYE_POSITION { "g_EyePosition" };
+// These camera basis vectors are seeded and updated only for the model-only perspective camera;
+// keeping them named here avoids ad-hoc string literals without expanding the legacy 2D contract.
+constexpr std::string_view G_VIEWUP { "g_ViewUp" };
+constexpr std::string_view G_VIEWRIGHT { "g_ViewRight" };
+constexpr std::string_view G_VIEWFORWARD { "g_ViewForward" };
 
 constexpr std::string_view G_TIME { "g_Time" };
 constexpr std::string_view G_DAYTIME { "g_DayTime" };
+// Wallpaper Engine feedback effects integrate their simulations with the current frame delta and
+// cursor history. Keep these global uniform names centralized so the parser and updater share the
+// same authored runtime contract instead of relying on ad-hoc string literals in effect fixes.
+constexpr std::string_view G_FRAMETIME { "g_Frametime" };
 constexpr std::string_view G_POINTERPOSITION { "g_PointerPosition" };
+constexpr std::string_view G_POINTERPOSITIONLAST { "g_PointerPositionLast" };
+constexpr std::string_view G_POINTERSTATE { "g_PointerState" };
 constexpr std::string_view G_TEXELSIZE { "g_TexelSize" };
 constexpr std::string_view G_TEXELSIZEHALF { "g_TexelSizeHalf" };
 constexpr std::string_view G_BONES { "g_Bones" };

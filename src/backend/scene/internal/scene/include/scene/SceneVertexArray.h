@@ -37,6 +37,8 @@ public:
 
     bool GetOption(std::string_view) const;
     void SetOption(std::string_view, bool);
+    float GetFloatOption(std::string_view) const;
+    void  SetFloatOption(std::string_view, float);
 
     const float* Data() const { return m_pData; }
     usize        DataSize() const { return m_size; }
@@ -61,7 +63,8 @@ private:
 
     std::vector<SceneVertexAttribute> m_attributes;
 
-    Map<std::string, bool> m_options;
+    Map<std::string, bool>  m_options;
+    Map<std::string, float> m_float_options;
 
     float* m_pData { nullptr };
     usize  m_oneSize { 0 };

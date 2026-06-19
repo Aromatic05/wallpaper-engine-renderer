@@ -128,3 +128,11 @@ bool SceneVertexArray::GetOption(std::string_view name) const {
 void SceneVertexArray::SetOption(std::string_view name, bool value) {
     m_options[std::string(name)] = value;
 }
+
+float SceneVertexArray::GetFloatOption(std::string_view name) const {
+    return exists(m_float_options, name) ? m_float_options.at(std::string(name)) : 0.0f;
+}
+
+void SceneVertexArray::SetFloatOption(std::string_view name, float value) {
+    m_float_options[std::string(name)] = value;
+}

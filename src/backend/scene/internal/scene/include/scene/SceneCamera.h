@@ -47,6 +47,12 @@ public:
     }
     void SetAspect(double aspect) { m_aspect = aspect; }
     void SetFov(double value) { m_fov = value; }
+    void SetNearClip(double value) { m_nearClip = value; }
+    void SetFarClip(double value) { m_farClip = value; }
+    void SetExplicitView(const Eigen::Vector3d& eye,
+                         const Eigen::Vector3d& center,
+                         const Eigen::Vector3d& up);
+    void ClearExplicitView() { m_hasExplicitView = false; }
 
     void  AttatchImgEffect(std::shared_ptr<SceneImageEffectLayer> eff) { m_imgEffect = eff; }
     bool  HasImgEffect() const { return (bool)m_imgEffect; }
@@ -54,6 +60,7 @@ public:
 
     Eigen::Vector3d GetPosition() const;
     Eigen::Vector3d GetDirection() const;
+    Eigen::Vector3d GetUp() const;
 
     Eigen::Matrix4d GetViewMatrix() const;
     Eigen::Matrix4d GetViewProjectionMatrix() const;
@@ -67,6 +74,10 @@ public:
         m_nearClip    = cam.m_nearClip;
         m_farClip     = cam.m_farClip;
         m_perspective = cam.m_perspective;
+        m_hasExplicitView = cam.m_hasExplicitView;
+        m_explicitEye = cam.m_explicitEye;
+        m_explicitCenter = cam.m_explicitCenter;
+        m_explicitUp = cam.m_explicitUp;
     }
 
 private:
@@ -79,6 +90,10 @@ private:
     double m_farClip { 1000.0f };
     double m_fov { 45.0f };
     bool   m_perspective;
+    bool   m_hasExplicitView { false };
+    Eigen::Vector3d m_explicitEye { Eigen::Vector3d::Zero() };
+    Eigen::Vector3d m_explicitCenter { -Eigen::Vector3d::UnitZ() };
+    Eigen::Vector3d m_explicitUp { Eigen::Vector3d::UnitY() };
 
     Eigen::Matrix4d m_viewMat { Eigen::Matrix4d::Identity() };
     Eigen::Matrix4d m_viewProjectionMat { Eigen::Matrix4d::Identity() };

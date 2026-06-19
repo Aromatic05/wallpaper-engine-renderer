@@ -18,7 +18,17 @@ public:
 
     Eigen::Vector3f color() const { return m_color; }
     float           radius() const { return m_radius; }
+    float           intensity() const { return m_intensity; }
     SceneNode*      node() const { return m_node.get(); }
+
+    // g_LightsColorRadius stores the non-radius-premultiplied light color in rgb and the authored
+    // radius in w. Derive that color from the constructor-time premultiplied payload so the model
+    // and legacy 2D light uniforms stay numerically tied to the same parsed light energy.
+    Eigen::Vector3f colorIntensity() const {
+        const float radius_sq = m_radius * m_radius;
+        if (radius_sq <= 1e-6f) return m_color * m_intensity;
+        return m_premultiplied_color / radius_sq;
+    }
 
     Eigen::Vector3f premultipliedColor() const { return m_premultiplied_color; }
 

@@ -8,6 +8,9 @@ using namespace wallpaper;
 using namespace Eigen;
 
 Vector3d SceneCamera::GetPosition() const {
+	if (m_hasExplicitView) {
+		return m_explicitEye;
+	}
 	if(m_node) {
 		return Affine3d(m_node->GetLocalTrans()) * Vector3d::Zero();
 	}
@@ -15,10 +18,24 @@ Vector3d SceneCamera::GetPosition() const {
 }
 
 Vector3d SceneCamera::GetDirection() const {
+	if (m_hasExplicitView) {
+		// 3D camera paths author eye/center/up directly. Returning the explicit direction keeps
+		// model-only camera uniforms synchronized with the same view matrix used for rendering.
+		Vector3d direction = m_explicitCenter - m_explicitEye;
+		if (direction.norm() > 1e-9) return direction.normalized();
+		return -Vector3d::UnitZ();
+	}
 	if(m_node) {
 		return (m_node->GetLocalTrans() * Vector4d(0.0f, 0.0f, -1.0f, 0.0f)).head<3>();
 	}
 	return -Vector3d::UnitZ();
+}
+
+Vector3d SceneCamera::GetUp() const {
+	if (m_hasExplicitView) {
+		if (m_explicitUp.norm() > 1e-9) return m_explicitUp.normalized();
+	}
+	return Vector3d::UnitY();
 }
 
 Matrix4d SceneCamera::GetViewMatrix() const {
@@ -32,7 +49,12 @@ Matrix4d SceneCamera::GetViewProjectionMatrix() const {
 void SceneCamera::CalculateViewProjectionMatrix() {
 	// CalculateViewMatrix
 	{
-		if(m_node) {
+		if (m_hasExplicitView) {
+			// The model camera can be driven by Wallpaper Engine path keyframes without converting
+			// through Euler scene-node state. This explicit branch is inert for 2D cameras because
+			// only the model parser calls SetExplicitView().
+			m_viewMat = LookAt(m_explicitEye, m_explicitCenter, m_explicitUp);
+		} else if(m_node) {
 			Affine3d nodeTrans(m_node->GetLocalTrans());
 			Vector3d eye = nodeTrans * Vector3d::Zero();
 			Vector3d center = nodeTrans * (-Vector3d::UnitZ());
@@ -64,5 +86,15 @@ void SceneCamera::AttatchNode(std::shared_ptr<SceneNode> node) {
 		return;
 	}
 	m_node = node;
+	Update();
+}
+
+void SceneCamera::SetExplicitView(const Eigen::Vector3d& eye,
+                                  const Eigen::Vector3d& center,
+                                  const Eigen::Vector3d& up) {
+	m_explicitEye = eye;
+	m_explicitCenter = center;
+	m_explicitUp = up;
+	m_hasExplicitView = true;
 	Update();
 }
