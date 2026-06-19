@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <array>
 #include <vector>
 #include <mutex>
 #include <cstdint>
@@ -7,6 +8,8 @@
 #include <functional>
 #include <cstring>
 #include <atomic>
+#include <cmath>
+#include <numbers>
 #include <utility>
 
 #include "utils/Logging.h"
@@ -178,6 +181,45 @@ public:
     void  SetMuted(bool v) { m_muted = v; }
 
     void SetVolume(float v) { m_volume = v; };
+    void GetSpectrum(ma_uint32 resolution,
+                     std::vector<float>* left,
+                     std::vector<float>* right,
+                     std::vector<float>* average) const {
+        if (left == nullptr || right == nullptr || average == nullptr) return;
+
+        const auto size = static_cast<size_t>(resolution);
+        left->assign(size, 0.0f);
+        right->assign(size, 0.0f);
+        average->assign(size, 0.0f);
+        if (size == 0) return;
+
+        std::lock_guard<std::mutex> lock { m_spectrum_mutex };
+        if (size >= m_spectrum_left.size()) {
+            left->assign(m_spectrum_left.begin(), m_spectrum_left.end());
+            right->assign(m_spectrum_right.begin(), m_spectrum_right.end());
+            average->assign(m_spectrum_average.begin(), m_spectrum_average.end());
+            return;
+        }
+
+        const size_t source_size = m_spectrum_left.size();
+        for (size_t i = 0; i < size; i++) {
+            const size_t begin = (i * source_size) / size;
+            const size_t end   = std::max(begin + 1, ((i + 1) * source_size) / size);
+            float left_sum { 0.0f };
+            float right_sum { 0.0f };
+            float average_sum { 0.0f };
+            for (size_t j = begin; j < std::min(end, source_size); j++) {
+                left_sum += m_spectrum_left[j];
+                right_sum += m_spectrum_right[j];
+                average_sum += m_spectrum_average[j];
+            }
+            const auto count =
+                static_cast<float>(std::max<size_t>(1, std::min(end, source_size) - begin));
+            (*left)[i] = left_sum / count;
+            (*right)[i] = right_sum / count;
+            (*average)[i] = average_sum / count;
+        }
+    }
     void MountChannel(std::shared_ptr<Channel> chn) {
         ChannelWrap chnw;
         chnw.chn = chn;
@@ -238,6 +280,8 @@ private:
                                             }),
                              m_channels.end());
         }
+        AnalyzeSpectrum(
+            static_cast<const float*>(pOutput), frameCount, phyChannels, m_device.sampleRate);
     }
     ma_device_config GenMaDeviceConfig(const DeviceDesc& d) {
         ma_device_config config  = ma_device_config_init(ma_device_type_playback);
@@ -247,6 +291,70 @@ private:
         config.dataCallback      = data_callback;
         config.pUserData         = (void*)this;
         return config;
+    }
+
+    static float GoertzelMagnitude(const float* samples, ma_uint32 frame_count, ma_uint32 channels,
+                                   ma_uint32 channel_index, ma_uint32 sample_rate,
+                                   double target_frequency) {
+        if (samples == nullptr || frame_count == 0 || channels == 0 || sample_rate == 0) {
+            return 0.0f;
+        }
+
+        const auto actual_channel = std::min(channel_index, channels - 1);
+        const double omega =
+            (2.0 * std::numbers::pi * target_frequency) / static_cast<double>(sample_rate);
+        const double coeff = 2.0 * std::cos(omega);
+        double s_prev { 0.0 };
+        double s_prev2 { 0.0 };
+
+        for (ma_uint32 i = 0; i < frame_count; i++) {
+            const double sample = samples[i * channels + actual_channel];
+            const double s      = sample + coeff * s_prev - s_prev2;
+            s_prev2             = s_prev;
+            s_prev              = s;
+        }
+
+        const double power =
+            std::max(0.0, s_prev2 * s_prev2 + s_prev * s_prev - coeff * s_prev * s_prev2);
+        return static_cast<float>(std::sqrt(power) / static_cast<double>(frame_count));
+    }
+
+    void AnalyzeSpectrum(const float* samples, ma_uint32 frame_count, ma_uint32 channels,
+                         ma_uint32 sample_rate) {
+        if (samples == nullptr || frame_count == 0 || channels == 0 || sample_rate == 0) return;
+
+        constexpr double min_frequency = 20.0;
+        const double nyquist = std::max(min_frequency, static_cast<double>(sample_rate) * 0.5);
+        std::array<float, 64> left {};
+        std::array<float, 64> right {};
+        std::array<float, 64> average {};
+
+        for (size_t band = 0; band < average.size(); band++) {
+            const double t = (static_cast<double>(band) + 0.5) / static_cast<double>(average.size());
+            const double frequency = min_frequency * std::pow(nyquist / min_frequency, t);
+            left[band] = std::min(2.0f,
+                                  GoertzelMagnitude(samples,
+                                                    frame_count,
+                                                    channels,
+                                                    0,
+                                                    sample_rate,
+                                                    frequency) *
+                                      4.0f);
+            right[band] = std::min(2.0f,
+                                   GoertzelMagnitude(samples,
+                                                     frame_count,
+                                                     channels,
+                                                     channels > 1 ? 1u : 0u,
+                                                     sample_rate,
+                                                     frequency) *
+                                       4.0f);
+            average[band] = (left[band] + right[band]) * 0.5f;
+        }
+
+        std::lock_guard<std::mutex> lock { m_spectrum_mutex };
+        m_spectrum_left = left;
+        m_spectrum_right = right;
+        m_spectrum_average = average;
     }
 
 private:
@@ -262,6 +370,10 @@ private:
 
     std::vector<ChannelWrap> m_channels;
     std::vector<uint8_t>     m_frameBuffer;
+    mutable std::mutex       m_spectrum_mutex;
+    std::array<float, 64>    m_spectrum_left {};
+    std::array<float, 64>    m_spectrum_right {};
+    std::array<float, 64>    m_spectrum_average {};
 };
 
 } // namespace miniaudio
