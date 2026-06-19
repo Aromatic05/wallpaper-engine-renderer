@@ -6,9 +6,9 @@
 #include <vector>
 #include <memory>
 
-#include "scene/Image.hpp"
+#include "Image.hpp"
 #include "scene/SceneTextPrimitive.h"
-#include "settings/WPDynamicValue.hpp"
+#include "WPDynamicValue.hpp"
 #include "wpscene/WPTextObject.h"
 
 namespace wallpaper

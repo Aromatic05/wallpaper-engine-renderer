@@ -320,6 +320,7 @@ JSValue LayerStatesToJS(JSContext* context, const std::vector<WPScriptLayerState
         const auto& state = states[static_cast<size_t>(index)];
         JSValue item = JS_NewObject(context);
         JS_SetPropertyStr(context, item, "id", JS_NewInt32(context, state.id));
+        JS_SetPropertyStr(context, item, "parentId", JS_NewInt32(context, state.parent_id));
         JS_SetPropertyStr(
             context, item, "name", JS_NewStringLen(context, state.name.c_str(), state.name.size()));
         JS_SetPropertyStr(context,
@@ -328,6 +329,9 @@ JSValue LayerStatesToJS(JSContext* context, const std::vector<WPScriptLayerState
                           JS_NewStringLen(context,
                                           state.initial_config_json.c_str(),
                                           state.initial_config_json.size()));
+        JS_SetPropertyStr(context, item, "isSound", JS_NewBool(context, state.is_sound));
+        JS_SetPropertyStr(context, item, "soundPlaying", JS_NewBool(context, state.sound_playing));
+        JS_SetPropertyStr(context, item, "volume", JS_NewFloat64(context, state.sound_volume));
         JS_SetPropertyUint32(context, array, index, item);
     }
     return array;
@@ -445,11 +449,16 @@ void ReadLayerEventsFromJS(JSContext* context,
         if (ReadJSObjectNumber(context, item, "layerId", &layer_id)) {
             event.layer_id = static_cast<int32_t>(layer_id);
         }
+        double parent_id = 0.0;
+        if (ReadJSObjectNumber(context, item, "parentId", &parent_id)) {
+            event.parent_id = static_cast<int32_t>(parent_id);
+        }
 
         double target_index = 0.0;
         if (ReadJSObjectNumber(context, item, "targetIndex", &target_index)) {
             event.target_index = static_cast<int32_t>(target_index);
         }
+        ReadJSObjectNumber(context, item, "value", &event.value);
 
         ReadJSObjectString(context, item, "name", &event.name);
         ReadJSObjectString(context, item, "initialConfig", &event.initial_config_json);
@@ -828,6 +837,28 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "  const __sceneLayerById = new Map();\n"
             << "  const __sceneLayerByName = new Map();\n"
             << "  const __recordLayerEvent = (event) => { __sceneLayerEvents.push(event); };\n"
+            << "  const __recordLayerSoundCall = (id, method) => {\n"
+            << "    if (id <= 0) return false;\n"
+            << "    const layer = __sceneLayerById.get(id);\n"
+            << "    if (!layer || !layer.isSound) return false;\n"
+            << "    __recordLayerEvent({ method, layerId: id });\n"
+            << "    if (method === 'play') layer.soundPlaying = true;\n"
+            << "    else if (method === 'pause' || method === 'stop') layer.soundPlaying = false;\n"
+            << "    return true;\n"
+            << "  };\n"
+            << "  const __getLayerParent = (id) => {\n"
+            << "    const layer = __sceneLayerById.get(id);\n"
+            << "    const parentId = __toNumber(layer && layer.parentId, 0);\n"
+            << "    return parentId > 0 ? __getSceneLayer(parentId) : undefined;\n"
+            << "  };\n"
+            << "  const __setLayerParent = (id, parent) => {\n"
+            << "    if (id <= 0) return false;\n"
+            << "    const parentId = parent === undefined || parent === null ? 0 : __resolveSceneLayer(parent);\n"
+            << "    const layer = __sceneLayerById.get(id);\n"
+            << "    if (layer) layer.parentId = parentId;\n"
+            << "    __recordLayerEvent({ method: 'setParent', layerId: id, parentId });\n"
+            << "    return true;\n"
+            << "  };\n"
             << "  const __makeSceneLayerProxy = (layer) => {\n"
             << "    const id = __toNumber(layer && layer.id, 0);\n"
             << "    const name = String((layer && layer.name) ?? '');\n"
@@ -840,14 +871,26 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "        if (prop === 'getLayerIndex') return () => __getSceneLayerIndex(id);\n"
             << "        if (prop === 'getInitialLayerConfig') return () => __parseLayerInitialConfig(id);\n"
             << "        if (prop === 'getTransformMatrix') return __makeIdentityTransformMatrix;\n"
-            << "        if (prop === 'getParent') return () => proxy;\n"
+            << "        if (prop === 'getParent') return () => __getLayerParent(id);\n"
+            << "        if (prop === 'setParent') return (parent) => __setLayerParent(id, parent);\n"
             << "        if (prop === 'getTextureAnimation' || prop === 'getAnimation' || prop === 'getAnimationLayer') return () => __makeNoopAnimation();\n"
             << "        if (prop === 'getVideoTexture') return () => __makeNoopVideoTexture();\n"
+            << "        if (prop === 'play') return () => { __recordLayerSoundCall(id, 'play'); };\n"
+            << "        if (prop === 'pause') return () => { __recordLayerSoundCall(id, 'pause'); };\n"
+            << "        if (prop === 'stop') return () => { __recordLayerSoundCall(id, 'stop'); };\n"
+            << "        if (prop === 'isPlaying') return () => !!((__sceneLayerById.get(id) ?? {}).soundPlaying);\n"
+            << "        if (prop === 'volume' && layer && layer.isSound) return __toNumber(layer.volume, 0);\n"
             << "        if (prop === 'destroyLayer') return () => __destroySceneLayer(id);\n"
             << "        if (prop === 'sortLayer') return (targetIndex) => __sortSceneLayer(id, targetIndex);\n"
             << "        return Reflect.get(obj, prop, receiver);\n"
             << "      },\n"
             << "      set(obj, prop, value) {\n"
+            << "        if (prop === 'volume' && layer && layer.isSound) {\n"
+            << "          layer.volume = __toNumber(value, 0);\n"
+            << "          obj[prop] = layer.volume;\n"
+            << "          __recordLayerEvent({ method: 'setVolume', layerId: id, value: layer.volume });\n"
+            << "          return true;\n"
+            << "        }\n"
             << "        obj[prop] = value;\n"
             << "        return true;\n"
             << "      }\n"

@@ -52,14 +52,20 @@ struct WPScriptVideoTextureEvent {
 
 struct WPScriptLayerState {
     int32_t id { 0 };
+    int32_t parent_id { 0 };
     std::string name;
     std::string initial_config_json;
+    bool is_sound { false };
+    bool sound_playing { false };
+    double sound_volume { 0.0 };
 };
 
 struct WPScriptLayerEvent {
     std::string method;
     int32_t layer_id { 0 };
+    int32_t parent_id { 0 };
     int32_t target_index { 0 };
+    double value { 0.0 };
     std::string name;
     std::string initial_config_json;
 };

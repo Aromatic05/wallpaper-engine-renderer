@@ -36,18 +36,16 @@ struct WPSceneScriptMediaState {
     std::vector<uint8_t> previous_thumbnail_rgba;
 };
 
-constexpr std::string_view WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE {
-    "__scenescript_media_thumbnail"
-};
+constexpr std::string_view WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE { "__scenescript_media_thumbnail" };
 constexpr std::string_view WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE {
     "__scenescript_media_previous_thumbnail"
 };
 
 std::shared_ptr<Image> CreateSceneScriptSolidImage(std::string_view key,
                                                    const std::array<uint8_t, 4>& rgba);
-std::shared_ptr<Image> CreateSceneScriptRgbaImage(std::string_view       key,
-                                                  int32_t                width,
-                                                  int32_t                height,
+std::shared_ptr<Image> CreateSceneScriptRgbaImage(std::string_view      key,
+                                                  int32_t               width,
+                                                  int32_t               height,
                                                   std::span<const uint8_t> rgba);
 
 } // namespace wallpaper

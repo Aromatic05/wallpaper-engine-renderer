@@ -297,6 +297,7 @@ private:
     MHANDLER_CMD(STOP) {
         bool stop { false };
         if (msg->findBool("value", &stop)) {
+            m_render->setPaused(stop);
             if (stop)
                 m_frameTimer->Stop();
             else

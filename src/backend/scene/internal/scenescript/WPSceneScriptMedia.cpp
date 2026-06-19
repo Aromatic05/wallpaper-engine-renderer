@@ -1,9 +1,9 @@
-#include "scenescript/WPSceneScriptMedia.hpp"
+#include "WPSceneScriptMedia.hpp"
 
 #include <algorithm>
 #include <atomic>
 
-#include "scene/Image.hpp"
+#include "Image.hpp"
 
 namespace wallpaper
 {
@@ -15,15 +15,15 @@ uint64_t NextSceneScriptMediaRevision() {
     return next_revision.fetch_add(1, std::memory_order_relaxed);
 }
 
-std::shared_ptr<Image> CreateImageWithStorage(std::string_view          key,
-                                              int32_t                   width,
-                                              int32_t                   height,
+std::shared_ptr<Image> CreateImageWithStorage(std::string_view       key,
+                                              int32_t                width,
+                                              int32_t                height,
                                               std::unique_ptr<uint8_t[]> rgba) {
     if (width <= 0 || height <= 0 || rgba == nullptr) return nullptr;
 
-    auto image       = std::make_shared<Image>();
-    image->key       = std::string(key);
-    image->revision  = NextSceneScriptMediaRevision();
+    auto image = std::make_shared<Image>();
+    image->key = std::string(key);
+    image->revision = NextSceneScriptMediaRevision();
     image->header.width = width;
     image->header.height = height;
     image->header.mapWidth = width;
@@ -31,6 +31,9 @@ std::shared_ptr<Image> CreateImageWithStorage(std::string_view          key,
     image->header.count = 1;
     image->header.format = TextureFormat::RGBA8;
     image->header.type = ImageType::PNG;
+    // Scene-script media images are generated at runtime instead of loaded from a .tex header.
+    // Publish the same RGB component flags that ordinary RGBA textures expose so texture-driven
+    // shader combos keep their sampler branches when bound to `$mediaThumbnail`.
     image->header.extraHeader["compo1"].val = 1;
     image->header.extraHeader["compo2"].val = 1;
     image->header.extraHeader["compo3"].val = 1;

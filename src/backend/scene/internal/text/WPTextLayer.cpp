@@ -34,7 +34,7 @@
 #include "scene/Scene.h"
 #include "SpecTexs.hpp"
 #include "utils/Sha.hpp"
-#include "scenescript/WPSceneScriptMedia.hpp"
+#include "WPSceneScriptMedia.hpp"
 
 using namespace wallpaper;
 
@@ -729,7 +729,7 @@ std::array<float, 2> ResolveVisibleTextDisplaySize(const TextLayerRuntimeState& 
 std::array<float, 2> ResolveVisibleTextSourceSize(const TextLayerRuntimeState& state) {
     if (state.primitive != nullptr) return state.primitive->layout.visible_source_size;
     // Deferred text layers have no rasterized primitive yet, so there is no authoritative source
-    // texture rectangle to report. Returning the authored box here keeps diagnostics and deferred
+    // texture rectangle to report. Returning the authored box here keeps diagnostics and placeholder
     // alignment stable until the primitive is materialized.
     return state.object.size;
 }
@@ -1639,10 +1639,10 @@ std::optional<TextGlyphAtlasBuildResult> BuildTextGlyphAtlas(
     result.cache_miss_count = cache_misses;
 
     if (unique_bitmaps.empty()) {
-        auto empty_glyph_page = CreateSceneScriptSolidImage(texture_key + "__glyph_page_0",
-                                                            { 0, 0, 0, 0 });
+        auto placeholder = CreateSceneScriptSolidImage(texture_key + "__glyph_page_0",
+                                                       { 0, 0, 0, 0 });
         result.pages.push_back(TextRasterLayoutResult::GlyphPage {
-            .image = empty_glyph_page,
+            .image = placeholder,
             .source_size = { 1.0f, 1.0f },
         });
         return result;
@@ -2501,6 +2501,66 @@ TextLayerPropertyUpdateStrategy wallpaper::ResolveTextLayerPropertyUpdateStrateg
         return TextLayerPropertyUpdateStrategy::BridgeResourceResize;
     }
     return TextLayerPropertyUpdateStrategy::LayoutOnly;
+}
+
+bool wpscene::WPTextObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
+    (void)vfs;
+    GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
+    GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
+    GET_JSON_NAME_VALUE_NOWARN(json, "origin", origin);
+    GET_JSON_NAME_VALUE_NOWARN(json, "scale", scale);
+    GET_JSON_NAME_VALUE_NOWARN(json, "angles", angles);
+    GET_JSON_NAME_VALUE_NOWARN(json, "parallaxDepth", parallaxDepth);
+    GET_JSON_NAME_VALUE_NOWARN(json, "size", size);
+    ReadLiteralOrDynamicValue(json, "text", &text);
+    ReadLiteralOrDynamicValue(json, "font", &font);
+    ReadLiteralOrDynamicValue(json, "color", &color);
+    ReadLiteralOrDynamicValue(json, "backgroundcolor", &backgroundcolor);
+    ReadLiteralOrDynamicValue(json, "backgroundbrightness", &backgroundbrightness);
+    ReadLiteralOrDynamicValue(json, "alpha", &alpha);
+    ReadLiteralOrDynamicValue(json, "pointsize", &pointsize);
+    ReadLiteralOrDynamicValue(json, "maxwidth", &maxwidth);
+    ReadLiteralOrDynamicValue(json, "maxrows", &maxrows);
+    ReadTextPaddingValue(json, id, &padding, &padding_edges);
+    GET_JSON_NAME_VALUE_NOWARN(json, "parent", parent);
+    GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
+    ReadLiteralOrDynamicValue(json, "visible", &visible);
+    ReadLiteralOrDynamicValue(json, "opaquebackground", &opaquebackground);
+    ReadLiteralOrDynamicValue(json, "blockalign", &blockalign);
+    ReadLiteralOrDynamicValue(json, "limitrows", &limitrows);
+    ReadLiteralOrDynamicValue(json, "limituseellipsis", &limituseellipsis);
+    ReadLiteralOrDynamicValue(json, "limitwidth", &limitwidth);
+    ReadLiteralOrDynamicValue(json, "horizontalalign", &horizontalalign);
+    ReadLiteralOrDynamicValue(json, "verticalalign", &verticalalign);
+    ReadLiteralOrDynamicValue(json, "anchor", &anchor);
+    ReadLiteralOrDynamicValue(json, "depthtest", &depthtest);
+
+    size_explicit = json.contains("size") && ! json.at("size").is_null();
+    if (json.contains("visible")) {
+        ReadVisibleBinding(json.at("visible"), &visible_binding);
+        has_visible_script = json.at("visible").is_object() &&
+                             json.at("visible").contains("script") &&
+                             ! json.at("visible").at("script").is_null();
+    }
+    has_dynamic_layout_script =
+        PropertyHasScriptOrAnimation(json, "text") || PropertyHasScriptOrAnimation(json, "font") ||
+        PropertyHasScriptOrAnimation(json, "pointsize") ||
+        PropertyHasScriptOrAnimation(json, "padding") ||
+        PropertyHasScriptOrAnimation(json, "maxwidth") ||
+        PropertyHasScriptOrAnimation(json, "maxrows") ||
+        PropertyHasScriptOrAnimation(json, "limitwidth") ||
+        PropertyHasScriptOrAnimation(json, "limitrows") ||
+        PropertyHasScriptOrAnimation(json, "horizontalalign") ||
+        PropertyHasScriptOrAnimation(json, "verticalalign") ||
+        PropertyHasScriptOrAnimation(json, "anchor") || PropertyHasScriptOrAnimation(json, "size");
+
+    if (json.contains("effects") && json.at("effects").is_array()) {
+        for (const auto& effect_json : json.at("effects")) {
+            WPImageEffect effect;
+            if (effect.FromJson(effect_json, vfs)) effects.push_back(std::move(effect));
+        }
+    }
+    return true;
 }
 
 bool wallpaper::HasTextLayerProperty(std::string_view property_name) {
