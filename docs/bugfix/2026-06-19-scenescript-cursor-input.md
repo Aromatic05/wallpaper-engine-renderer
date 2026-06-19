@@ -54,12 +54,14 @@ Restore the full cursor input chain inside the scene runtime driver:
 - Call `scriptHost->HandleCursorMove()`.
 - Add explicit left-button routing and call `scriptHost->HandleCursorButton(down)`.
 - Update `scene->cursorLeftDown` on button transitions.
+- Forward `PointerDown` / `PointerUp` from the standalone GLFW viewer as well, so local workshop repros exercise the same interaction path as the session runtime.
 
 Implementation landed in:
 
 - [src/backend/scene/internal/engine/WESceneBackend.cpp](/home/aromatic/Applications/OwnProject/we-new/wallpaper-engine-renderer/src/backend/scene/internal/engine/WESceneBackend.cpp)
 - [src/backend/scene/internal/engine/WESceneRuntimeDriver.cpp](/home/aromatic/Applications/OwnProject/we-new/wallpaper-engine-renderer/src/backend/scene/internal/engine/WESceneRuntimeDriver.cpp)
 - [src/backend/scene/internal/engine/WESceneRuntimeDriver.hpp](/home/aromatic/Applications/OwnProject/we-new/wallpaper-engine-renderer/src/backend/scene/internal/engine/WESceneRuntimeDriver.hpp)
+- [standalone_view/glfwviewer.cpp](/home/aromatic/Applications/OwnProject/we-new/wallpaper-engine-renderer/standalone_view/glfwviewer.cpp)
 
 ## Validation
 

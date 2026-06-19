@@ -13,14 +13,6 @@ using namespace std;
 
 atomic<bool> renderCall(false);
 
-namespace
-{
-void glfw_error_callback(int code, const char* description) {
-    std::cerr << "GLFW error [" << code << "]: "
-              << (description == nullptr ? "unknown" : description) << std::endl;
-}
-}
-
 struct UserData {
     wallpaper::WallpaperSession* session { nullptr };
 
@@ -28,22 +20,52 @@ struct UserData {
     uint16_t height;
 };
 
+namespace
+{
+void glfw_error_callback(int code, const char* description) {
+    std::cerr << "GLFW error [" << code << "]: "
+              << (description == nullptr ? "unknown" : description) << std::endl;
+}
+
+wallpaper::InputEvent makePointerEvent(const UserData& data,
+                                       wallpaper::InputEventType type,
+                                       double xpos,
+                                       double ypos) {
+    wallpaper::InputEvent event;
+    event.type     = type;
+    event.pointerX = xpos / data.width;
+    event.pointerY = ypos / data.height;
+    return event;
+}
+}
+
 extern "C" {
 void framebuffer_size_callback(GLFWwindow*, int width, int height) {}
 
 void mouse_button_callback(GLFWwindow* win, int button, int action, int mods) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        UserData* data = static_cast<UserData*>(glfwGetWindowUserPointer(win));
-        // source changes should be routed through WallpaperSession reload/load.
-    }
+    if (button != GLFW_MOUSE_BUTTON_LEFT) return;
+    if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
+
+    UserData* data = static_cast<UserData*>(glfwGetWindowUserPointer(win));
+    if (data == nullptr || data->session == nullptr) return;
+
+    double xpos { 0.0 };
+    double ypos { 0.0 };
+    glfwGetCursorPos(win, &xpos, &ypos);
+
+    auto event = makePointerEvent(*data,
+                                  action == GLFW_PRESS ? wallpaper::InputEventType::PointerDown
+                                                       : wallpaper::InputEventType::PointerUp,
+                                  xpos,
+                                  ypos);
+    data->session->sendInput(event);
 }
 
 void cursor_position_callback(GLFWwindow* win, double xpos, double ypos) {
     UserData* data = static_cast<UserData*>(glfwGetWindowUserPointer(win));
-    wallpaper::InputEvent event;
-    event.type     = wallpaper::InputEventType::PointerMove;
-    event.pointerX = xpos / data->width;
-    event.pointerY = ypos / data->height;
+    if (data == nullptr || data->session == nullptr) return;
+
+    auto event = makePointerEvent(*data, wallpaper::InputEventType::PointerMove, xpos, ypos);
     data->session->sendInput(event);
 }
 }
