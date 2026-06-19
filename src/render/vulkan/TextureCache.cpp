@@ -751,10 +751,10 @@ ImageSlotsRef TextureCache::CreateTex(Image& image) {
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                   m_pending_image_uploads)) {
             m_tex_revision_map[image.key] = image.revision;
-            LOG_INFO("TextureCacheUploadQueued: key='%s' slots=%zu revision=%zu reuse=true",
-                     image.key.c_str(),
-                     image.slots.size(),
-                     static_cast<size_t>(image.revision));
+            LOG_VERBOSE("TextureCacheUploadQueued: key='%s' slots=%zu revision=%zu reuse=true",
+                        image.key.c_str(),
+                        image.slots.size(),
+                        static_cast<size_t>(image.revision));
             return cached;
         }
 
@@ -771,10 +771,10 @@ ImageSlotsRef TextureCache::CreateTex(Image& image) {
     }
     m_tex_map[image.key] = std::move(img_slots);
     m_tex_revision_map[image.key] = image.revision;
-    LOG_INFO("TextureCacheUploadQueued: key='%s' slots=%zu revision=%zu reuse=false",
-             image.key.c_str(),
-             image.slots.size(),
-             static_cast<size_t>(image.revision));
+    LOG_VERBOSE("TextureCacheUploadQueued: key='%s' slots=%zu revision=%zu reuse=false",
+                image.key.c_str(),
+                image.slots.size(),
+                static_cast<size_t>(image.revision));
     return m_tex_map[image.key];
 }
 
@@ -853,17 +853,17 @@ TextureCacheStreamingState TextureCache::StagePendingTexUploads(std::string_view
     }
 
     if (staged_slots != 0) {
-        LOG_INFO("TextureCacheStreamingStage: key='%s' staged-slots=%zu staged-bytes=%zu "
-                 "remaining-slots=%zu",
-                 key_string.c_str(),
-                 staged_slots,
-                 staged_bytes,
-                 streaming.remaining_slots.size());
+        LOG_VERBOSE("TextureCacheStreamingStage: key='%s' staged-slots=%zu staged-bytes=%zu "
+                    "remaining-slots=%zu",
+                    key_string.c_str(),
+                    staged_slots,
+                    staged_bytes,
+                    streaming.remaining_slots.size());
     }
 
     if (streaming.remaining_slots.empty()) {
         m_streaming_tex_uploads.erase(streaming_it);
-        LOG_INFO("TextureCacheStreamingReady: key='%s'", key_string.c_str());
+        LOG_VERBOSE("TextureCacheStreamingReady: key='%s'", key_string.c_str());
         return TextureCacheStreamingState::Ready;
     }
 
@@ -922,11 +922,11 @@ TextureCache::StageTexUploads(std::shared_ptr<Image> image,
         m_streaming_tex_uploads[key] = std::move(streaming);
         const auto priority_label =
             priority_slot.has_value() ? std::to_string(*priority_slot) : std::string("none");
-        LOG_INFO("TextureCacheStreamingCreate: key='%s' slots=%zu revision=%zu priority=%s",
-                 key.c_str(),
-                 image->slots.size(),
-                 static_cast<size_t>(image->revision),
-                 priority_label.c_str());
+        LOG_VERBOSE("TextureCacheStreamingCreate: key='%s' slots=%zu revision=%zu priority=%s",
+                    key.c_str(),
+                    image->slots.size(),
+                    static_cast<size_t>(image->revision),
+                    priority_label.c_str());
     }
 
     return StagePendingTexUploads(key, byte_budget);
@@ -1261,21 +1261,21 @@ void TextureCache::RecordUploads(vvk::CommandBuffer& cmd) {
     const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
                                 std::chrono::steady_clock::now() - started_at)
                                 .count();
-    LOG_INFO("TextureCacheRecordUploads: clears=%zu image-uploads=%zu upload-bytes=%zu "
-             "duration=%.2fms",
-             clear_count,
-             upload_count,
-             upload_bytes,
-             static_cast<double>(elapsed_us) / 1000.0);
+    LOG_VERBOSE("TextureCacheRecordUploads: clears=%zu image-uploads=%zu upload-bytes=%zu "
+                "duration=%.2fms",
+                clear_count,
+                upload_count,
+                upload_bytes,
+                static_cast<double>(elapsed_us) / 1000.0);
 }
 
 void TextureCache::RetireCompletedUploads() {
     if (m_inflight_image_uploads.empty()) return;
 
     const auto upload_bytes = PendingImageUploadBytes(m_inflight_image_uploads);
-    LOG_INFO("TextureCacheRetireUploads: image-uploads=%zu upload-bytes=%zu",
-             m_inflight_image_uploads.size(),
-             upload_bytes);
+    LOG_VERBOSE("TextureCacheRetireUploads: image-uploads=%zu upload-bytes=%zu",
+                m_inflight_image_uploads.size(),
+                upload_bytes);
     m_inflight_image_uploads.clear();
 }
 

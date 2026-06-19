@@ -7565,10 +7565,10 @@ JSValue NativeVideoTextureCall(JSContext* context, JSValueConst, int argc, JSVal
             opaque->scene->videoTextureSeekRequests[key] = clamped_seconds;
             opaque->scene->videoTextureCurrentTimes[key]  = clamped_seconds;
             opaque->scene->videoTextureCurrentTimeRuntimeAnchors[key] = opaque->runtime_seconds;
-            LOG_INFO("SceneVideoTextureSeekRequest: layer=%d texture='%s' seconds=%.3f",
-                     node_id,
-                     key.c_str(),
-                     clamped_seconds);
+            LOG_VERBOSE("SceneVideoTextureSeekRequest: layer=%d texture='%s' seconds=%.3f",
+                        node_id,
+                        key.c_str(),
+                        clamped_seconds);
         }
         return JS_UNDEFINED;
     }
@@ -9138,14 +9138,14 @@ void WPSceneScriptHost::MaterializeDeferredRuntimeLayersForResidency() {
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - started_at)
             .count();
-    LOG_INFO("DeferredRuntimeResidencyWarmup: requested=%zu materialized=%zu duration=%.2fms "
-             "remaining-image=%zu remaining-particle=%zu remaining-text=%zu",
-             layer_ids.size(),
-             materialized_layers,
-             elapsed_us / 1000.0,
-             m_scene->deferredRuntimeImageLayerIds.size(),
-             m_scene->deferredRuntimeParticleLayerIds.size(),
-             m_scene->deferredRuntimeTextLayerIds.size());
+    LOG_VERBOSE("DeferredRuntimeResidencyWarmup: requested=%zu materialized=%zu duration=%.2fms "
+                "remaining-image=%zu remaining-particle=%zu remaining-text=%zu",
+                layer_ids.size(),
+                materialized_layers,
+                elapsed_us / 1000.0,
+                m_scene->deferredRuntimeImageLayerIds.size(),
+                m_scene->deferredRuntimeParticleLayerIds.size(),
+                m_scene->deferredRuntimeTextLayerIds.size());
 }
 
 void WPSceneScriptHost::FrameBegin(double frame_time) {

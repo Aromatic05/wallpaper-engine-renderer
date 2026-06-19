@@ -184,16 +184,16 @@ audio::SoundHandle WPSoundParser::Parse(const wpscene::WPSoundObject& obj, fs::V
     auto ss = std::make_unique<WPSoundStream>(obj.sound, vfs, config);
     const bool autoplay = obj.visible && ! obj.startsilent;
     const auto handle = sm.MountStream(std::move(ss), obj.volume, autoplay);
-    LOG_INFO("SceneSoundMount: layer=%d name='%s' handle=%u sounds=%zu volume=%.3f visible=%s "
-             "startsilent=%s autoplay=%s playbackmode='%s'",
-             obj.id,
-             obj.name.c_str(),
-             handle,
-             obj.sound.size(),
-             obj.volume,
-             obj.visible ? "true" : "false",
-             obj.startsilent ? "true" : "false",
-             autoplay ? "true" : "false",
-             obj.playbackmode.c_str());
+    LOG_VERBOSE("SceneSoundMount: layer=%d name='%s' handle=%u sounds=%zu volume=%.3f visible=%s "
+                "startsilent=%s autoplay=%s playbackmode='%s'",
+                obj.id,
+                obj.name.c_str(),
+                handle,
+                obj.sound.size(),
+                obj.volume,
+                obj.visible ? "true" : "false",
+                obj.startsilent ? "true" : "false",
+                autoplay ? "true" : "false",
+                obj.playbackmode.c_str());
     return handle;
 }

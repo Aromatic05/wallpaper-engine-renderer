@@ -532,10 +532,10 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
         const auto resources_state = pass->requestDeferredPrepareResources(scene, *m_device);
         if (resources_state == DeferredPrepareResourcesState::Waiting) {
             if (m_deferred_waiting_indices_logged.insert(pass_index).second) {
-                LOG_INFO("RenderGraphDeferredPrepareWait: index=%zu remaining=%zu key='%s'",
-                         pass_index,
-                         m_deferred_prepare_indices.size(),
-                         key.c_str());
+                LOG_VERBOSE("RenderGraphDeferredPrepareWait: index=%zu remaining=%zu key='%s'",
+                            pass_index,
+                            m_deferred_prepare_indices.size(),
+                            key.c_str());
             }
             break;
         }
@@ -553,13 +553,13 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
             m_deferred_prepare_indices.pop_front();
         }
 
-        LOG_INFO("RenderGraphDeferredPreparePass: index=%zu prepared=%s remaining=%zu "
-                 "duration=%.2fms key='%s'",
-                 pass_index,
-                 pass->prepared() ? "true" : "false",
-                 m_deferred_prepare_indices.size(),
-                 static_cast<double>(pass_elapsed_us) / 1000.0,
-                 key.c_str());
+        LOG_VERBOSE("RenderGraphDeferredPreparePass: index=%zu prepared=%s remaining=%zu "
+                    "duration=%.2fms key='%s'",
+                    pass_index,
+                    pass->prepared() ? "true" : "false",
+                    m_deferred_prepare_indices.size(),
+                    static_cast<double>(pass_elapsed_us) / 1000.0,
+                    key.c_str());
         if (!pass->prepared()) {
             break;
         }
@@ -577,18 +577,18 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
                                       std::chrono::steady_clock::now() - batch_started_at)
                                       .count();
     if (attempted != 0) {
-        LOG_INFO("RenderGraphDeferredPrepareBatch: attempted=%zu prepared=%zu remaining=%zu "
-                 "duration=%.2fms",
-                 attempted,
-                 prepared,
-                 m_deferred_prepare_indices.size(),
-                 static_cast<double>(batch_elapsed_us) / 1000.0);
+        LOG_VERBOSE("RenderGraphDeferredPrepareBatch: attempted=%zu prepared=%zu remaining=%zu "
+                    "duration=%.2fms",
+                    attempted,
+                    prepared,
+                    m_deferred_prepare_indices.size(),
+                    static_cast<double>(batch_elapsed_us) / 1000.0);
     }
 
     if (m_deferred_prepare_indices.empty()) {
         m_deferred_waiting_indices_logged.clear();
         m_device->tex_cache().EndDeferredGraphActivation();
-        LOG_INFO("RenderGraphDeferredPrepareComplete");
+        LOG_VERBOSE("RenderGraphDeferredPrepareComplete");
     }
 }
 
@@ -1136,11 +1136,11 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
     m_compiled_pass_refs = std::move(next_compiled_pass_refs);
     releasePendingSceneResources(scene);
 
-    LOG_INFO("RenderGraphResidencyDiff: reused=%zu new=%zu retired=%zu graph-passes=%zu",
-             reused_count,
-             new_count,
-             retired_count,
-             nodes.size());
+    LOG_VERBOSE("RenderGraphResidencyDiff: reused=%zu new=%zu retired=%zu graph-passes=%zu",
+                reused_count,
+                new_count,
+                retired_count,
+                nodes.size());
 
     m_passes.insert(m_passes.begin(), m_prepass.get());
     m_passes.push_back(m_finpass.get());
@@ -1202,24 +1202,24 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
         }
     }
 
-    LOG_INFO("RenderGraphCompileSummary: total=%zu reused-refreshed=%zu refreshed=%zu "
-             "prepared=%zu dependency-prepared=%zu deferred=%zu already-prepared=%zu mode=%s",
-             m_passes.size(),
-             reused_refreshed_count,
-             refreshed_count,
-             prepared_count,
-             dependency_prepared_count,
-             deferred_count,
-             already_prepared_count,
-             refresh_resources_only ? "resources" : "topology");
+    LOG_VERBOSE("RenderGraphCompileSummary: total=%zu reused-refreshed=%zu refreshed=%zu "
+                "prepared=%zu dependency-prepared=%zu deferred=%zu already-prepared=%zu mode=%s",
+                m_passes.size(),
+                reused_refreshed_count,
+                refreshed_count,
+                prepared_count,
+                dependency_prepared_count,
+                deferred_count,
+                already_prepared_count,
+                refresh_resources_only ? "resources" : "topology");
     if (deferred_count > 0) {
         m_device->tex_cache().BeginDeferredGraphActivation();
-        LOG_INFO("RenderGraphDeferredPrepareQueued: count=%zu max-passes-per-frame=%zu "
-                 "frame-budget=%.2fms resource-waiting=%zu",
-                 deferred_count,
-                 kDeferredPrepareMaxPassesPerFrame,
-                 kDeferredPrepareFrameBudgetMs,
-                 deferred_waiting_count);
+        LOG_VERBOSE("RenderGraphDeferredPrepareQueued: count=%zu max-passes-per-frame=%zu "
+                    "frame-budget=%.2fms resource-waiting=%zu",
+                    deferred_count,
+                    kDeferredPrepareMaxPassesPerFrame,
+                    kDeferredPrepareFrameBudgetMs,
+                    deferred_waiting_count);
     }
 
     // Upload work queued by prepare() is recorded at the start of the next frame command buffer.
@@ -1253,11 +1253,11 @@ void VulkanRender::Impl::warmupRenderGraphPipelines(Scene& scene, rg::RenderGrap
     const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
                                 std::chrono::steady_clock::now() - started_at)
                                 .count();
-    LOG_INFO("RenderGraphPipelineWarmup: graph-passes=%zu pipeline-passes=%zu warmed=%zu "
-             "cached-states=%zu duration=%.2fms",
-             nodes.size(),
-             pipeline_passes,
-             warmed_passes,
-             m_rendering_resources.pipeline_cache->size(),
-             static_cast<double>(elapsed_us) / 1000.0);
+    LOG_VERBOSE("RenderGraphPipelineWarmup: graph-passes=%zu pipeline-passes=%zu warmed=%zu "
+                "cached-states=%zu duration=%.2fms",
+                nodes.size(),
+                pipeline_passes,
+                warmed_passes,
+                m_rendering_resources.pipeline_cache->size(),
+                static_cast<double>(elapsed_us) / 1000.0);
 }

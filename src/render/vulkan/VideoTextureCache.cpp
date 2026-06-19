@@ -191,8 +191,8 @@ DecoderSettings MakeDecoderSettings(VideoTexturePipelineSettings runtime_setting
     DecoderSettings settings {
         .gpu_pipeline = runtime_settings.gpu_pipeline,
     };
-    LOG_INFO("VideoTextureSettings: resolved-pipeline=%s",
-             PipelinePolicyName(settings.gpu_pipeline));
+    LOG_VERBOSE("VideoTextureSettings: resolved-pipeline=%s",
+                PipelinePolicyName(settings.gpu_pipeline));
     return settings;
 }
 
@@ -409,25 +409,25 @@ VideoPipelineMode SelectVideoPipelineMode(const Device& device, const DecoderSet
                                      return lhs.rank < rhs.rank;
                                  });
     if (best != candidates.end() && best->rank > GST_RANK_NONE) {
-        LOG_INFO("VideoTexturePipelineSelect: selected %s path decoder=%s rank=%u "
-                 "resolved-pipeline=%s",
-                 best->name,
-                 best->decoder,
-                 best->rank,
-                 PipelinePolicyName(settings.gpu_pipeline));
+        LOG_VERBOSE("VideoTexturePipelineSelect: selected %s path decoder=%s rank=%u "
+                    "resolved-pipeline=%s",
+                    best->name,
+                    best->decoder,
+                    best->rank,
+                    PipelinePolicyName(settings.gpu_pipeline));
         return best->mode;
     }
 
-    LOG_INFO("VideoTexturePipelineSelect: selected CPU RGBA path resolved-pipeline=%s "
-             "va-dec=%s va-postproc=%s va-dmabuf-import=%s nvh264dec-rank=%u "
-             "nvh264sldec-rank=%u cuda-loader=%s",
-             PipelinePolicyName(settings.gpu_pipeline),
-             has_va_h264_decoder ? "true" : "false",
-             has_va_postproc ? "true" : "false",
-             has_va_dmabuf_import ? "true" : "false",
-             ElementFactoryRank("nvh264dec").value_or(GST_RANK_NONE),
-             ElementFactoryRank("nvh264sldec").value_or(GST_RANK_NONE),
-             has_cuda_loader ? "true" : "false");
+    LOG_VERBOSE("VideoTexturePipelineSelect: selected CPU RGBA path resolved-pipeline=%s "
+                "va-dec=%s va-postproc=%s va-dmabuf-import=%s nvh264dec-rank=%u "
+                "nvh264sldec-rank=%u cuda-loader=%s",
+                PipelinePolicyName(settings.gpu_pipeline),
+                has_va_h264_decoder ? "true" : "false",
+                has_va_postproc ? "true" : "false",
+                has_va_dmabuf_import ? "true" : "false",
+                ElementFactoryRank("nvh264dec").value_or(GST_RANK_NONE),
+                ElementFactoryRank("nvh264sldec").value_or(GST_RANK_NONE),
+                has_cuda_loader ? "true" : "false");
     return VideoPipelineMode::CpuRgba;
 }
 
@@ -1284,11 +1284,11 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     }
 
     g_object_set(entry.source_elem, "stream", entry.memory_stream, nullptr);
-    LOG_INFO("VideoTexturePipeline key='%s' backend='%s' source=giostreamsrc bytes=%zu desc='%s'",
-             entry.key.c_str(),
-             pipeline_config.name,
-             entry.encoded.size(),
-             pipeline_config.description.c_str());
+    LOG_VERBOSE("VideoTexturePipeline key='%s' backend='%s' source=giostreamsrc bytes=%zu desc='%s'",
+                entry.key.c_str(),
+                pipeline_config.name,
+                entry.encoded.size(),
+                pipeline_config.description.c_str());
 
     GstCaps* sink_caps = gst_caps_from_string(pipeline_config.sink_caps);
     g_object_set(entry.appsink_elem, "caps", sink_caps, nullptr);
@@ -1485,7 +1485,7 @@ bool VideoTextureCache::seekTo(Entry& entry, double seconds) {
 
     entry.eos_loop_waiting_for_sample = false;
     entry.eos_loop_rebuild_attempted = false;
-    LOG_INFO("video texture '%s': seek accepted seconds=%.3f", entry.key.c_str(), clamped_seconds);
+    LOG_VERBOSE("video texture '%s': seek accepted seconds=%.3f", entry.key.c_str(), clamped_seconds);
     return true;
 }
 
@@ -2096,13 +2096,13 @@ bool VideoTextureCache::Release(std::string_view key) {
     const auto        before_bytes = GetTrackedBytes();
     const auto        before_count = GetTrackedEntryCount();
     m_entries.erase(iter);
-    LOG_INFO("VideoTextureCacheRelease: key='%s' bytes-before=%zu bytes-after=%zu "
-             "entries-before=%zu entries-after=%zu",
-             key_string.c_str(),
-             before_bytes,
-             GetTrackedBytes(),
-             before_count,
-             GetTrackedEntryCount());
+    LOG_VERBOSE("VideoTextureCacheRelease: key='%s' bytes-before=%zu bytes-after=%zu "
+                "entries-before=%zu entries-after=%zu",
+                key_string.c_str(),
+                before_bytes,
+                GetTrackedBytes(),
+                before_count,
+                GetTrackedEntryCount());
     return true;
 }
 
