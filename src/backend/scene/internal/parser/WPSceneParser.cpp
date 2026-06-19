@@ -2575,6 +2575,24 @@ std::string ResolveMaterialValueUniformName(const WPShaderInfo& info,
     return resolution.resolved() ? resolution.uniform_name : material_value_name;
 }
 
+bool IsKnownShaderComboMaterialValue(const wpscene::WPMaterial& wpmat, const WPShaderInfo& info,
+                                     std::string_view material_value_name) {
+    const std::string material_value_key(material_value_name);
+    if (wpmat.combos.count(material_value_key) != 0 || info.combos.count(material_value_key) != 0) {
+        return true;
+    }
+
+    const auto normalized_key = NormalizeMaterialValueAlias(material_value_name);
+    if (normalized_key.empty()) return false;
+    for (const auto& [combo_name, _] : info.combos) {
+        if (NormalizeMaterialValueAlias(combo_name) == normalized_key) return true;
+    }
+    for (const auto& [combo_name, _] : wpmat.combos) {
+        if (NormalizeMaterialValueAlias(combo_name) == normalized_key) return true;
+    }
+    return false;
+}
+
 void ApplyResolvedConstvalue(SceneMaterial& material, const std::string& material_value_name,
                              const std::vector<float>&                 value,
                              const MaterialValueUniformResolution&     resolution) {
@@ -2611,6 +2629,12 @@ void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
         const auto resolution = ResolveMaterialValueUniform(info, name, true);
         if (resolution.resolved()) {
             ApplyResolvedConstvalue(material, name, value, resolution);
+            continue;
+        }
+
+        if (IsKnownShaderComboMaterialValue(wpmat, info, name)) {
+            LOG_VERBOSE("ShaderValue: material-value='%s' skipped reason=combo-only",
+                        name.c_str());
             continue;
         }
 
