@@ -22,6 +22,13 @@ struct UserPropertyBinding {
     bool empty() const noexcept { return name.empty(); }
 };
 
+struct VisibleBinding {
+    bool                value { true };
+    UserPropertyBinding user;
+
+    bool hasUserBinding() const noexcept { return ! user.empty(); }
+};
+
 using UserPropertyValue = std::variant<ShaderValue, std::string>;
 
 struct UserProperty {

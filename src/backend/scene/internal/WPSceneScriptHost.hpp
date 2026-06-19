@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "WPSceneScriptRegistration.hpp"
+#include "WPSceneScriptMedia.hpp"
 
 namespace wallpaper
 {
@@ -34,12 +35,14 @@ public:
     void ApplyUserProperties(const UserPropertyMap& user_properties, bool initial_dispatch);
     void ApplyGeneralSettings(const std::unordered_map<std::string, std::string>& general_settings,
                               bool initial_dispatch);
+    void ApplyMediaState(const WPSceneScriptMediaState& media_state, bool initial_dispatch);
 
     size_t BindingCount() const noexcept;
     size_t ScriptCount() const noexcept;
     size_t AnimationCount() const noexcept;
     size_t UserPropertyDispatchCount() const noexcept;
     size_t GeneralSettingDispatchCount() const noexcept;
+    size_t MediaDispatchCount() const noexcept;
     std::optional<WPDynamicValue> FindResolvedValue(
         int32_t object_id, std::string_view property_name) const;
     std::optional<WPPropertyAnimationState> FindAnimationState(

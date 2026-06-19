@@ -115,6 +115,23 @@ target_compile_options(synthetic-image-parser-test PRIVATE ${warn_opts})
 add_test(NAME synthetic-image-parser-test COMMAND synthetic-image-parser-test)
 
 add_executable(
+  scene-parity-foundation-test
+  scene_parity_foundation_test.cpp)
+
+target_link_libraries(scene-parity-foundation-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  scene-parity-foundation-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(scene-parity-foundation-test PRIVATE ${warn_opts})
+
+add_test(NAME scene-parity-foundation-test COMMAND scene-parity-foundation-test)
+
+add_executable(
   text-scene-model-test
   text_scene_model_test.cpp)
 

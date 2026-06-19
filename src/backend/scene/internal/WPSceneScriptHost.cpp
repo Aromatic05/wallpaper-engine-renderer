@@ -11,6 +11,7 @@
 #include "scene/SceneMesh.h"
 #include "scene/SceneNode.h"
 
+#include "WPSyntheticImageParser.hpp"
 #include "WPScriptRuntime.hpp"
 
 namespace wallpaper
@@ -217,6 +218,71 @@ void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextur
     }
 }
 
+void RegisterSyntheticImage(Scene* scene, std::string_view key, std::shared_ptr<Image> image) {
+    if (scene == nullptr || image == nullptr) return;
+    auto* synthetic_parser = AsSyntheticImageParser(scene->imageParser.get());
+    if (synthetic_parser == nullptr) return;
+    synthetic_parser->RegisterImage(std::string(key), std::move(image));
+}
+
+void UpdateMediaThumbnailTextures(Scene* scene, const WPSceneScriptMediaState& media_state) {
+    if (scene == nullptr) return;
+    if (media_state.thumbnail_rgba.empty()) {
+        RegisterSyntheticImage(scene,
+                               WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE,
+                               CreateSceneScriptSolidImage(WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE,
+                                                           { 0, 0, 0, 0 }));
+    } else {
+        RegisterSyntheticImage(scene,
+                               WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE,
+                               CreateSceneScriptRgbaImage(WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE,
+                                                          media_state.thumbnail_width,
+                                                          media_state.thumbnail_height,
+                                                          media_state.thumbnail_rgba));
+    }
+
+    if (media_state.previous_thumbnail_rgba.empty()) {
+        RegisterSyntheticImage(
+            scene,
+            WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE,
+            CreateSceneScriptSolidImage(WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE,
+                                        { 0, 0, 0, 0 }));
+    } else {
+        RegisterSyntheticImage(
+            scene,
+            WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE,
+            CreateSceneScriptRgbaImage(WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE,
+                                       media_state.previous_thumbnail_width,
+                                       media_state.previous_thumbnail_height,
+                                       media_state.previous_thumbnail_rgba));
+    }
+}
+
+bool MediaThumbnailChanged(const WPSceneScriptMediaState& lhs, const WPSceneScriptMediaState& rhs) {
+    return lhs.has_thumbnail != rhs.has_thumbnail ||
+           lhs.primary_color != rhs.primary_color ||
+           lhs.secondary_color != rhs.secondary_color ||
+           lhs.tertiary_color != rhs.tertiary_color ||
+           lhs.text_color != rhs.text_color ||
+           lhs.high_contrast_color != rhs.high_contrast_color ||
+           lhs.thumbnail_width != rhs.thumbnail_width ||
+           lhs.thumbnail_height != rhs.thumbnail_height ||
+           lhs.thumbnail_rgba != rhs.thumbnail_rgba ||
+           lhs.previous_thumbnail_width != rhs.previous_thumbnail_width ||
+           lhs.previous_thumbnail_height != rhs.previous_thumbnail_height ||
+           lhs.previous_thumbnail_rgba != rhs.previous_thumbnail_rgba;
+}
+
+bool MediaPropertiesChanged(const WPSceneScriptMediaState& lhs, const WPSceneScriptMediaState& rhs) {
+    return lhs.title != rhs.title ||
+           lhs.artist != rhs.artist ||
+           lhs.album_title != rhs.album_title ||
+           lhs.album_artist != rhs.album_artist ||
+           lhs.sub_title != rhs.sub_title ||
+           lhs.genres != rhs.genres ||
+           lhs.content_type != rhs.content_type;
+}
+
 } // namespace
 
 struct WPSceneScriptHost::Opaque {
@@ -231,8 +297,14 @@ struct WPSceneScriptHost::Opaque {
     UserPropertyMap user_properties;
     std::unordered_map<std::string, std::string> general_settings;
     std::unordered_map<std::string, WPDynamicValue> resolved_values;
+    WPSceneScriptMediaState media_state;
+    WPSceneScriptMediaState dispatched_media_state;
+    bool dispatch_media_thumbnail { false };
+    bool dispatch_media_properties { false };
+    bool dispatch_media_playback { false };
     size_t user_property_dispatch_count { 0 };
     size_t general_setting_dispatch_count { 0 };
+    size_t media_dispatch_count { 0 };
 
     void ExecuteScriptRegistrations(Scene* scene);
 };
@@ -270,6 +342,10 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
         const auto video_keys = ResolveVideoTextureKeys(*scene, registration.node);
         context.video_textures = BuildVideoTextureStates(*scene, video_keys);
         context.video_texture_events = &video_events;
+        context.media_state = &media_state;
+        context.dispatch_media_thumbnail = dispatch_media_thumbnail;
+        context.dispatch_media_properties = dispatch_media_properties;
+        context.dispatch_media_playback = dispatch_media_playback;
 
         const auto evaluated =
             runtime.evaluate(registration.setting.script, ToScriptValue(current_value), context);
@@ -282,6 +358,9 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
             resolved_values[key] = ToDynamicValue(*evaluated, value_type);
         }
     }
+    dispatch_media_thumbnail = false;
+    dispatch_media_properties = false;
+    dispatch_media_playback = false;
 #else
     (void)scene;
 #endif
@@ -465,6 +544,36 @@ void WPSceneScriptHost::ApplyGeneralSettings(
     }
 }
 
+void WPSceneScriptHost::ApplyMediaState(const WPSceneScriptMediaState& media_state,
+                                        bool initial_dispatch) {
+    if (!m_impl) {
+        return;
+    }
+
+    UpdateMediaThumbnailTextures(m_scene, media_state);
+    const bool first_dispatch = m_impl->media_dispatch_count == 0;
+    const bool thumbnail_changed =
+        first_dispatch || MediaThumbnailChanged(m_impl->dispatched_media_state, media_state);
+    const bool properties_changed =
+        first_dispatch || MediaPropertiesChanged(m_impl->dispatched_media_state, media_state);
+    const bool playback_changed =
+        first_dispatch || m_impl->dispatched_media_state.playback_state != media_state.playback_state;
+
+    m_impl->media_state = media_state;
+    m_impl->dispatch_media_thumbnail = thumbnail_changed && (!initial_dispatch || first_dispatch);
+    m_impl->dispatch_media_properties = properties_changed && (!initial_dispatch || first_dispatch);
+    m_impl->dispatch_media_playback = playback_changed && (!initial_dispatch || first_dispatch);
+
+    if (m_impl->dispatch_media_thumbnail ||
+        m_impl->dispatch_media_properties ||
+        m_impl->dispatch_media_playback) {
+        ++m_impl->media_dispatch_count;
+        m_impl->ExecuteScriptRegistrations(m_scene);
+    }
+
+    m_impl->dispatched_media_state = media_state;
+}
+
 size_t WPSceneScriptHost::BindingCount() const noexcept {
     return m_impl ? m_impl->binding_registrations.size() : 0;
 }
@@ -483,6 +592,10 @@ size_t WPSceneScriptHost::UserPropertyDispatchCount() const noexcept {
 
 size_t WPSceneScriptHost::GeneralSettingDispatchCount() const noexcept {
     return m_impl ? m_impl->general_setting_dispatch_count : 0;
+}
+
+size_t WPSceneScriptHost::MediaDispatchCount() const noexcept {
+    return m_impl ? m_impl->media_dispatch_count : 0;
 }
 
 std::optional<WPDynamicValue> WPSceneScriptHost::FindResolvedValue(

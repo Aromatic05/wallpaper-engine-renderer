@@ -314,6 +314,39 @@ JSValue VideoTextureStatesToJS(JSContext* context,
     return array;
 }
 
+JSValue ColorToJS(JSContext* context, const std::array<float, 3>& color) {
+    JSValue array = JS_NewArray(context);
+    for (uint32_t i = 0; i < color.size(); i++) {
+        JS_SetPropertyUint32(context, array, i, JS_NewFloat64(context, color[i]));
+    }
+    return array;
+}
+
+JSValue MediaStateToJS(JSContext* context, const WPSceneScriptMediaState* state) {
+    JSValue object = JS_NewObject(context);
+    if (state == nullptr) {
+        JS_SetPropertyStr(context, object, "hasThumbnail", JS_NewBool(context, false));
+        JS_SetPropertyStr(context, object, "state", JS_NewInt32(context, 0));
+        return object;
+    }
+
+    JS_SetPropertyStr(context, object, "hasThumbnail", JS_NewBool(context, state->has_thumbnail));
+    JS_SetPropertyStr(context, object, "state", JS_NewInt32(context, state->playback_state));
+    JS_SetPropertyStr(context, object, "primaryColor", ColorToJS(context, state->primary_color));
+    JS_SetPropertyStr(context, object, "secondaryColor", ColorToJS(context, state->secondary_color));
+    JS_SetPropertyStr(context, object, "tertiaryColor", ColorToJS(context, state->tertiary_color));
+    JS_SetPropertyStr(context, object, "textColor", ColorToJS(context, state->text_color));
+    JS_SetPropertyStr(context, object, "highContrastColor", ColorToJS(context, state->high_contrast_color));
+    JS_SetPropertyStr(context, object, "title", JS_NewString(context, state->title.c_str()));
+    JS_SetPropertyStr(context, object, "artist", JS_NewString(context, state->artist.c_str()));
+    JS_SetPropertyStr(context, object, "albumTitle", JS_NewString(context, state->album_title.c_str()));
+    JS_SetPropertyStr(context, object, "albumArtist", JS_NewString(context, state->album_artist.c_str()));
+    JS_SetPropertyStr(context, object, "subTitle", JS_NewString(context, state->sub_title.c_str()));
+    JS_SetPropertyStr(context, object, "genres", JS_NewString(context, state->genres.c_str()));
+    JS_SetPropertyStr(context, object, "contentType", JS_NewString(context, state->content_type.c_str()));
+    return object;
+}
+
 void ReadVideoTextureEventsFromJS(JSContext* context,
                                   JSValueConst global,
                                   std::vector<WPScriptVideoTextureEvent>* out_events) {
@@ -791,6 +824,19 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "    return builder;\n"
             << "  }\n"
             << body << "\n"
+            << "  const __mediaState = (globalThis.__mediaState && typeof globalThis.__mediaState === 'object') ? globalThis.__mediaState : {};\n"
+            << "  const __dispatchMediaEvents = () => {\n"
+            << "    if (globalThis.__dispatchMediaThumbnail && typeof mediaThumbnailChanged === 'function') {\n"
+            << "      try { mediaThumbnailChanged({ hasThumbnail: !!__mediaState.hasThumbnail, primaryColor: __mediaState.primaryColor ?? [0, 0, 0], secondaryColor: __mediaState.secondaryColor ?? [1, 1, 1], tertiaryColor: __mediaState.tertiaryColor ?? [1, 1, 1], textColor: __mediaState.textColor ?? [1, 1, 1], highContrastColor: __mediaState.highContrastColor ?? [1, 1, 1] }); } catch (__mediaError) {}\n"
+            << "    }\n"
+            << "    if (globalThis.__dispatchMediaProperties && typeof mediaPropertiesChanged === 'function') {\n"
+            << "      try { mediaPropertiesChanged({ title: String(__mediaState.title ?? ''), artist: String(__mediaState.artist ?? ''), albumTitle: String(__mediaState.albumTitle ?? ''), albumArtist: String(__mediaState.albumArtist ?? ''), subTitle: String(__mediaState.subTitle ?? ''), genres: String(__mediaState.genres ?? ''), contentType: String(__mediaState.contentType ?? '') }); } catch (__mediaError) {}\n"
+            << "    }\n"
+            << "    if (globalThis.__dispatchMediaPlayback && typeof mediaPlaybackChanged === 'function') {\n"
+            << "      try { mediaPlaybackChanged({ state: Number(__mediaState.state ?? 0) }); } catch (__mediaError) {}\n"
+            << "    }\n"
+            << "  };\n"
+            << "  __dispatchMediaEvents();\n"
             << "  const __ensureUpdateValue = (value) => (value === undefined || value === null) ? new Vec3() : value;\n"
             << "  let __result = __ensureUpdateValue(__initialValue);\n"
             << "  if (typeof init === 'function') {\n"
@@ -935,6 +981,13 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
                        global,
                        "__videoTextureStates",
                        VideoTextureStatesToJS(js_context, context.video_textures));
+    InstallGlobalValue(js_context, global, "__mediaState", MediaStateToJS(js_context, context.media_state));
+    InstallGlobalValue(
+        js_context, global, "__dispatchMediaThumbnail", JS_NewBool(js_context, context.dispatch_media_thumbnail));
+    InstallGlobalValue(
+        js_context, global, "__dispatchMediaProperties", JS_NewBool(js_context, context.dispatch_media_properties));
+    InstallGlobalValue(
+        js_context, global, "__dispatchMediaPlayback", JS_NewBool(js_context, context.dispatch_media_playback));
     InstallGlobalValue(js_context, global, "engine", engine);
 
     const std::string wrapped = BuildWrappedScript(script_source);
@@ -953,6 +1006,10 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
     InstallGlobalValue(js_context, global, "__propertyName", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__videoTextureStates", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__videoTextureEvents", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__mediaState", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__dispatchMediaThumbnail", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__dispatchMediaProperties", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__dispatchMediaPlayback", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "engine", JS_UNDEFINED);
     JS_FreeValue(js_context, global);
     JS_FreeValue(js_context, script_props);

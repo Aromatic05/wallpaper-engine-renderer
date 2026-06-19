@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "WPSceneScriptMedia.hpp"
+
 namespace wallpaper
 {
 
@@ -54,6 +56,10 @@ struct WPScriptEvaluationContext {
     std::string property_name;
     std::vector<WPScriptVideoTextureState> video_textures;
     std::vector<WPScriptVideoTextureEvent>* video_texture_events { nullptr };
+    const WPSceneScriptMediaState* media_state { nullptr };
+    bool dispatch_media_thumbnail { false };
+    bool dispatch_media_properties { false };
+    bool dispatch_media_playback { false };
 };
 
 class WPScriptRuntime {

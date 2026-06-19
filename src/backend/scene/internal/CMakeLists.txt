@@ -9,6 +9,7 @@ add_library(
   WPParticleParser.cpp
   WPPropertyAnimation.cpp
   WPSceneScriptHost.cpp
+  WPSceneScriptMedia.cpp
   WPShaderParser.cpp
   WPSceneParser.cpp
   WPShaderValueUpdater.cpp
@@ -20,6 +21,7 @@ add_library(
   WPMdlParser.cpp
   WPPuppet.cpp
   wpscene/WPImageObject.cpp
+  wpscene/WPEffect.cpp
   wpscene/WPParticleObject.cpp
   wpscene/WPMaterial.cpp
   wpscene/WPScene.cpp
