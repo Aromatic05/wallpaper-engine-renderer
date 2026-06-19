@@ -177,13 +177,13 @@ const vk::CustomShaderPass::Desc* findShaderByMaterial(rg::RenderGraph& graph,
     return nullptr;
 }
 
-const vk::TextPass::Desc* findTextPass(rg::RenderGraph& graph, int32_t layer_id,
-                                       const std::string& output) {
+vk::TextPass* findTextPass(rg::RenderGraph& graph, int32_t layer_id,
+                           const std::string& output) {
     for (auto id : graph.topologicalOrder()) {
         auto* pass = graph.getPass(id);
         if (auto* text = dynamic_cast<vk::TextPass*>(pass)) {
             if (text->desc().layer_id == layer_id && text->desc().output == output) {
-                return &text->desc();
+                return text;
             }
         }
     }
@@ -320,7 +320,9 @@ int main() {
         auto graph = wallpaper::BuildWESceneRenderPlan(scene);
         auto* text = findTextPass(*graph, 77, SpecTex_Default.data());
         assert(text != nullptr);
-        assert(text->node == node.get());
+        assert(text->desc().node == node.get());
+        assert(text->referencesTextLayer(77));
+        assert(! text->referencesTextLayer(88));
     }
 
     {
@@ -342,7 +344,9 @@ int main() {
         assert(findClearPass(*graph, bridge_target) != nullptr);
         auto* bridged_text = findTextPass(*graph, 88, bridge_target);
         assert(bridged_text != nullptr);
-        assert(bridged_text->clear_output);
+        assert(bridged_text->desc().clear_output);
+        assert(bridged_text->referencesTextLayer(88));
+        assert(! bridged_text->referencesTextLayer(77));
     }
 
     return 0;
