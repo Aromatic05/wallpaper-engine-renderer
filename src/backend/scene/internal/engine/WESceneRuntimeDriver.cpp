@@ -256,6 +256,8 @@ public:
         CMD_SET_SCENE,
         CMD_SET_FILLMODE,
         CMD_SET_SPEED,
+        CMD_MOUSE_INPUT,
+        CMD_MOUSE_LEFT_BUTTON,
         CMD_APPLY_USER_PROPERTIES,
         CMD_APPLY_AUDIO_SAMPLES,
         CMD_STOP,
@@ -285,6 +287,8 @@ public:
                 CASE_CMD(SET_FILLMODE);
                 CASE_CMD(SET_SCENE);
                 CASE_CMD(SET_SPEED);
+                CASE_CMD(MOUSE_INPUT);
+                CASE_CMD(MOUSE_LEFT_BUTTON);
                 CASE_CMD(APPLY_USER_PROPERTIES);
                 CASE_CMD(APPLY_AUDIO_SAMPLES);
                 CASE_CMD(INIT_VULKAN);
@@ -302,6 +306,31 @@ public:
     void setMousePos(double x, double y) { m_mouse_pos.store(std::array { (float)x, (float)y }); }
 
 private:
+    MHANDLER_CMD(MOUSE_INPUT) {
+        float x { 0.5f };
+        float y { 0.5f };
+        if (! msg->findFloat("x", &x) || ! msg->findFloat("y", &y)) return;
+
+        m_mouse_pos.store(std::array { x, y });
+        if (! m_scene) return;
+
+        m_scene->mousePositionNormalized = { x, y };
+        m_scene->shaderValueUpdater->MouseInput(x, y);
+        m_scene->paritileSys->SetMousePos(x, y);
+        if (m_scene->scriptHost) {
+            m_scene->scriptHost->HandleCursorMove();
+        }
+    }
+    MHANDLER_CMD(MOUSE_LEFT_BUTTON) {
+        bool down { false };
+        if (! msg->findBool("down", &down)) return;
+        if (! m_scene) return;
+
+        m_scene->cursorLeftDown = down;
+        if (m_scene->scriptHost) {
+            m_scene->scriptHost->HandleCursorButton(down);
+        }
+    }
     MHANDLER_CMD(STOP) {
         bool stop { false };
         if (msg->findBool("value", &stop)) {
@@ -497,7 +526,17 @@ void WESceneRuntimeDriver::pause() {
 }
 
 void WESceneRuntimeDriver::mouseInput(double x, double y) {
-    m_main_handler->renderHandler()->setMousePos(x, y);
+    auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_MOUSE_INPUT);
+    msg->setFloat("x", static_cast<float>(x));
+    msg->setFloat("y", static_cast<float>(y));
+    msg->post();
+}
+
+void WESceneRuntimeDriver::mouseButton(bool down) {
+    auto msg =
+        CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_MOUSE_LEFT_BUTTON);
+    msg->setBool("down", down);
+    msg->post();
 }
 
 #define BASIC_TYPE(NAME, TYPENAME)                                                       \

@@ -153,9 +153,15 @@ Result<void> WESceneBackend::setProperty(std::string_view name, PropertyValue va
 Result<void> WESceneBackend::sendInput(const InputEvent& event) {
     switch (event.type) {
     case InputEventType::PointerMove:
+        m_runtimeDriver.mouseInput(event.pointerX, event.pointerY);
+        return Result<void>::success();
     case InputEventType::PointerDown:
+        m_runtimeDriver.mouseInput(event.pointerX, event.pointerY);
+        m_runtimeDriver.mouseButton(true);
+        return Result<void>::success();
     case InputEventType::PointerUp:
         m_runtimeDriver.mouseInput(event.pointerX, event.pointerY);
+        m_runtimeDriver.mouseButton(false);
         return Result<void>::success();
     case InputEventType::KeyDown:
     case InputEventType::KeyUp:

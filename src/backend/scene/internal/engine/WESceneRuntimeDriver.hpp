@@ -47,6 +47,7 @@ public:
     void play();
     void pause();
     void mouseInput(double x, double y);
+    void mouseButton(bool down);
 
     void setPropertyBool(std::string_view, bool);
     void setPropertyInt32(std::string_view, int32_t);
