@@ -15,7 +15,7 @@ include_directories(SYSTEM third_party)
 
 link_libraries(Eigen3::Eigen)
 
-option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" OFF)
+option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" ON)
 option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" ON)
 
 set(HANABI_DXC_ROOT "" CACHE PATH "Path to Hanabi staged DirectXShaderCompiler SDK")
