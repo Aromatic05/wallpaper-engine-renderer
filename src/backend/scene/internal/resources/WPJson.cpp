@@ -150,6 +150,14 @@ const nlohmann::json& ResolvePropertyValueNode(const nlohmann::json& json) {
     return json;
 }
 
+const nlohmann::json& ResolveNestedScriptPropertyValueNode(const nlohmann::json& json,
+                                                           int                 depth = 0) {
+    if (depth >= 8) return json;
+    const auto& value = ResolvePropertyValueNode(json);
+    if (&value == &json) return value;
+    return ResolveNestedScriptPropertyValueNode(value, depth + 1);
+}
+
 std::optional<nlohmann::json> TryResolveUserPropertyOverrideJson(const nlohmann::json& json) {
     if (g_json_user_properties == nullptr) return std::nullopt;
 
@@ -276,7 +284,7 @@ std::optional<WPScriptValue> TryParseScriptValueJson(const nlohmann::json& value
 }
 
 std::optional<WPScriptValue> TryReadScriptValueState(const nlohmann::json& node) {
-    return TryParseScriptValueJson(ResolvePropertyValueNode(node));
+    return TryParseScriptValueJson(ResolveNestedScriptPropertyValueNode(node));
 }
 
 std::optional<WPScriptValue> TryResolveScriptPropertyValue(const nlohmann::json& json) {
