@@ -1247,6 +1247,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                 }
                 spMesh->AddMaterial(std::move(material));
                 spEffNode->AddMesh(spMesh);
+                RegisterUserShaderValueBindings(
+                    context, wpmat, wpEffShaderInfo, spEffNode.get(), wpimgobj.id, wpimgobj.name);
 
                 context.shader_updater->SetNodeData(spEffNode.get(), svData);
                 imgEffect->nodes.push_back({ .authored_output = matOutRT,

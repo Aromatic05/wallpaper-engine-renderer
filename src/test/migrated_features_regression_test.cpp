@@ -254,6 +254,27 @@ int main() {
                           }
                       ]
                   })" },
+                { "/effects/user_uniform_effect.json",
+                  R"({
+                      "name": "User Uniform Effect",
+                      "passes": [
+                          {
+                              "material": "materials/effect_user_uniform.json"
+                          }
+                      ]
+                  })" },
+                { "/materials/effect_user_uniform.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "effect_user_uniform",
+                              "textures": [],
+                              "usershadervalues": {
+                                  "effect_accent": "effectaccent"
+                              }
+                          }
+                      ]
+                  })" },
                 { "/shaders/user_uniform.vert",
                   R"(
                       attribute vec3 a_Position;
@@ -268,6 +289,20 @@ int main() {
                           gl_FragColor = vec4(g_AccentColor, 1.0);
                       }
                   )" },
+                { "/shaders/effect_user_uniform.vert",
+                  R"(
+                      attribute vec3 a_Position;
+                      void main() {
+                          gl_Position = vec4(a_Position, 1.0);
+                      }
+                  )" },
+                { "/shaders/effect_user_uniform.frag",
+                  R"(
+                      uniform vec3 g_EffectAccent; // {"material":"effectaccent","default":"0 0 0"}
+                      void main() {
+                          gl_FragColor = vec4(g_EffectAccent, 1.0);
+                      }
+                  )" },
             }),
             "test-assets"));
 
@@ -276,6 +311,13 @@ int main() {
             "accent_color",
             wallpaper::UserProperty {
                 .value = wallpaper::ShaderValue(std::array<float, 3> { 0.9f, 0.4f, 0.2f }),
+                .condition = {},
+                .is_boolean = false,
+            });
+        user_properties.emplace(
+            "effect_accent",
+            wallpaper::UserProperty {
+                .value = wallpaper::ShaderValue(std::array<float, 3> { 0.2f, 0.7f, 0.5f }),
                 .condition = {},
                 .is_boolean = false,
             });
@@ -303,7 +345,14 @@ int main() {
                                               "image": "image.json",
                                               "origin": [8, 8, 0],
                                               "angles": [0, 0, 0],
-                                              "scale": [1, 1, 1]
+                                              "scale": [1, 1, 1],
+                                              "effects": [
+                                                  {
+                                                      "id": 77,
+                                                      "file": "effects/user_uniform_effect.json",
+                                                      "visible": true
+                                                  }
+                                              ]
                                           }
                                       ]
                                   })",
@@ -312,7 +361,8 @@ int main() {
                                   &user_properties);
         assert(scene != nullptr);
         assert(scene->userProperties.count("accent_color") == 1);
-        assert(scene->bindingRegistrations.size() == 1);
+        assert(scene->userProperties.count("effect_accent") == 1);
+        assert(scene->bindingRegistrations.size() == 2);
         const auto& registration = scene->bindingRegistrations.front();
         assert(registration.target_kind == wallpaper::WPSceneScriptTargetKind::MaterialUniform);
         assert(registration.object_id == 42);
@@ -327,6 +377,23 @@ int main() {
         assert(NearlyEqual(accent[0], 0.9));
         assert(NearlyEqual(accent[1], 0.4));
         assert(NearlyEqual(accent[2], 0.2));
+
+        const auto& effect_registration = scene->bindingRegistrations.back();
+        assert(effect_registration.target_kind == wallpaper::WPSceneScriptTargetKind::MaterialUniform);
+        assert(effect_registration.object_id == 42);
+        assert(effect_registration.property_name == "g_EffectAccent");
+        assert(effect_registration.node != nullptr);
+        assert(effect_registration.node != registration.node);
+        assert(effect_registration.node->Mesh() != nullptr);
+        auto* effect_material = effect_registration.node->Mesh()->Material();
+        assert(effect_material != nullptr);
+        assert(effect_material->customShader.constValues.count("g_EffectAccent") == 1);
+        const auto& effect_accent =
+            effect_material->customShader.constValues.at("g_EffectAccent");
+        assert(effect_accent.size() == 3);
+        assert(NearlyEqual(effect_accent[0], 0.2));
+        assert(NearlyEqual(effect_accent[1], 0.7));
+        assert(NearlyEqual(effect_accent[2], 0.5));
     }
 
     wallpaper::Scene scene;

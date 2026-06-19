@@ -180,9 +180,11 @@ Planned commit:
      load-time/live user-property property names, stages load-time values before `source`
      triggers parsing, passes the active `UserPropertyMap` into `WPSceneParser::Parse`, and
      forwards live user-property updates to the render-thread SceneScript host.
+   - `feat(scene): register effect material user shader bindings` registers image-effect pass
+     `usershadervalues` as `MaterialUniform` bindings after each effect material is attached,
+     so live project user-property updates reach effect shader uniforms instead of only the
+     image-layer base material.
    Remaining:
-   - Effect pass material `usershadervalues` need the same registration/indexing coverage as
-     the reference effect material path.
    - Dynamic parser/materialization still needs to pass user properties through the same material
      loading path used by the static parser.
    - Parser-wide JSON user-property override scope and `text_render_scale` consumption are not
