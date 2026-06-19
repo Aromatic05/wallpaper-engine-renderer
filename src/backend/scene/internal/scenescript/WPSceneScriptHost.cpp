@@ -1184,6 +1184,10 @@ std::string BuildPersistentScript(std::string_view script_source) {
         << "      stop() { __native.videoTextureCall(nodeId, 'stop'); },\n"
         << "      setCurrentTime(value) { __native.videoTextureCall(nodeId, 'setCurrentTime', "
            "value); },\n"
+        << "      getCurrentTime() { return __native.videoTextureCall(nodeId, 'getCurrentTime'); "
+           "},\n"
+        << "      get rate() { return __native.videoTextureCall(nodeId, 'rate'); },\n"
+        << "      set rate(value) { __native.videoTextureCall(nodeId, 'rate', value); },\n"
         << "      isPlaying() { return !!__native.videoTextureCall(nodeId, 'isPlaying'); }\n"
         << "    };\n"
         << "  }\n"
@@ -7480,16 +7484,48 @@ JSValue NativeVideoTextureCall(JSContext* context, JSValueConst, int argc, JSVal
 
     const auto keys = ResolveVideoTextureKeysForNode(opaque, node);
     if (keys.empty()) {
-        return command == "isPlaying" ? JS_NewBool(context, false) : JS_UNDEFINED;
+        if (command == "isPlaying") return JS_NewBool(context, false);
+        if (command == "getCurrentTime") return JS_NewFloat64(context, 0.0);
+        if (command == "rate") return argc >= 3 ? JS_UNDEFINED : JS_NewFloat64(context, 1.0);
+        return JS_UNDEFINED;
     }
+
+    auto current_time_for_key = [&](const std::string& key) {
+        double value = 0.0;
+        if (const auto value_it = opaque->scene->videoTextureCurrentTimes.find(key);
+            value_it != opaque->scene->videoTextureCurrentTimes.end()) {
+            value = value_it->second;
+        }
+
+        const auto paused_it = opaque->scene->videoTexturePaused.find(key);
+        const bool paused =
+            paused_it != opaque->scene->videoTexturePaused.end() ? paused_it->second : false;
+        const bool running =
+            opaque->scene->videoTextureStopped.count(key) == 0 && ! paused;
+        if (! running) return std::max(0.0, value);
+
+        const auto anchor_it = opaque->scene->videoTextureCurrentTimeRuntimeAnchors.find(key);
+        if (anchor_it == opaque->scene->videoTextureCurrentTimeRuntimeAnchors.end()) {
+            return std::max(0.0, value);
+        }
+
+        const auto rate_it = opaque->scene->videoTextureRates.find(key);
+        const double rate =
+            rate_it != opaque->scene->videoTextureRates.end() ? rate_it->second : 1.0;
+        return std::max(0.0, value + (opaque->runtime_seconds - anchor_it->second) * rate);
+    };
 
     if (command == "play" || command == "pause" || command == "stop") {
         for (const auto& key : keys) {
+            const double current_seconds = current_time_for_key(key);
             if (command == "stop") {
                 // Wallpaper Engine stop() is a terminal decoder command, not just pause().
                 // Finished intro layers rely on this to release playback work after they fade out.
                 opaque->scene->videoTexturePaused[key] = true;
                 opaque->scene->videoTextureStopped.insert(key);
+                opaque->scene->videoTextureCurrentTimes[key] = 0.0;
+                opaque->scene->videoTextureCurrentTimeRuntimeAnchors[key] =
+                    opaque->runtime_seconds;
             } else {
                 const bool paused = command == "pause";
                 const auto current_it = opaque->scene->videoTexturePaused.find(key);
@@ -7500,6 +7536,9 @@ JSValue NativeVideoTextureCall(JSContext* context, JSValueConst, int argc, JSVal
                 }
                 opaque->scene->videoTextureStopped.erase(key);
                 opaque->scene->videoTexturePaused[key] = paused;
+                opaque->scene->videoTextureCurrentTimes[key] = current_seconds;
+                opaque->scene->videoTextureCurrentTimeRuntimeAnchors[key] =
+                    opaque->runtime_seconds;
             }
         }
         return JS_UNDEFINED;
@@ -7520,12 +7559,45 @@ JSValue NativeVideoTextureCall(JSContext* context, JSValueConst, int argc, JSVal
         const double clamped_seconds = std::max(0.0, seconds);
         for (const auto& key : keys) {
             opaque->scene->videoTextureSeekRequests[key] = clamped_seconds;
+            opaque->scene->videoTextureCurrentTimes[key]  = clamped_seconds;
+            opaque->scene->videoTextureCurrentTimeRuntimeAnchors[key] = opaque->runtime_seconds;
             LOG_INFO("SceneVideoTextureSeekRequest: layer=%d texture='%s' seconds=%.3f",
                      node_id,
                      key.c_str(),
                      clamped_seconds);
         }
         return JS_UNDEFINED;
+    }
+
+    if (command == "getCurrentTime") {
+        double current_seconds = 0.0;
+        for (const auto& key : keys) {
+            current_seconds = std::max(current_seconds, current_time_for_key(key));
+        }
+        return JS_NewFloat64(context, current_seconds);
+    }
+
+    if (command == "rate") {
+        if (argc >= 3) {
+            double rate = 1.0;
+            if (JS_ToFloat64(context, &rate, argv[2]) != 0 || ! std::isfinite(rate)) {
+                return JS_UNDEFINED;
+            }
+
+            rate = std::max(0.0, rate);
+            for (const auto& key : keys) {
+                opaque->scene->videoTextureCurrentTimes[key] = current_time_for_key(key);
+                opaque->scene->videoTextureCurrentTimeRuntimeAnchors[key] =
+                    opaque->runtime_seconds;
+                opaque->scene->videoTextureRates[key] = rate;
+            }
+            return JS_UNDEFINED;
+        }
+
+        const auto rate_it = opaque->scene->videoTextureRates.find(keys.front());
+        return JS_NewFloat64(context,
+                             rate_it != opaque->scene->videoTextureRates.end() ? rate_it->second
+                                                                               : 1.0);
     }
 
     if (command == "isPlaying") {

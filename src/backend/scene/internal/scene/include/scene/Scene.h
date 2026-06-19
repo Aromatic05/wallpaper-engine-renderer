@@ -235,6 +235,12 @@ public:
     // entry, and let the Vulkan render thread erase each request only after the matching decoder
     // has accepted it.
     std::unordered_map<std::string, double> videoTextureSeekRequests;
+    // Script-side decoder clock exposed by getVideoTexture().getCurrentTime(). The render thread
+    // still owns real decoder state; this keeps authored control scripts deterministic before a
+    // concrete video cache entry can report timing back.
+    std::unordered_map<std::string, double> videoTextureCurrentTimes;
+    std::unordered_map<std::string, double> videoTextureCurrentTimeRuntimeAnchors;
+    std::unordered_map<std::string, double> videoTextureRates;
 
     std::string scene_id { "unknown_id" };
 
