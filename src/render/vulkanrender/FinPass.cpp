@@ -135,7 +135,10 @@ void FinPass::prepare(Scene& scene, const Device& device, RenderingResources& rr
             .entry_point = "main_ps",
             .src = std::string(frag_code),
         };
-        CompileAndLinkShaderUnits(units, opt, spvs);
+        if (!CompileAndLinkShaderUnits(units, opt, spvs)) {
+            LOG_ERROR("FinPass: failed to compile fullscreen present shaders");
+            return;
+        }
     }
 
     VkVertexInputBindingDescription                bind_description;
