@@ -18,6 +18,7 @@
 #include "parser/WPSyntheticImageParser.hpp"
 #include "parser/WPTexImageParser.hpp"
 #include "settings/WPUserSetting.hpp"
+#include "settings/WPUserProperties.hpp"
 #include "text/WPTextLayer.hpp"
 
 #include "particle/WPParticleRawGener.h"
@@ -311,7 +312,8 @@ void ApplyKnownShaderSourceFixes(std::string_view shader_name, ShaderType stage,
 
 bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene, SceneNode* pNode,
                   SceneMaterial* pMaterial, WPShaderValueData* pSvData,
-                  WPShaderInfo* pWPShaderInfo = nullptr) {
+                  WPShaderInfo* pWPShaderInfo = nullptr,
+                  const UserPropertyMap* user_properties = nullptr) {
     (void)pNode;
 
     auto& svData   = *pSvData;
@@ -346,9 +348,23 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
         ApplyKnownShaderSourceFixes(wpmat.shader, unit.stage, unit.src);
     }
 
+    auto textures = wpmat.textures;
+    if (wpmat.usertextures.size() > textures.size()) {
+        textures.resize(wpmat.usertextures.size());
+    }
+    for (usize i = 0; i < wpmat.usertextures.size(); i++) {
+        const auto& binding = wpmat.usertextures[i];
+        if (binding.empty()) continue;
+
+        const auto* property = LookupUserPropertyString(user_properties, binding.name);
+        if (property == nullptr || property->empty()) continue;
+
+        textures[i] = *property;
+    }
+
     std::vector<WPShaderTexInfo>                 texinfos;
     std::unordered_map<std::string, ImageHeader> texHeaders;
-    for (const auto& el : wpmat.textures) {
+    for (const auto& el : textures) {
         if (el.empty()) {
             texinfos.push_back({ false });
         } else if (! IsSpecTex(el)) {
@@ -378,7 +394,6 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
         pWPShaderInfo->combos[el.first] = std::to_string(el.second);
     }
 
-    auto textures = wpmat.textures;
     if (pWPShaderInfo->defTexs.size() > 0) {
         for (auto& t : pWPShaderInfo->defTexs) {
             if (textures.size() > t.first) {
@@ -487,6 +502,7 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
     }
     material.customShader = materialShader;
     material.name         = wpmat.shader;
+    material.uniformAliases = pWPShaderInfo->alias;
 
     return true;
 }
@@ -531,6 +547,52 @@ void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
         } else {
             material.customShader.constValues[glname] = value;
         }
+    }
+}
+
+std::string ResolveMaterialValueUniformName(const WPShaderInfo& info,
+                                            std::string_view material_value_name) {
+    const std::string authored_name(material_value_name);
+    if (const auto alias_it = info.alias.find(authored_name); alias_it != info.alias.end()) {
+        return alias_it->second;
+    }
+
+    for (const auto& el : info.alias) {
+        const auto& uniform_name = el.second;
+        if (uniform_name == authored_name) return uniform_name;
+        if (uniform_name.size() > 2 && uniform_name.substr(2) == authored_name) {
+            return uniform_name;
+        }
+    }
+
+    return authored_name;
+}
+
+void LoadUserShaderValue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
+                         const WPShaderInfo& info, const UserPropertyMap* user_properties) {
+    if (user_properties == nullptr) return;
+
+    for (const auto& binding : wpmat.usershadervalues) {
+        std::string user_property_name = binding.first;
+        std::string material_value_name = binding.second;
+        const auto* property = LookupUserPropertyShaderValue(user_properties, user_property_name);
+
+        if (property == nullptr) {
+            const auto* reversed_property =
+                LookupUserPropertyShaderValue(user_properties, material_value_name);
+            if (reversed_property == nullptr) {
+                LOG_INFO("UserShaderValue: property '%s' not provided for material value '%s'",
+                         user_property_name.c_str(),
+                         material_value_name.c_str());
+                continue;
+            }
+
+            std::swap(user_property_name, material_value_name);
+            property = reversed_property;
+        }
+
+        const auto uniform_name = ResolveMaterialValueUniformName(info, material_value_name);
+        material.customShader.constValues[uniform_name] = *property;
     }
 }
 
@@ -859,6 +921,9 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
             return;
         };
         LoadConstvalue(material, wpimgobj.material, shaderInfo);
+        const auto* user_properties =
+            context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
+        LoadUserShaderValue(material, wpimgobj.material, shaderInfo, user_properties);
     }
 
     for (const auto& cs : wpimgobj.material.constantshadervalues) {
@@ -1109,6 +1174,9 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
 
                 // load glname from alias and load to constvalue
                 LoadConstvalue(material, wpmat, wpEffShaderInfo);
+                const auto* user_properties =
+                    context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
+                LoadUserShaderValue(material, wpmat, wpEffShaderInfo, user_properties);
                 auto spMesh = std::make_shared<SceneMesh>();
                 {
                     svData.parallaxDepth = { wpimgobj.parallaxDepth[0], wpimgobj.parallaxDepth[1] };
@@ -1256,6 +1324,9 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         return;
     }
     LoadConstvalue(material, particle_obj.material, shaderInfo);
+    const auto* user_properties =
+        context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
+    LoadUserShaderValue(material, particle_obj.material, shaderInfo, user_properties);
     auto  spMesh             = std::make_shared<SceneMesh>(true);
     auto& mesh               = *spMesh;
     auto  animationmode      = ToAnimMode(particle_obj.animationmode);

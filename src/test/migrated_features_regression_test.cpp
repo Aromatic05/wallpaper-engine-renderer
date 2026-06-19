@@ -10,6 +10,7 @@
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 #include "backend/scene/internal/scene/include/scene/SceneTextPrimitive.h"
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
+#include "backend/scene/internal/wpscene/WPMaterial.h"
 #include "backend/scene/internal/wpscene/WPTextObject.h"
 #include "common/fs/include/fs/VFS.h"
 #include "host/audio/include/audio/SoundManager.h"
@@ -134,6 +135,35 @@ int main() {
         wallpaper::WPShaderParser::FinalGlslang();
         assert(compiled);
         assert(codes.size() == units.size());
+    }
+
+    {
+        wallpaper::wpscene::WPMaterial material;
+        const bool parsed = material.FromJson(nlohmann::json {
+            { "passes",
+              nlohmann::json::array({
+                  {
+                      { "shader", "generic" },
+                      { "textures", nlohmann::json::array({ nullptr }) },
+                      { "usertextures",
+                        nlohmann::json::array({
+                            { { "name", "album_art" }, { "type", "project" } },
+                        }) },
+                      { "usershadervalues", { { "accent", "color1" } } },
+                  },
+              }) },
+        });
+        assert(parsed);
+        assert(material.textures.size() == 1);
+        assert(material.usertextures.size() == 1);
+        assert(material.usertextures.front().name == "album_art");
+        assert(material.usertextures.front().type == "project");
+        assert(material.usershadervalues.at("accent") == "color1");
+
+        wallpaper::SceneMaterial scene_material;
+        scene_material.uniformAliases["color1"] = "g_Color1";
+        wallpaper::SceneMaterial moved_material(std::move(scene_material));
+        assert(moved_material.uniformAliases.at("color1") == "g_Color1");
     }
 
     {

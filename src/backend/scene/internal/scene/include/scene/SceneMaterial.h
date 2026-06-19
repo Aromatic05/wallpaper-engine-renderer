@@ -22,11 +22,13 @@ public:
     SceneMaterial(SceneMaterial&& o)
         : name(std::move(o.name)),
           textures(std::move(o.textures)),
-          defines(std::move(o.defines)) {};
+          defines(std::move(o.defines)),
+          uniformAliases(std::move(o.uniformAliases)) {};
 
     std::string              name;
     std::vector<std::string> textures;
     std::vector<std::string> defines;
+    Map<std::string, std::string> uniformAliases;
 
     bool hasSprite { false };
 

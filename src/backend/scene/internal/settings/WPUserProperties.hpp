@@ -114,4 +114,16 @@ inline const UserPropertyValue* LookupUserProperty(const UserPropertyMap* proper
     return entry == nullptr ? nullptr : &entry->value;
 }
 
+inline const ShaderValue* LookupUserPropertyShaderValue(const UserPropertyMap* properties,
+                                                        std::string_view       name) {
+    const auto* value = LookupUserProperty(properties, name);
+    return value == nullptr ? nullptr : std::get_if<ShaderValue>(value);
+}
+
+inline const std::string* LookupUserPropertyString(const UserPropertyMap* properties,
+                                                   std::string_view       name) {
+    const auto* value = LookupUserProperty(properties, name);
+    return value == nullptr ? nullptr : std::get_if<std::string>(value);
+}
+
 } // namespace wallpaper

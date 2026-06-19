@@ -138,12 +138,18 @@ Planned commit:
      `getLayer`, `getLayerCount`, `enumerateLayers`, `getLayerIndex`,
      `getInitialLayerConfig`, `sortLayer`, `destroyLayer`, and `createLayer` event
      application into `Scene`.
+   - `feat(scene): port material user binding metadata` added the material-side
+     `usertextures`/`usershadervalues` parse storage and preserves shader material-value
+     aliases on `SceneMaterial`, giving the SceneScript material/effect bridge the same
+     alias data that the reference parser exposes.
    Remaining:
    - Runtime-created layers are represented by a real `SceneNode` and scene registry entry,
      but full asset/config materialization still needs the reference `CreateDynamicSceneLayer`
      behavior.
-   - Layer parent/children relation APIs and material/effect/native object bridges still need
-     the remaining reference behavior.
+   - Layer parent/children relation APIs still need the remaining reference behavior.
+   - Material/effect/native object bridges still need runtime setters/getters and user-property
+     dispatch into material uniforms; the current parser now preserves the alias/binding metadata
+     but the full bridge behavior is not complete.
    Acceptance:
    - No `createLayer`, `destroyLayer`, `sortLayer`, media, material, or object bridge
      path remains as a silent stub when the reference has behavior.
@@ -156,6 +162,17 @@ Planned commit:
    - `feat(scene): port node transform resolver`
    - `feat(scene): port image alignment handling`
    - `feat(scene): complete parser parity for runtime and effect layers`
+   Progress:
+   - `feat(scene): port material user binding metadata` parses `WPMaterial.usertextures` and
+     `WPMaterial.usershadervalues`, merges them across material passes, stores shader
+     `material` metadata aliases on `SceneMaterial`, and adds parser helpers for resolving
+     user shader values to GLSL uniforms.
+   Remaining:
+   - `WPSceneParser::Parse` still lacks the reference overload/path that receives the active
+     `UserPropertyMap`, so project user textures and user shader values cannot yet affect
+     initial scene load in `sceneviewer`.
+   - Dynamic parser/materialization still needs to pass user properties through the same material
+     loading path used by the static parser.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and
      `WPImageAlignment` have equivalent current-repository implementations.
