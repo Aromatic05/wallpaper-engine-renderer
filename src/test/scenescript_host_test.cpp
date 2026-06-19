@@ -433,6 +433,29 @@ int main() {
         assert(scene.initialLayerConfigJson.at(created_id).find("\"sound\":[\"silent.wav\"]") !=
                std::string::npos);
         assert(scene.renderGraphTopologyDirty);
+
+        auto asset_registration = MakeRegistration(60,
+                                                   "SoundRoot",
+                                                   "alpha",
+                                                   WPSceneScriptTargetKind::Layer,
+                                                   WPDynamicValue::Type::Float,
+                                                   WPDynamicValue(1.0f));
+        asset_registration.node = root_node.get();
+        asset_registration.setting.script = R"(
+            export function update(value) {
+                const created = thisScene.createLayer({ file: 'silent.wav' });
+                return created && thisScene.getInitialLayerConfig(created).sound[0] === 'silent.wav'
+                    ? value
+                    : 0;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(asset_registration)));
+        host.FrameBegin(0.1);
+
+        const auto asset_created_it = scene.layerNameToId.find("silent.wav");
+        assert(asset_created_it != scene.layerNameToId.end());
+        const int32_t asset_created_id = asset_created_it->second;
+        assert(scene.objectRuntimeSoundHandles.count(asset_created_id) == 1);
     }
 
     return 0;

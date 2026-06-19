@@ -1961,8 +1961,10 @@ std::optional<nlohmann::json> MaterializeAssetHandleConfig(const Scene*         
         return std::nullopt;
     }
     if (file.ends_with(".mp3") || file.ends_with(".wav") || file.ends_with(".ogg")) {
-        LOG_ERROR("dynamic sound layers are not supported yet: %s", file.c_str());
-        return std::nullopt;
+        config["name"]    = file;
+        config["sound"]   = nlohmann::json::array({ file });
+        config["visible"] = true;
+        return config;
     }
 
     bool inferred = false;
