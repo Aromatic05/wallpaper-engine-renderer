@@ -12,6 +12,8 @@
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
 #include "backend/scene/internal/wpscene/WPMaterial.h"
 #include "backend/scene/internal/wpscene/WPTextObject.h"
+#include "common/fs/include/fs/Fs.h"
+#include "common/fs/include/fs/MemBinaryStream.h"
 #include "common/fs/include/fs/VFS.h"
 #include "host/audio/include/audio/SoundManager.h"
 #include "render/vulkanrender/ClearPass.hpp"
@@ -23,6 +25,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -34,6 +37,30 @@ namespace
 bool NearlyEqual(double lhs, double rhs) {
     return std::abs(lhs - rhs) <= 0.0001;
 }
+
+class MemoryFs final : public wallpaper::fs::Fs {
+public:
+    explicit MemoryFs(std::unordered_map<std::string, std::string> files)
+        : m_files(std::move(files)) {}
+
+    bool Contains(std::string_view path) const override {
+        return m_files.count(std::string(path)) != 0;
+    }
+
+    std::shared_ptr<wallpaper::fs::IBinaryStream> Open(std::string_view path) override {
+        const auto it = m_files.find(std::string(path));
+        if (it == m_files.end()) return nullptr;
+        return std::make_shared<wallpaper::fs::MemBinaryStream>(
+            std::vector<uint8_t>(it->second.begin(), it->second.end()));
+    }
+
+    std::shared_ptr<wallpaper::fs::IBinaryStreamW> OpenW(std::string_view) override {
+        return nullptr;
+    }
+
+private:
+    std::unordered_map<std::string, std::string> m_files;
+};
 
 wallpaper::WPSceneScriptRegistration MakeScriptRegistration(
     int32_t object_id,
@@ -201,6 +228,105 @@ int main() {
         assert(shadow_atlas.withDepth);
         assert(shadow_atlas.allowReuse);
         assert(shadow_atlas.height == 180);
+    }
+
+    {
+        wallpaper::WPSceneParser parser;
+        wallpaper::fs::VFS vfs;
+        assert(vfs.Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                { "/image.json",
+                  R"({
+                      "width": 16,
+                      "height": 16,
+                      "material": "materials/user_uniform.json"
+                  })" },
+                { "/materials/user_uniform.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "user_uniform",
+                              "textures": [],
+                              "usershadervalues": {
+                                  "accent_color": "accent"
+                              }
+                          }
+                      ]
+                  })" },
+                { "/shaders/user_uniform.vert",
+                  R"(
+                      attribute vec3 a_Position;
+                      void main() {
+                          gl_Position = vec4(a_Position, 1.0);
+                      }
+                  )" },
+                { "/shaders/user_uniform.frag",
+                  R"(
+                      uniform vec3 g_AccentColor; // {"material":"accent","default":"0 0 0"}
+                      void main() {
+                          gl_FragColor = vec4(g_AccentColor, 1.0);
+                      }
+                  )" },
+            }),
+            "test-assets"));
+
+        wallpaper::UserPropertyMap user_properties;
+        user_properties.emplace(
+            "accent_color",
+            wallpaper::UserProperty {
+                .value = wallpaper::ShaderValue(std::array<float, 3> { 0.9f, 0.4f, 0.2f }),
+                .condition = {},
+                .is_boolean = false,
+            });
+
+        wallpaper::audio::SoundManager sound_manager;
+        auto scene = parser.Parse("migrated-user-materials",
+                                  R"({
+                                      "camera": {
+                                          "center": [0, 0, 0],
+                                          "eye": [0, 0, 1],
+                                          "up": [0, 1, 0]
+                                      },
+                                      "general": {
+                                          "clearcolor": [0, 0, 0],
+                                          "orthogonalprojection": {
+                                              "width": 64,
+                                              "height": 64
+                                          },
+                                          "zoom": 1
+                                      },
+                                      "objects": [
+                                          {
+                                              "id": 42,
+                                              "name": "UserMaterialLayer",
+                                              "image": "image.json",
+                                              "origin": [8, 8, 0],
+                                              "angles": [0, 0, 0],
+                                              "scale": [1, 1, 1]
+                                          }
+                                      ]
+                                  })",
+                                  vfs,
+                                  sound_manager,
+                                  &user_properties);
+        assert(scene != nullptr);
+        assert(scene->userProperties.count("accent_color") == 1);
+        assert(scene->bindingRegistrations.size() == 1);
+        const auto& registration = scene->bindingRegistrations.front();
+        assert(registration.target_kind == wallpaper::WPSceneScriptTargetKind::MaterialUniform);
+        assert(registration.object_id == 42);
+        assert(registration.property_name == "g_AccentColor");
+        assert(registration.node != nullptr);
+        assert(registration.node->Mesh() != nullptr);
+        auto* material = registration.node->Mesh()->Material();
+        assert(material != nullptr);
+        assert(material->customShader.constValues.count("g_AccentColor") == 1);
+        const auto& accent = material->customShader.constValues.at("g_AccentColor");
+        assert(accent.size() == 3);
+        assert(NearlyEqual(accent[0], 0.9));
+        assert(NearlyEqual(accent[1], 0.4));
+        assert(NearlyEqual(accent[2], 0.2));
     }
 
     wallpaper::Scene scene;

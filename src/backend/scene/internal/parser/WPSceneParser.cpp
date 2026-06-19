@@ -58,6 +58,7 @@ struct ParseContext {
     i32                    ortho_w;
     i32                    ortho_h;
     fs::VFS*               vfs;
+    const UserPropertyMap* user_properties { nullptr };
 
     ShaderValueMap             global_base_uniforms;
     std::shared_ptr<SceneNode> effect_camera_node;
@@ -596,6 +597,65 @@ void LoadUserShaderValue(SceneMaterial& material, const wpscene::WPMaterial& wpm
     }
 }
 
+WPDynamicValue::Type DynamicTypeForShaderValue(const ShaderValue& value) {
+    switch (value.size()) {
+    case 1: return WPDynamicValue::Type::Float;
+    case 2: return WPDynamicValue::Type::Float2;
+    case 3: return WPDynamicValue::Type::Float3;
+    case 4: return WPDynamicValue::Type::Float4;
+    default: return WPDynamicValue::Type::FloatVector;
+    }
+}
+
+void RegisterUserShaderValueBindings(ParseContext& context, const wpscene::WPMaterial& wpmat,
+                                     const WPShaderInfo& info, SceneNode* node,
+                                     int32_t object_id, std::string_view object_name) {
+    if (context.scene == nullptr || node == nullptr || node->Mesh() == nullptr ||
+        node->Mesh()->Material() == nullptr || context.user_properties == nullptr) {
+        return;
+    }
+
+    for (const auto& binding : wpmat.usershadervalues) {
+        std::string user_property_name = binding.first;
+        std::string material_value_name = binding.second;
+        const auto* property =
+            LookupUserPropertyShaderValue(context.user_properties, user_property_name);
+
+        if (property == nullptr) {
+            const auto* reversed_property =
+                LookupUserPropertyShaderValue(context.user_properties, material_value_name);
+            if (reversed_property == nullptr) continue;
+
+            std::swap(user_property_name, material_value_name);
+            property = reversed_property;
+        }
+
+        const auto value_type = DynamicTypeForShaderValue(*property);
+        auto base_value =
+            WPDynamicValue::FromUserPropertyValue(UserPropertyValue(*property), value_type)
+                .value_or(WPDynamicValue {});
+
+        WPUserSetting setting;
+        setting.value = base_value;
+        setting.property = UserPropertyBinding {
+            .name = user_property_name,
+            .condition = {},
+        };
+
+        context.scene->bindingRegistrations.push_back(WPSceneScriptRegistration {
+            .object_id = object_id,
+            .object_name = std::string(object_name),
+            .property_name = ResolveMaterialValueUniformName(info, material_value_name),
+            .node = node,
+            .target_kind = WPSceneScriptTargetKind::MaterialUniform,
+            .target_index = 0,
+            .value_type = value_type,
+            .base_value = base_value,
+            .setting = std::move(setting),
+        });
+    }
+}
+
 std::optional<WPDynamicValue> ParsePropertyBaseValue(const nlohmann::json& property_json,
                                                      WPDynamicValue::Type hint) {
     if (property_json.is_object() && property_json.contains("value")) {
@@ -916,14 +976,13 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                            spImgNode.get(),
                            &material,
                            &svData,
-                           &shaderInfo)) {
+                           &shaderInfo,
+                           context.user_properties)) {
             LOG_ERROR("load imageobj '%s' material faild", wpimgobj.name.c_str());
             return;
         };
         LoadConstvalue(material, wpimgobj.material, shaderInfo);
-        const auto* user_properties =
-            context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
-        LoadUserShaderValue(material, wpimgobj.material, shaderInfo, user_properties);
+        LoadUserShaderValue(material, wpimgobj.material, shaderInfo, context.user_properties);
     }
 
     for (const auto& cs : wpimgobj.material.constantshadervalues) {
@@ -1005,6 +1064,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
     }
     mesh.AddMaterial(std::move(material));
     spImgNode->AddMesh(spMesh);
+    RegisterUserShaderValueBindings(
+        context, wpimgobj.material, shaderInfo, spImgNode.get(), wpimgobj.id, wpimgobj.name);
 
     context.shader_updater->SetNodeData(spImgNode.get(), svData);
     if (hasEffect) {
@@ -1167,16 +1228,15 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                    spEffNode.get(),
                                    &material,
                                    &svData,
-                                   &wpEffShaderInfo)) {
+                                   &wpEffShaderInfo,
+                                   context.user_properties)) {
                     eff_mat_ok = false;
                     break;
                 }
 
                 // load glname from alias and load to constvalue
                 LoadConstvalue(material, wpmat, wpEffShaderInfo);
-                const auto* user_properties =
-                    context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
-                LoadUserShaderValue(material, wpmat, wpEffShaderInfo, user_properties);
+                LoadUserShaderValue(material, wpmat, wpEffShaderInfo, context.user_properties);
                 auto spMesh = std::make_shared<SceneMesh>();
                 {
                     svData.parallaxDepth = { wpimgobj.parallaxDepth[0], wpimgobj.parallaxDepth[1] };
@@ -1315,7 +1375,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                               spNode.get(),
                               &material,
                               &svData,
-                              &shaderInfo);
+                              &shaderInfo,
+                              context.user_properties);
     } catch (const std::exception& e) {
         LOG_ERROR("load particleobj '%s' material exception: %s", wppartobj.name.c_str(), e.what());
     }
@@ -1324,9 +1385,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         return;
     }
     LoadConstvalue(material, particle_obj.material, shaderInfo);
-    const auto* user_properties =
-        context.scene->userProperties.empty() ? nullptr : &context.scene->userProperties;
-    LoadUserShaderValue(material, particle_obj.material, shaderInfo, user_properties);
+    LoadUserShaderValue(material, particle_obj.material, shaderInfo, context.user_properties);
     auto  spMesh             = std::make_shared<SceneMesh>(true);
     auto& mesh               = *spMesh;
     auto  animationmode      = ToAnimMode(particle_obj.animationmode);
@@ -1378,6 +1437,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
 
     mesh.AddMaterial(std::move(material));
     spNode->AddMesh(spMesh);
+    RegisterUserShaderValueBindings(
+        context, particle_obj.material, shaderInfo, spNode.get(), wppartobj.id, wppartobj.name);
     context.shader_updater->SetNodeData(spNode.get(), svData);
 
     for (auto& child : particle_obj.children) {
@@ -1475,6 +1536,17 @@ void wallpaper::LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene:
 
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
                                             fs::VFS& vfs, audio::SoundManager& sm) {
+    return Parse(scene_id, buf, vfs, sm, nullptr, 1.0);
+}
+
+std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
+                                            const std::string&     buf,
+                                            fs::VFS&               vfs,
+                                            audio::SoundManager&   sm,
+                                            const UserPropertyMap* user_properties,
+                                            double                 text_render_scale) {
+    (void)text_render_scale;
+
     nlohmann::json json;
     if (! PARSE_JSON(buf, json)) return nullptr;
     wpscene::WPScene sc;
@@ -1482,6 +1554,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     //	LOG_INFO(nlohmann::json(sc).dump(4));
 
     ParseContext context;
+    context.user_properties = user_properties;
 
     std::vector<WPObjectVar> wp_objs;
 
@@ -1515,6 +1588,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     }
 
     InitContext(context, vfs, sc);
+    context.scene->userProperties = user_properties == nullptr ? UserPropertyMap {} : *user_properties;
     ParseCamera(context, sc.general);
 
     {

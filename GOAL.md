@@ -171,12 +171,21 @@ Planned commit:
      `WPMaterial.usershadervalues`, merges them across material passes, stores shader
      `material` metadata aliases on `SceneMaterial`, and adds parser helpers for resolving
      user shader values to GLSL uniforms.
+   - `feat(scene): thread user properties through parser material bindings` adds the
+     reference-style parser overload that receives active `UserPropertyMap`, threads it through
+     image and particle material loading, applies `usershadervalues` to cold-start material
+     uniforms, and registers `MaterialUniform` bindings for live SceneScript/user-property
+     dispatch.
    Remaining:
-   - `WPSceneParser::Parse` still lacks the reference overload/path that receives the active
-     `UserPropertyMap`, so project user textures and user shader values cannot yet affect
-     initial scene load in `sceneviewer`.
+   - Runtime scene loading still needs the reference `SceneWallpaper`/driver path that stores
+     active project user properties and passes them into `WPSceneParser::Parse`; `sceneviewer`
+     currently calls the legacy overload with no user-property map.
+   - Effect pass material `usershadervalues` need the same registration/indexing coverage as
+     the reference effect material path.
    - Dynamic parser/materialization still needs to pass user properties through the same material
      loading path used by the static parser.
+   - Parser-wide JSON user-property override scope and `text_render_scale` consumption are not
+     fully aligned with the reference parser yet.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and
      `WPImageAlignment` have equivalent current-repository implementations.
