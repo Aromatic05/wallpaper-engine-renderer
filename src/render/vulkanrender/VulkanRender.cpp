@@ -965,24 +965,24 @@ void VulkanRender::Impl::releasePendingSceneResources(Scene& scene) {
         if (m_device->video_tex_cache().Release(key)) released_videos++;
     }
 
-    LOG_INFO("SceneResidencyRelease: static=%zu/%zu render-target=%zu/%zu video=%zu/%zu "
-             "texture-bytes-before=%zu texture-bytes-after=%zu texture-images-before=%zu "
-             "texture-images-after=%zu video-bytes-before=%zu video-bytes-after=%zu "
-             "video-entries-before=%zu video-entries-after=%zu",
-             released_static,
-             scene.pendingStaticTextureReleaseKeys.size(),
-             released_render_targets,
-             scene.pendingRenderTargetReleaseKeys.size(),
-             released_videos,
-             scene.pendingVideoTextureReleaseKeys.size(),
-             before_texture_bytes,
-             m_device->tex_cache().GetTrackedBytes(),
-             before_texture_count,
-             m_device->tex_cache().GetTrackedImageCount(),
-             before_video_bytes,
-             m_device->video_tex_cache().GetTrackedBytes(),
-             before_video_count,
-             m_device->video_tex_cache().GetTrackedEntryCount());
+    LOG_VERBOSE("SceneResidencyRelease: static=%zu/%zu render-target=%zu/%zu video=%zu/%zu "
+                "texture-bytes-before=%zu texture-bytes-after=%zu texture-images-before=%zu "
+                "texture-images-after=%zu video-bytes-before=%zu video-bytes-after=%zu "
+                "video-entries-before=%zu video-entries-after=%zu",
+                released_static,
+                scene.pendingStaticTextureReleaseKeys.size(),
+                released_render_targets,
+                scene.pendingRenderTargetReleaseKeys.size(),
+                released_videos,
+                scene.pendingVideoTextureReleaseKeys.size(),
+                before_texture_bytes,
+                m_device->tex_cache().GetTrackedBytes(),
+                before_texture_count,
+                m_device->tex_cache().GetTrackedImageCount(),
+                before_video_bytes,
+                m_device->video_tex_cache().GetTrackedBytes(),
+                before_video_count,
+                m_device->video_tex_cache().GetTrackedEntryCount());
 
     scene.pendingStaticTextureReleaseKeys.clear();
     scene.pendingVideoTextureReleaseKeys.clear();

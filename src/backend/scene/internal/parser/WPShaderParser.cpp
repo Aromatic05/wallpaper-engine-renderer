@@ -1643,10 +1643,10 @@ inline std::string SanitizeBrokenPreprocessorDirectives(const std::string& src,
     }
 
     if (removed_endifs > 0) {
-        LOG_INFO("SanitizeBrokenPreprocessorDirectives stripped %zu unmatched #endif line(s) "
-                 "from %s shader",
-                 removed_endifs,
-                 type == ShaderType::VERTEX ? "vertex" : "fragment");
+        LOG_VERBOSE("SanitizeBrokenPreprocessorDirectives stripped %zu unmatched #endif line(s) "
+                    "from %s shader",
+                    removed_endifs,
+                    type == ShaderType::VERTEX ? "vertex" : "fragment");
     }
     return out;
 }

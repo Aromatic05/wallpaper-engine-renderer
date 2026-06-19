@@ -259,11 +259,11 @@ std::shared_ptr<Image> Scene::CacheParsedImageResultLocked(
                                 .count();
     if (image != nullptr) {
         m_parsed_image_cache[texture_key] = image;
-        LOG_INFO("%s: key='%s' bytes=%zu duration=%.2fms",
-                 success_event,
-                 texture_key.c_str(),
-                 EstimateParsedImageBytes(image),
-                 static_cast<double>(elapsed_us) / 1000.0);
+        LOG_VERBOSE("%s: key='%s' bytes=%zu duration=%.2fms",
+                    success_event,
+                    texture_key.c_str(),
+                    EstimateParsedImageBytes(image),
+                    static_cast<double>(elapsed_us) / 1000.0);
         return image;
     }
 
@@ -370,7 +370,7 @@ Scene::ParsedImageRequest Scene::RequestParsedImageAsync(const std::string& text
         m_pending_parsed_images.emplace(texture_key, std::move(pending));
     }
 
-    LOG_INFO("SceneImageAsyncParseQueued: key='%s'", texture_key.c_str());
+    LOG_VERBOSE("SceneImageAsyncParseQueued: key='%s'", texture_key.c_str());
     return { ParsedImageRequestState::Pending, {} };
 }
 
@@ -399,11 +399,11 @@ void Scene::DropParsedImageCache(std::string_view texture_key) {
         m_failed_parsed_images.erase(key);
     }
     if (dropped_cached_image || dropped_pending_parse) {
-        LOG_INFO("SceneImageCacheDrop: key='%s' cached=%s bytes=%zu pending=%s",
-                 key.c_str(),
-                 dropped_cached_image ? "true" : "false",
-                 dropped_bytes,
-                 dropped_pending_parse ? "true" : "false");
+        LOG_VERBOSE("SceneImageCacheDrop: key='%s' cached=%s bytes=%zu pending=%s",
+                    key.c_str(),
+                    dropped_cached_image ? "true" : "false",
+                    dropped_bytes,
+                    dropped_pending_parse ? "true" : "false");
     }
     if (pending_future.valid()) pending_future.wait();
 }

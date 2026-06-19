@@ -1073,15 +1073,15 @@ std::optional<ImageParameters> TextureCache::Query(std::string_view key, Texture
             // image whose render-target contract changed. The old cache returned stale images for
             // an existing key until the entire cache was cleared, which made minute-level text
             // bridge updates recreate every scene texture and caused visible hitches.
-            LOG_INFO("TextureCache: resize cached render target key='%s' previousHash=%zu nextHash=%zu "
-                     "previousSize=[%u, %u] nextSize=[%d, %d]",
-                     key_string.c_str(),
-                     query->content_hash,
-                     tex_hash,
-                     query->image.extent.width,
-                     query->image.extent.height,
-                     content_hash.width,
-                     content_hash.height);
+            LOG_VERBOSE("TextureCache: resize cached render target key='%s' previousHash=%zu nextHash=%zu "
+                        "previousSize=[%u, %u] nextSize=[%d, %d]",
+                        key_string.c_str(),
+                        query->content_hash,
+                        tex_hash,
+                        query->image.extent.width,
+                        query->image.extent.height,
+                        content_hash.width,
+                        content_hash.height);
 
             if (query->query_keys.size() > 1) {
                 // A reusable image can be shared by multiple logical render-target keys. When only

@@ -2233,14 +2233,14 @@ bool ApplyParticlePropertyValue(WPSceneScriptHost::Opaque* opaque, int32_t layer
                 // until visibility turns true. Accept the color edit now; deferred materialization
                 // will parse the same instanceoverride property against the latest user-property
                 // snapshot.
-                LOG_INFO("SceneParticleColorDeferred: layer=%d property='%.*s' "
-                         "color=[%.3f, %.3f, %.3f]",
-                         layer_id,
-                         static_cast<int>(property_name.size()),
-                         property_name.data(),
-                         (*color)[0],
-                         (*color)[1],
-                         (*color)[2]);
+                LOG_VERBOSE("SceneParticleColorDeferred: layer=%d property='%.*s' "
+                            "color=[%.3f, %.3f, %.3f]",
+                            layer_id,
+                            static_cast<int>(property_name.size()),
+                            property_name.data(),
+                            (*color)[0],
+                            (*color)[1],
+                            (*color)[2]);
                 return true;
             }
             return false;
@@ -2255,15 +2255,15 @@ bool ApplyParticlePropertyValue(WPSceneScriptHost::Opaque* opaque, int32_t layer
 
         if (target_count == 0) return false;
 
-        LOG_INFO("SceneParticleColorApply: layer=%d property='%.*s' color=[%.3f, %.3f, %.3f] "
-                 "subsystem-targets=%zu",
-                 layer_id,
-                 static_cast<int>(property_name.size()),
-                 property_name.data(),
-                 (*color)[0],
-                 (*color)[1],
-                 (*color)[2],
-                 target_count);
+        LOG_VERBOSE("SceneParticleColorApply: layer=%d property='%.*s' color=[%.3f, %.3f, %.3f] "
+                    "subsystem-targets=%zu",
+                    layer_id,
+                    static_cast<int>(property_name.size()),
+                    property_name.data(),
+                    (*color)[0],
+                    (*color)[1],
+                    (*color)[2],
+                    target_count);
         return true;
     }
 
@@ -2283,11 +2283,11 @@ bool ApplyParticlePropertyValue(WPSceneScriptHost::Opaque* opaque, int32_t layer
                 // A deferred particle layer has no live subsystem yet. Accept the script value so
                 // hidden layers do not fail their update loop; once visibility materializes the
                 // subsystem, the next script tick will write the same clock multiplier to it.
-                LOG_INFO("SceneParticleRateDeferred: layer=%d property='%.*s' rate=%.3f",
-                         layer_id,
-                         static_cast<int>(property_name.size()),
-                         property_name.data(),
-                         *rate);
+                LOG_VERBOSE("SceneParticleRateDeferred: layer=%d property='%.*s' rate=%.3f",
+                            layer_id,
+                            static_cast<int>(property_name.size()),
+                            property_name.data(),
+                            *rate);
                 return true;
             }
             return false;
@@ -3047,13 +3047,13 @@ void QueueLayerResourceRelease(Scene& scene, int32_t layer_id,
     }
 
     if (queued_static != 0 || queued_video != 0 || queued_render_targets != 0) {
-        LOG_INFO("SceneResidencyQueueRelease: reason=%s layer=%d static=%zu video=%zu "
-                 "render-target=%zu",
-                 reason != nullptr ? reason : "unknown",
-                 layer_id,
-                 queued_static,
-                 queued_video,
-                 queued_render_targets);
+        LOG_VERBOSE("SceneResidencyQueueRelease: reason=%s layer=%d static=%zu video=%zu "
+                    "render-target=%zu",
+                    reason != nullptr ? reason : "unknown",
+                    layer_id,
+                    queued_static,
+                    queued_video,
+                    queued_render_targets);
     }
 }
 
@@ -3082,11 +3082,11 @@ void QueueHiddenLayerTreeResourceRelease(WPSceneScriptHost::Opaque* opaque,
     });
 
     if (queued_static != 0 || queued_video != 0 || queued_render_targets != 0) {
-        LOG_INFO("SceneResidencyQueueRelease: root-layer=%d static=%zu video=%zu render-target=%zu",
-                 root_layer_id,
-                 queued_static,
-                 queued_video,
-                 queued_render_targets);
+        LOG_VERBOSE("SceneResidencyQueueRelease: root-layer=%d static=%zu video=%zu render-target=%zu",
+                    root_layer_id,
+                    queued_static,
+                    queued_video,
+                    queued_render_targets);
     }
 }
 
@@ -3113,13 +3113,13 @@ void CancelLayerResourceRelease(Scene& scene, int32_t layer_id, const char* reas
     cancelled_render_targets += layer_render_targets;
 
     if (layer_static != 0 || layer_video != 0 || layer_render_targets != 0) {
-        LOG_INFO("SceneResidencyCancelRelease: reason=%s layer=%d static=%zu video=%zu "
-                 "render-target=%zu",
-                 reason != nullptr ? reason : "unknown",
-                 layer_id,
-                 layer_static,
-                 layer_video,
-                 layer_render_targets);
+        LOG_VERBOSE("SceneResidencyCancelRelease: reason=%s layer=%d static=%zu video=%zu "
+                    "render-target=%zu",
+                    reason != nullptr ? reason : "unknown",
+                    layer_id,
+                    layer_static,
+                    layer_video,
+                    layer_render_targets);
     }
 }
 
@@ -5442,14 +5442,14 @@ bool ApplyLayerPropertyValue(WPSceneScriptHost::Opaque* opaque, SceneNode* node,
                         effect_targets++;
                     });
                 if (applied) {
-                    LOG_INFO("SceneLayerColorApply: layer=%d color=[%.3f, %.3f, %.3f] "
-                             "base-targets=%zu effect-targets=%zu",
-                             layer_id,
-                             color[0],
-                             color[1],
-                             color[2],
-                             base_targets,
-                             effect_targets);
+                    LOG_VERBOSE("SceneLayerColorApply: layer=%d color=[%.3f, %.3f, %.3f] "
+                                "base-targets=%zu effect-targets=%zu",
+                                layer_id,
+                                color[0],
+                                color[1],
+                                color[2],
+                                base_targets,
+                                effect_targets);
                 }
                 return applied;
             }

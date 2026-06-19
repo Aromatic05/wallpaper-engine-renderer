@@ -1201,14 +1201,14 @@ void ApplyLayerControlPointOverrides(ParticleSubSystem&                       pS
         pcs[i].base_offset =
             Eigen::Vector3d { array_cast<double>(*over.controlpointOffsets[i]).data() };
         pcs[i].offset = pcs[i].base_offset;
-        LOG_INFO("SceneParticleControlPointOverride: layer=%d name='%s' index=%zu offset=[%.3f, "
-                 "%.3f, %.3f]",
-                 layer_id,
-                 layer_name.c_str(),
-                 i,
-                 pcs[i].offset.x(),
-                 pcs[i].offset.y(),
-                 pcs[i].offset.z());
+        LOG_VERBOSE("SceneParticleControlPointOverride: layer=%d name='%s' index=%zu offset=[%.3f, "
+                    "%.3f, %.3f]",
+                    layer_id,
+                    layer_name.c_str(),
+                    i,
+                    pcs[i].offset.x(),
+                    pcs[i].offset.y(),
+                    pcs[i].offset.z());
     }
 }
 
@@ -3083,12 +3083,12 @@ bool ConfigureSceneBloomPass(ParseContext& context) {
     // create or suppress any current LDR rendering.
     const bool has_ldr_bloom_work = scene.bloom.enabled || scene.bloom.strength > 0.0f;
     if (! has_ldr_bloom_work) {
-        LOG_INFO("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f "
-                 "hdr-requested=%s render-hdr=false active=false",
-                 scene.bloom.enabled ? "true" : "false",
-                 scene.bloom.strength,
-                 scene.bloom.threshold,
-                 scene.bloom.hdr ? "true" : "false");
+        LOG_VERBOSE("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f "
+                    "hdr-requested=%s render-hdr=false active=false",
+                    scene.bloom.enabled ? "true" : "false",
+                    scene.bloom.strength,
+                    scene.bloom.threshold,
+                    scene.bloom.hdr ? "true" : "false");
         return false;
     }
 
@@ -3400,27 +3400,27 @@ void main() {
         SpecTex_Default.data(),
     };
 
-    LOG_INFO("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f tint=[%.3f,%.3f,%.3f] "
-             "hdr-requested=%s render-hdr=false hdr-strength=%.3f hdr-threshold=%.3f "
-             "hdr-scatter=%.3f hdr-feather=%.3f hdr-iterations=%d active=true passes=%zu "
-             "quarter=%dx%d eighth=%dx%d",
-             scene.bloom.enabled ? "true" : "false",
-             scene.bloom.strength,
-             scene.bloom.threshold,
-             scene.bloom.tint[0],
-             scene.bloom.tint[1],
-             scene.bloom.tint[2],
-             scene.bloom.hdr ? "true" : "false",
-             scene.bloom.hdrStrength,
-             scene.bloom.hdrThreshold,
-             scene.bloom.hdrScatter,
-             scene.bloom.hdrFeather,
-             scene.bloom.hdrIterations,
-             scene.bloom.nodes.size(),
-             quarter_width,
-             quarter_height,
-             eighth_width,
-             eighth_height);
+    LOG_VERBOSE("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f tint=[%.3f,%.3f,%.3f] "
+                "hdr-requested=%s render-hdr=false hdr-strength=%.3f hdr-threshold=%.3f "
+                "hdr-scatter=%.3f hdr-feather=%.3f hdr-iterations=%d active=true passes=%zu "
+                "quarter=%dx%d eighth=%dx%d",
+                scene.bloom.enabled ? "true" : "false",
+                scene.bloom.strength,
+                scene.bloom.threshold,
+                scene.bloom.tint[0],
+                scene.bloom.tint[1],
+                scene.bloom.tint[2],
+                scene.bloom.hdr ? "true" : "false",
+                scene.bloom.hdrStrength,
+                scene.bloom.hdrThreshold,
+                scene.bloom.hdrScatter,
+                scene.bloom.hdrFeather,
+                scene.bloom.hdrIterations,
+                scene.bloom.nodes.size(),
+                quarter_width,
+                quarter_height,
+                eighth_width,
+                eighth_height);
     return true;
 }
 
@@ -5927,10 +5927,10 @@ void RegisterScenePropertyAnimationBinding(ParseContext& context, const nlohmann
                                  registration.base_value);
     }
     if (camera_registration) {
-        LOG_INFO("SceneCameraLayerRegister: layer=%d property='%.*s' kind=animation target=camera",
-                 object_id,
-                 static_cast<int>(property_name.size()),
-                 property_name.data());
+        LOG_VERBOSE("SceneCameraLayerRegister: layer=%d property='%.*s' kind=animation target=camera",
+                    object_id,
+                    static_cast<int>(property_name.size()),
+                    property_name.data());
     }
 }
 
@@ -6002,10 +6002,10 @@ void RegisterSceneScriptBinding(ParseContext& context, const nlohmann::json& obj
                                  registration.base_value);
     }
     if (camera_registration) {
-        LOG_INFO("SceneCameraLayerRegister: layer=%d property='%.*s' kind=script target=camera",
-                 object_id,
-                 static_cast<int>(property_name.size()),
-                 property_name.data());
+        LOG_VERBOSE("SceneCameraLayerRegister: layer=%d property='%.*s' kind=script target=camera",
+                    object_id,
+                    static_cast<int>(property_name.size()),
+                    property_name.data());
     }
 }
 
@@ -6073,10 +6073,10 @@ void RegisterScenePropertyBinding(ParseContext& context, const nlohmann::json& o
         .setting       = std::move(setting),
     });
     if (sound_volume_binding) {
-        LOG_INFO("SceneSoundRegister: layer=%d property='%.*s' kind=user target=sound",
-                 object_id,
-                 static_cast<int>(property_name.size()),
-                 property_name.data());
+        LOG_VERBOSE("SceneSoundRegister: layer=%d property='%.*s' kind=user target=sound",
+                    object_id,
+                    static_cast<int>(property_name.size()),
+                    property_name.data());
     }
     if (IsTextLayerObjectJson(object_json)) {
         const auto& registration = context.scene->bindingRegistrations.back();
@@ -6089,10 +6089,10 @@ void RegisterScenePropertyBinding(ParseContext& context, const nlohmann::json& o
                                  registration.base_value);
     }
     if (camera_registration) {
-        LOG_INFO("SceneCameraLayerRegister: layer=%d property='%.*s' kind=user target=camera",
-                 object_id,
-                 static_cast<int>(property_name.size()),
-                 property_name.data());
+        LOG_VERBOSE("SceneCameraLayerRegister: layer=%d property='%.*s' kind=user target=camera",
+                    object_id,
+                    static_cast<int>(property_name.size()),
+                    property_name.data());
     }
 }
 
@@ -6161,13 +6161,13 @@ void RegisterSceneParticleOverridePropertyBinding(ParseContext&         context,
     });
 
     const auto& registration = context.scene->bindingRegistrations.back();
-    LOG_INFO("SceneParticleOverrideRegister: layer=%d property='instanceoverride.%.*s' "
-             "kind=user target=particle user='%s'",
-             object_id,
-             static_cast<int>(property_name.size()),
-             property_name.data(),
-             registration.setting.property.has_value() ? registration.setting.property->name.c_str()
-                                                       : "");
+    LOG_VERBOSE("SceneParticleOverrideRegister: layer=%d property='instanceoverride.%.*s' "
+                "kind=user target=particle user='%s'",
+                object_id,
+                static_cast<int>(property_name.size()),
+                property_name.data(),
+                registration.setting.property.has_value() ? registration.setting.property->name.c_str()
+                                                          : "");
 }
 
 void RegisterSceneParticleOverrideScriptBinding(ParseContext&         context,
@@ -6233,11 +6233,11 @@ void RegisterSceneParticleOverrideScriptBinding(ParseContext&         context,
         .setting       = std::move(setting),
     });
 
-    LOG_INFO("SceneParticleOverrideRegister: layer=%d property='instanceoverride.%.*s' "
-             "kind=script target=particle",
-             object_id,
-             static_cast<int>(property_name.size()),
-             property_name.data());
+    LOG_VERBOSE("SceneParticleOverrideRegister: layer=%d property='instanceoverride.%.*s' "
+                "kind=script target=particle",
+                object_id,
+                static_cast<int>(property_name.size()),
+                property_name.data());
 }
 
 void RegisterEffectVisibilityBinding(ParseContext& context, const nlohmann::json& object_json,
@@ -6485,9 +6485,9 @@ void RegisterSceneGeneralPropertyBinding(ParseContext& context, const nlohmann::
         .setting       = std::move(setting),
     });
 
-    LOG_INFO("SceneGeneralRegister: property='%.*s' kind=user target=scene.general",
-             static_cast<int>(property_name.size()),
-             property_name.data());
+    LOG_VERBOSE("SceneGeneralRegister: property='%.*s' kind=user target=scene.general",
+                static_cast<int>(property_name.size()),
+                property_name.data());
 }
 
 void RegisterSceneScripts(ParseContext& context, const nlohmann::json& json) {
@@ -7424,25 +7424,25 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
                 // particle layers.  Logging their parse-time contract separates
                 // "the scene was parsed with defaults" from "runtime changed it
                 // later", which is the key distinction for switch-only flicker.
-                LOG_INFO("SceneVisibilityProbe: id=%d name='%s' particle=%s user='%s' "
-                         "condition='%s' property=%s authored=%s binding-value=%s "
-                         "initial=%s runtime-contract=%s lazy=%s",
-                         object_id,
-                         object_name.c_str(),
-                         obj.contains("particle") && ! obj.at("particle").is_null() ? "true"
-                                                                                    : "false",
-                         binding.user.name.c_str(),
-                         binding.user.condition.c_str(),
-                         DescribeUserPropertyForLog(user_properties, binding.user.name).c_str(),
-                         visibility_contract.authored_visible ? "true" : "false",
-                         binding.value ? "true" : "false",
-                         visibility_contract.initial_visible ? "true" : "false",
-                         visibility_contract.requires_runtime_contract ? "true" : "false",
-                         lazy_kind == LazyMaterializeKind::Image
-                             ? "image"
-                             : (lazy_kind == LazyMaterializeKind::Particle
-                                    ? "particle"
-                                    : (lazy_kind == LazyMaterializeKind::Text ? "text" : "none")));
+                LOG_VERBOSE("SceneVisibilityProbe: id=%d name='%s' particle=%s user='%s' "
+                            "condition='%s' property=%s authored=%s binding-value=%s "
+                            "initial=%s runtime-contract=%s lazy=%s",
+                            object_id,
+                            object_name.c_str(),
+                            obj.contains("particle") && ! obj.at("particle").is_null() ? "true"
+                                                                                       : "false",
+                            binding.user.name.c_str(),
+                            binding.user.condition.c_str(),
+                            DescribeUserPropertyForLog(user_properties, binding.user.name).c_str(),
+                            visibility_contract.authored_visible ? "true" : "false",
+                            binding.value ? "true" : "false",
+                            visibility_contract.initial_visible ? "true" : "false",
+                            visibility_contract.requires_runtime_contract ? "true" : "false",
+                            lazy_kind == LazyMaterializeKind::Image
+                                ? "image"
+                                : (lazy_kind == LazyMaterializeKind::Particle
+                                       ? "particle"
+                                       : (lazy_kind == LazyMaterializeKind::Text ? "text" : "none")));
             }
         }
 

@@ -332,15 +332,15 @@ void SceneImageEffectLayer::ResolveFinalCompositeNode(
         m_final_node->SetCamera(effect_cam.data());
         m_final_node->CopyTrans(default_node);
         mesh.ChangeMeshDataFrom(default_mesh);
-        LOG_INFO("SceneEffectFinalCompositeResolve: layer=%d name='%s' fullscreen=true "
-                 "camera='%.*s' output='%s' source='%s' blend=%d",
-                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
-                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-                 static_cast<int>(effect_cam.size()),
-                 effect_cam.data(),
-                 std::string(final_output).c_str(),
-                 std::string(final_composite_source).c_str(),
-                 static_cast<int>(material.blenmode));
+        LOG_VERBOSE("SceneEffectFinalCompositeResolve: layer=%d name='%s' fullscreen=true "
+                    "camera='%.*s' output='%s' source='%s' blend=%d",
+                    m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                    m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                    static_cast<int>(effect_cam.size()),
+                    effect_cam.data(),
+                    std::string(final_output).c_str(),
+                    std::string(final_composite_source).c_str(),
+                    static_cast<int>(material.blenmode));
         return;
     }
 
@@ -349,18 +349,18 @@ void SceneImageEffectLayer::ResolveFinalCompositeNode(
     m_final_node->SetCamera(std::string());
     mesh.ChangeMeshDataFrom(m_final_composite.uses_source_mesh ? *m_source_mesh
                                                                : *m_final_mesh);
-    LOG_INFO("SceneEffectFinalCompositeResolve: layer=%d name='%s' fullscreen=false "
-             "camera='' output='%s' source='%s' blend=%d publish=%s "
-             "publish-private=%s source-mesh=%s policy=%d",
-             m_worldNode != nullptr ? m_worldNode->ID() : -1,
-             m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-             std::string(final_output).c_str(),
-             std::string(final_composite_source).c_str(),
-             static_cast<int>(material.blenmode),
-             m_final_composite.publishes_visible_output ? "true" : "false",
-             m_final_composite.publishes_private_output ? "true" : "false",
-             m_final_composite.uses_source_mesh ? "true" : "false",
-             static_cast<int>(m_final_composite.hidden_policy));
+    LOG_VERBOSE("SceneEffectFinalCompositeResolve: layer=%d name='%s' fullscreen=false "
+                "camera='' output='%s' source='%s' blend=%d publish=%s "
+                "publish-private=%s source-mesh=%s policy=%d",
+                m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                std::string(final_output).c_str(),
+                std::string(final_composite_source).c_str(),
+                static_cast<int>(material.blenmode),
+                m_final_composite.publishes_visible_output ? "true" : "false",
+                m_final_composite.publishes_private_output ? "true" : "false",
+                m_final_composite.uses_source_mesh ? "true" : "false",
+                static_cast<int>(m_final_composite.hidden_policy));
 }
 
 void SceneImageEffectLayer::ResolveVisibleFinalOutput(
@@ -389,15 +389,15 @@ void SceneImageEffectLayer::ResolveVisibleFinalOutput(
         final_output_node.sceneNode->SetCamera(effect_cam.data());
         final_output_node.sceneNode->CopyTrans(default_node);
         mesh.ChangeMeshDataFrom(default_mesh);
-        LOG_INFO("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=true "
-                 "camera='%.*s' output='%s' material='%s' blend=%d",
-                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
-                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-                 static_cast<int>(effect_cam.size()),
-                 effect_cam.data(),
-                 std::string(final_output).c_str(),
-                 material.name.c_str(),
-                 static_cast<int>(material.blenmode));
+        LOG_VERBOSE("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=true "
+                    "camera='%.*s' output='%s' material='%s' blend=%d",
+                    m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                    m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                    static_cast<int>(effect_cam.size()),
+                    effect_cam.data(),
+                    std::string(final_output).c_str(),
+                    material.name.c_str(),
+                    static_cast<int>(material.blenmode));
         return;
     }
 
@@ -406,13 +406,13 @@ void SceneImageEffectLayer::ResolveVisibleFinalOutput(
     final_output_node.sceneNode->SetCamera(std::string());
     final_output_node.sceneNode->CopyTrans(*m_final_node);
     mesh.ChangeMeshDataFrom(*m_final_mesh);
-    LOG_INFO("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
-             "camera='' output='%s' material='%s' blend=%d private=false",
-             m_worldNode != nullptr ? m_worldNode->ID() : -1,
-             m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-             std::string(final_output).c_str(),
-             material.name.c_str(),
-             static_cast<int>(material.blenmode));
+    LOG_VERBOSE("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
+                "camera='' output='%s' material='%s' blend=%d private=false",
+                m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                std::string(final_output).c_str(),
+                material.name.c_str(),
+                static_cast<int>(material.blenmode));
 }
 
 void SceneImageEffectLayer::ResolvePrivateFinalOutput(
@@ -460,18 +460,18 @@ void SceneImageEffectLayer::ResolvePrivateFinalOutput(
         final_output_node.clear_before_draw = true;
         final_output_node.sceneNode->CopyTrans(default_node);
         mesh.ChangeMeshDataFrom(*m_final_mesh);
-        LOG_INFO("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
-                 "camera-override='%.*s' output='%s' material='%s' blend=%d private=true "
-                 "publish-composite=%s publish-private=%s layer-surface=true",
-                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
-                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-                 static_cast<int>(layer_surface_cam.size()),
-                 layer_surface_cam.data(),
-                 final_output_node.output.c_str(),
-                 material.name.c_str(),
-                 static_cast<int>(material.blenmode),
-                 m_final_composite.publishes_visible_output ? "true" : "false",
-                 m_final_composite.publishes_private_output ? "true" : "false");
+        LOG_VERBOSE("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
+                    "camera-override='%.*s' output='%s' material='%s' blend=%d private=true "
+                    "publish-composite=%s publish-private=%s layer-surface=true",
+                    m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                    m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                    static_cast<int>(layer_surface_cam.size()),
+                    layer_surface_cam.data(),
+                    final_output_node.output.c_str(),
+                    material.name.c_str(),
+                    static_cast<int>(material.blenmode),
+                    m_final_composite.publishes_visible_output ? "true" : "false",
+                    m_final_composite.publishes_private_output ? "true" : "false");
         return;
     }
 
@@ -479,18 +479,18 @@ void SceneImageEffectLayer::ResolvePrivateFinalOutput(
     final_output_node.sceneNode->SetCamera(effect_cam.data());
     final_output_node.sceneNode->CopyTrans(default_node);
     mesh.ChangeMeshDataFrom(default_mesh);
-    LOG_INFO("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
-             "camera='%.*s' output='%s' material='%s' blend=%d private=true "
-             "publish-composite=%s publish-private=%s",
-             m_worldNode != nullptr ? m_worldNode->ID() : -1,
-             m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
-             static_cast<int>(effect_cam.size()),
-             effect_cam.data(),
-             final_output_node.output.c_str(),
-             material.name.c_str(),
-             static_cast<int>(material.blenmode),
-             m_final_composite.publishes_visible_output ? "true" : "false",
-             m_final_composite.publishes_private_output ? "true" : "false");
+    LOG_VERBOSE("SceneEffectFinalOutputResolve: layer=%d name='%s' fullscreen=false "
+                "camera='%.*s' output='%s' material='%s' blend=%d private=true "
+                "publish-composite=%s publish-private=%s",
+                m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                static_cast<int>(effect_cam.size()),
+                effect_cam.data(),
+                final_output_node.output.c_str(),
+                material.name.c_str(),
+                static_cast<int>(material.blenmode),
+                m_final_composite.publishes_visible_output ? "true" : "false",
+                m_final_composite.publishes_private_output ? "true" : "false");
 }
 
 void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
