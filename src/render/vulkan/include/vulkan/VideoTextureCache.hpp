@@ -56,6 +56,11 @@ public:
     bool Release(std::string_view key);
     std::size_t GetTrackedBytes() const;
     std::size_t GetTrackedEntryCount() const;
+    std::size_t GetPendingUploadCount() const;
+    std::size_t GetRecordedUploadCount() const;
+    std::size_t GetAppliedSeekCount() const;
+    double GetPlaybackSeconds(std::string_view key) const;
+    bool HasPipelineDiagnostic(std::string_view key) const;
 
 private:
     struct Entry {
@@ -63,7 +68,13 @@ private:
         ImageSlotsRef               image;
         VideoTexturePlaybackState   playback_state { VideoTexturePlaybackState::Playing };
         double                      seek_seconds { 0.0 };
+        double                      playback_seconds { 0.0 };
         std::size_t                 tracked_bytes { 0 };
+        std::size_t                 pending_uploads { 0 };
+        std::size_t                 recorded_uploads { 0 };
+        std::size_t                 applied_seeks { 0 };
+        bool                        seek_pending { false };
+        bool                        pipeline_diagnostic_emitted { false };
     };
 
     Entry* find(std::string_view key);

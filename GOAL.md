@@ -176,6 +176,15 @@ Planned commit:
    Planned commits:
    - `feat(render): port video decoding texture pipeline`
    - `feat(render): upload video frames through video texture cache`
+   Progress:
+   - `feat(render): upload video frames through video texture cache` replaced the silent
+     `Poll`/`RecordUploads` no-ops with a real CPU-pipeline state path: playback advances,
+     pause/stop is honored, seek requests are applied, pending uploads are queued, recorded
+     uploads are accounted, cache entry/byte release is covered, and missing GPU/decoder
+     capability emits an explicit diagnostic instead of failing silently.
+   Remaining:
+   - The reference GStreamer/VA/NVIDIA decoder pipeline and actual decoded-frame pixel
+     replacement/upload still need to be migrated before video texture parity is complete.
    Acceptance:
    - `VideoTextureCache::Poll` and `RecordUploads` are real implementations.
    - Playback state, seeking, pause, frame upload, cache accounting, and release behavior

@@ -3,6 +3,7 @@
 #include "Device.hpp"
 #include "TextureCache.hpp"
 #include "scene/Image.hpp"
+#include "utils/Logging.h"
 
 #include <algorithm>
 
@@ -41,7 +42,13 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
     entry->playback_state = m_globally_paused && initial_state == VideoTexturePlaybackState::Playing
                                 ? VideoTexturePlaybackState::Paused
                                 : initial_state;
-    entry->image = m_device.tex_cache().CreateTex(const_cast<Image&>(image));
+    if (m_device.handle()) {
+        entry->image = m_device.tex_cache().CreateTex(const_cast<Image&>(image));
+    } else {
+        LOG_INFO("VideoTextureCache: no Vulkan device available for '%s'; "
+                 "tracking playback state without a GPU image",
+                 entry->key.c_str());
+    }
     for (const auto& slot : image.slots) {
         for (const auto& mip : slot.mipmaps) {
             entry->tracked_bytes += static_cast<std::size_t>(std::max<isize>(mip.size, 0));
@@ -89,14 +96,50 @@ void VideoTextureCache::ApplySeekRequests(
     for (auto& [key, seconds] : seek_seconds_by_key) {
         if (auto* entry = find(key); entry != nullptr) {
             entry->seek_seconds = std::max(0.0, seconds);
+            entry->seek_pending = true;
         }
     }
     seek_seconds_by_key.clear();
 }
 
-void VideoTextureCache::Poll() {}
+void VideoTextureCache::Poll() {
+    constexpr double frame_step_seconds = 1.0 / 30.0;
 
-void VideoTextureCache::RecordUploads(vvk::CommandBuffer&) {}
+    for (auto& entry : m_entries) {
+        if (entry == nullptr) continue;
+
+        if (!entry->pipeline_diagnostic_emitted) {
+            LOG_INFO("VideoTextureCache: CPU video pipeline has no decoder backend yet; "
+                     "tracking playback state for '%s'",
+                     entry->key.c_str());
+            entry->pipeline_diagnostic_emitted = true;
+        }
+
+        if (entry->seek_pending) {
+            entry->playback_seconds = std::max(0.0, entry->seek_seconds);
+            entry->seek_pending = false;
+            ++entry->applied_seeks;
+            if (entry->playback_state != VideoTexturePlaybackState::Stopped) {
+                ++entry->pending_uploads;
+            }
+        }
+
+        if (entry->playback_state != VideoTexturePlaybackState::Playing) {
+            continue;
+        }
+
+        entry->playback_seconds += frame_step_seconds;
+        ++entry->pending_uploads;
+    }
+}
+
+void VideoTextureCache::RecordUploads(vvk::CommandBuffer&) {
+    for (auto& entry : m_entries) {
+        if (entry == nullptr || entry->pending_uploads == 0) continue;
+        entry->recorded_uploads += entry->pending_uploads;
+        entry->pending_uploads = 0;
+    }
+}
 
 void VideoTextureCache::Clear() {
     m_entries.clear();
@@ -120,4 +163,38 @@ std::size_t VideoTextureCache::GetTrackedBytes() const {
 
 std::size_t VideoTextureCache::GetTrackedEntryCount() const {
     return m_entries.size();
+}
+
+std::size_t VideoTextureCache::GetPendingUploadCount() const {
+    std::size_t total = 0;
+    for (const auto& entry : m_entries) {
+        if (entry != nullptr) total += entry->pending_uploads;
+    }
+    return total;
+}
+
+std::size_t VideoTextureCache::GetRecordedUploadCount() const {
+    std::size_t total = 0;
+    for (const auto& entry : m_entries) {
+        if (entry != nullptr) total += entry->recorded_uploads;
+    }
+    return total;
+}
+
+std::size_t VideoTextureCache::GetAppliedSeekCount() const {
+    std::size_t total = 0;
+    for (const auto& entry : m_entries) {
+        if (entry != nullptr) total += entry->applied_seeks;
+    }
+    return total;
+}
+
+double VideoTextureCache::GetPlaybackSeconds(std::string_view key) const {
+    const auto* entry = find(key);
+    return entry == nullptr ? 0.0 : entry->playback_seconds;
+}
+
+bool VideoTextureCache::HasPipelineDiagnostic(std::string_view key) const {
+    const auto* entry = find(key);
+    return entry != nullptr && entry->pipeline_diagnostic_emitted;
 }
