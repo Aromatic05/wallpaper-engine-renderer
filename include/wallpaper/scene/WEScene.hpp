@@ -16,7 +16,7 @@ struct WESceneSourceConfig {
     std::string  uri;
     std::string  assets;
     std::int32_t fps { 15 };
-    std::int32_t fillMode { 0 };
+    std::int32_t fillMode { 2 };
     float        speed { 1.0f };
     float        volume { 1.0f };
     bool         muted { false };

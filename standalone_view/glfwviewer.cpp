@@ -68,21 +68,15 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    int framebuffer_width  = static_cast<int>(w_width);
-    int framebuffer_height = static_cast<int>(w_height);
-    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
-    if (framebuffer_width <= 0) framebuffer_width = static_cast<int>(w_width);
-    if (framebuffer_height <= 0) framebuffer_height = static_cast<int>(w_height);
-
     UserData data;
     data.width  = w_width;
     data.height = w_height;
 
     wallpaper::RenderInitInfo info;
     info.enable_valid_layer = program.get<bool>(OPT_VALID_LAYER);
-    info.width              = static_cast<uint16_t>(framebuffer_width);
-    info.height             = static_cast<uint16_t>(framebuffer_height);
-    info.render_scale       = static_cast<double>(framebuffer_width) / static_cast<double>(w_width);
+    info.width              = static_cast<uint16_t>(w_width);
+    info.height             = static_cast<uint16_t>(w_height);
+    info.render_scale       = 1.0;
     info.redraw_callback    = updateCallback;
 
     auto& sf_info = info.surface_info;
