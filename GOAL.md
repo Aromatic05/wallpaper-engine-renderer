@@ -154,12 +154,16 @@ Planned commit:
      sound layer `play`, `pause`, `stop`, `isPlaying`, and `volume` event dispatch through the
      lightweight SceneScript runtime, and wires `getParent`/`setParent` through the scene layer
      parent binding state instead of returning a self-parent placeholder.
+   - The fast parity import and follow-up build reconciliation now leave
+     `WPSceneScriptHost.cpp` functionally aligned with the reference host apart from local include
+     layout. Layer child enumeration, attachment-aware parent calls, effect/material proxies,
+     native bridge registration, media callbacks, video texture calls, and sound controls are all
+     present in the current host surface.
    Remaining:
-   - Layer children/enumeration and attachment-aware parent relation APIs still need the remaining
-     reference behavior.
-   - Material/effect/native object bridges still need runtime material proxy getters/setters,
-     effect material indexing, and native object exposure beyond the now-functional
-     `MaterialUniform` registration dispatch path.
+   - Re-enable or replace the temporarily removed `scenescript-host-test` coverage with assertions
+     against the migrated host surface instead of the older compatibility APIs.
+   - Audit the native bridge against real workshop scripts that exercise layer/material/effect
+     proxies at runtime; the code comparison is clean, but broad behavior coverage is still thin.
    Acceptance:
    - No `createLayer`, `destroyLayer`, `sortLayer`, media, material, or object bridge
      path remains as a silent stub when the reference has behavior.
@@ -311,9 +315,18 @@ Planned commit:
      pause/stop is honored, seek requests are applied, pending uploads are queued, recorded
      uploads are accounted, cache entry/byte release is covered, and missing GPU/decoder
      capability emits an explicit diagnostic instead of failing silently.
+   - `feat(render): port video decoding texture pipeline` replaces the compatibility cache with
+     the reference GStreamer decoder pipeline, including explicit CPU RGBA, VA dmabuf/BGRA, and
+     NVIDIA CUDA/NV12 pipeline selection, real decoded-frame upload through `RecordUploads`, EOS
+     loop handling, pause/stop/seek integration, cache release accounting, and GStreamer build
+     dependencies. NVIDIA CUDA/Vulkan interop is feature-gated on the local `cuda.h` development
+     header; without it the runtime explicitly falls back to VA or CPU instead of compiling a
+     broken CUDA path.
    Remaining:
-   - The reference GStreamer/VA/NVIDIA decoder pipeline and actual decoded-frame pixel
-     replacement/upload still need to be migrated before video texture parity is complete.
+   - Add a device-backed regression or sample-scene validation for real decoded video uploads; the
+     current build test only verifies the API/control surface because the test `Device` has no
+     initialized Vulkan allocator.
+   - Validate the CUDA interop branch on a machine with CUDA headers/driver support.
    Acceptance:
    - `VideoTextureCache::Poll` and `RecordUploads` are real implementations.
    - Playback state, seeking, pause, frame upload, cache accounting, and release behavior
