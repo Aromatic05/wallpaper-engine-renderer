@@ -98,6 +98,12 @@ static void TraverseNode(const std::function<void(SceneNode*)>& func, SceneNode*
     for (auto& child : node->GetChildren()) TraverseNode(func, child.get());
 }
 
+static void TraverseNodeForWarmup(const std::function<void(SceneNode*)>& func, SceneNode* node) {
+    if (node == nullptr) return;
+    func(node);
+    for (auto& child : node->GetChildren()) TraverseNodeForWarmup(func, child.get());
+}
+
 static void CheckAndSetSprite(Scene& scene, vulkan::CustomShaderPass::Desc& desc,
                               std::span<const std::string> texs) {
     for (usize i = 0; i < texs.size(); i++) {
@@ -339,10 +345,12 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     if (imgeff != nullptr) loadEffect(imgeff);
 }
 
-std::unique_ptr<rg::RenderGraph> wallpaper::BuildWESceneRenderPlan(Scene& scene) {
+static std::unique_ptr<rg::RenderGraph> BuildWESceneRenderPlanImpl(Scene& scene,
+                                                                   bool include_hidden) {
     std::unique_ptr<rg::RenderGraph> rgraph = std::make_unique<rg::RenderGraph>();
     ExtraInfo                        extra { .rgraph = rgraph.get(), .scene = &scene };
-    TraverseNode(
+    const auto traverse = include_hidden ? TraverseNodeForWarmup : TraverseNode;
+    traverse(
         [&extra](SceneNode* node) {
             ToGraphPass(node, SpecTex_Default, node->ID(), extra);
         },
@@ -380,4 +388,12 @@ std::unique_ptr<rg::RenderGraph> wallpaper::BuildWESceneRenderPlan(Scene& scene)
     }
 
     return rgraph;
+}
+
+std::unique_ptr<rg::RenderGraph> wallpaper::BuildWESceneRenderPlan(Scene& scene) {
+    return BuildWESceneRenderPlanImpl(scene, false);
+}
+
+std::unique_ptr<rg::RenderGraph> wallpaper::BuildWEScenePipelineWarmupRenderPlan(Scene& scene) {
+    return BuildWESceneRenderPlanImpl(scene, true);
 }

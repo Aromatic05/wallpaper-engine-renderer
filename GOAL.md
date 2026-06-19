@@ -364,6 +364,10 @@ Planned commit:
      replays them only after queued passes become resident, and fixes multi-key
      `MarkShareReady` so shared query textures are reusable only after every logical key
      reaches its last read.
+   - `feat(render): port hidden layer pipeline warmup graph` wires the runtime scene-load
+     path to the migrated `sceneToPipelineWarmupRenderGraph` entry, materializes deferred
+     runtime layers for residency before graph creation, and warms pass pipelines for the
+     hidden-layer-inclusive graph before compiling the active render graph.
    - `fix(scene): port stock render targets and shader compatibility fixes` registers
      Wallpaper Engine's built-in `_rt_shadowAtlas`, maps `_alias_lightCookie` to the
      stock cookie texture, fixes default render-target content dimensions, and ports the
@@ -371,8 +375,6 @@ Planned commit:
      integer, float, and bool conventions.
    Remaining:
    - Real pass-specific resource-wait states still need their reference behavior.
-   - Pipeline warmup still needs the reference hidden-layer warmup render graph, not only
-     the public warmup entry over the active graph.
    Acceptance:
    - Render graph construction covers the reference `SceneToRenderGraph` behavior.
    - `VulkanPass` subclasses expose deferred prepare, refresh, warmup, and residency

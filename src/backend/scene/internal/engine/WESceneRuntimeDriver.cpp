@@ -365,8 +365,13 @@ private:
                 m_scene->scriptHost->RegisterPropertyScript(registration);
             }
             m_scene->scriptHost->Initialize();
+            m_scene->scriptHost->MaterializeDeferredRuntimeLayersForResidency();
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
+            {
+                auto warmup_rg = BuildWEScenePipelineWarmupRenderPlan(*m_scene);
+                m_render->warmupRenderGraphPipelines(*m_scene, *warmup_rg);
+            }
             m_rg = BuildWESceneRenderPlan(*m_scene);
 
             if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
