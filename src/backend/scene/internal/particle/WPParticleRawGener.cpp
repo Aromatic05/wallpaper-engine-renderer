@@ -1,8 +1,10 @@
 #include "WPParticleRawGener.h"
 
 #include <cstring>
+#include <cmath>
 #include <Eigen/Dense>
 #include <array>
+#include <vector>
 
 #include "core/Literals.hpp"
 #include "SpecTexs.hpp"
@@ -34,6 +36,28 @@ inline void AssignVertex(std::span<float> dst, std::span<const float> src, uint 
     for (uint i = 0; i < num; i++) {
         std::copy_n(src.begin() + i * src_one_size, src_one_size, dst.begin() + i * dst_one_size);
     }
+}
+
+inline Vector3f CatmullRom(const Vector3f& p0, const Vector3f& p1, const Vector3f& p2,
+                           const Vector3f& p3, float t) noexcept {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    return 0.5f * ((2.0f * p1) + (-p0 + p2) * t +
+                   (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                   (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+}
+
+inline float LerpFloat(float start, float end, float t) noexcept {
+    return start + (end - start) * t;
+}
+
+inline std::array<float, 4> LerpColor(const Particle& start, const Particle& end, float t) noexcept {
+    return {
+        LerpFloat(start.color[0], end.color[0], t),
+        LerpFloat(start.color[1], end.color[1], t),
+        LerpFloat(start.color[2], end.color[2], t),
+        LerpFloat(start.alpha, end.alpha, t),
+    };
 }
 
 inline usize GenParticleData(std::span<const std::unique_ptr<ParticleInstance>> instances,
@@ -80,9 +104,13 @@ inline usize GenParticleData(std::span<const std::unique_ptr<ParticleInstance>> 
             offset += 4;
 
             if (opt.thick_format) {
+                const auto& render_velocity = ParticleModify::GetRenderVelocity(p);
+                // Cherry_Blossoms_2.json uses spritetrail/genericparticle, where this attribute is
+                // the visual trail axis. Prefer a mapsequence-supplied render axis when present so
+                // random petal facing does not perturb the physics velocity that draws the star.
                 AssignVertexTimes(
                     { data + offset, totle_size },
-                    std::array { p.velocity[0], p.velocity[1], p.velocity[2], lifetime },
+                    std::array { render_velocity[0], render_velocity[1], render_velocity[2], lifetime },
                     4);
                 offset += 4;
             }
@@ -97,8 +125,9 @@ inline usize GenParticleData(std::span<const std::unique_ptr<ParticleInstance>> 
 }
 
 inline size_t GenRopeParticleData(std::span<const Particle>   particles,
+                                  const Eigen::Vector3f&      instance_offset,
                                   const ParticleRawGenSpecOp& specOp, WPGOption opt,
-                                  SceneVertexArray& sv) {
+                                  SceneVertexArray& sv, size_t base_index) {
     /*
     attribute vec4 a_PositionVec4;
     attribute vec4 a_TexCoordVec4;
@@ -119,90 +148,122 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
     #define in_ParticleTrailPosition (a_TexCoordVec4C1.w)
     */
     std::array<float, 32 * 4> storage;
-
-    float* data = storage.data();
+    float*                    data = storage.data();
 
     const auto one_size   = sv.OneSize();
     const auto totle_size = one_size * 4;
-    uint       i { 0 };
-    for (const auto& p : particles) {
-        if (i == 0) {
-            i++;
-            continue;
-        }
-        if (! ParticleModify::LifetimeOk(p)) break;
+    const auto subdivisions =
+        std::max(1u,
+                 static_cast<uint32_t>(std::lround(std::max(
+                     1.0f, sv.GetFloatOption(WE_PRENDER_ROPE_SUBDIVISION)))));
 
-        const auto& pre_p  = particles[i - 1];
-        float       size   = p.size / 2.0f;
+    std::vector<const Particle*> live_particles;
+    live_particles.reserve(particles.size());
+    for (const auto& particle : particles) {
+        if (ParticleModify::LifetimeOk(particle)) {
+            live_particles.push_back(&particle);
+        }
+    }
+    if (live_particles.size() < 2) return 0;
+
+    const uint32_t alive_count       = static_cast<uint32_t>(live_particles.size());
+    const uint32_t num_segments      = alive_count - 1;
+    const uint32_t total_points      = num_segments * subdivisions + 1;
+    const uint32_t total_subsegments = total_points - 1;
+    const float    trail_length      = static_cast<float>(total_subsegments) + 1.0f;
+
+    std::vector<Vector3f>             spline_positions(total_points, Vector3f::Zero());
+    std::vector<float>                spline_sizes(total_points, 0.0f);
+    std::vector<std::array<float, 4>> spline_colors(total_points, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+    for (uint32_t i = 0; i < num_segments; i++) {
+        const auto& p0_src = i > 0 ? *live_particles[i - 1] : *live_particles[i];
+        const auto& p1_src = *live_particles[i];
+        const auto& p2_src = *live_particles[i + 1];
+        const auto& p3_src = i + 2 < alive_count ? *live_particles[i + 2] : *live_particles[i + 1];
+
+        const Vector3f p0 = instance_offset + p0_src.position;
+        const Vector3f p1 = instance_offset + p1_src.position;
+        const Vector3f p2 = instance_offset + p2_src.position;
+        const Vector3f p3 = instance_offset + p3_src.position;
+
+        for (uint32_t k = 0; k < subdivisions; k++) {
+            const float    t   = static_cast<float>(k) / static_cast<float>(subdivisions);
+            const uint32_t idx = i * subdivisions + k;
+            spline_positions[idx] = CatmullRom(p0, p1, p2, p3, t);
+            spline_sizes[idx]     = LerpFloat(p1_src.size / 2.0f, p2_src.size / 2.0f, t);
+            spline_colors[idx]    = LerpColor(p1_src, p2_src, t);
+        }
+    }
+
+    const auto& last_particle = *live_particles.back();
+    spline_positions[total_points - 1] = instance_offset + last_particle.position;
+    spline_sizes[total_points - 1]     = last_particle.size / 2.0f;
+    spline_colors[total_points - 1]    = {
+        last_particle.color[0],
+        last_particle.color[1],
+        last_particle.color[2],
+        last_particle.alpha,
+    };
+
+    for (uint32_t s = 0; s < total_subsegments; s++) {
+        const auto& start_pos   = spline_positions[s];
+        const auto& end_pos     = spline_positions[s + 1];
+        const auto& prev_pos    = s > 0 ? spline_positions[s - 1] : start_pos;
+        const auto& after_pos   = s + 2 < total_points ? spline_positions[s + 2] : end_pos;
+        const float size_start  = spline_sizes[s];
+        const float size_end    = spline_sizes[s + 1];
+        const auto& color_start = spline_colors[s];
+        const auto& color_end   = spline_colors[s + 1];
+
         std::size_t offset = 0;
 
-        float lifetime = p.lifetime;
-        specOp(p, { &lifetime });
-        float in_ParticleTrailLength   = particles.size();
-        float in_ParticleTrailPosition = i - 1;
-
-        Vector3f cp_vec = AngleAxisf(p.rotation[2] + M_PI / 2.0f, Vector3f::UnitZ()) *
-                          Vector3f { 0.0f, size / 2.0f, 0.0f };
-        Vector3f pos_vec = Vector3f { p.position } - Vector3f { pre_p.position };
-
-        cp_vec       = pos_vec.normalized().dot(cp_vec) > 0 ? cp_vec : -1.0f * cp_vec;
-        auto&    sp  = pre_p;
-        auto&    ep  = p;
-        Vector3f scp = Vector3f { sp.position } + cp_vec;
-        Vector3f ecp = Vector3f { ep.position } - cp_vec;
-
-        // a_PositionVec4: start pos
         AssignVertexTimes({ data + offset, totle_size },
-                          std::array { sp.position[0], sp.position[1], sp.position[2], size },
+                          std::array { start_pos[0], start_pos[1], start_pos[2], size_start },
                           4);
         offset += 4;
-        // a_TexCoordVec4: end pos
         AssignVertexTimes(
             { data + offset, totle_size },
-            std::array { ep.position[0], ep.position[1], ep.position[2], in_ParticleTrailLength },
+            std::array { end_pos[0], end_pos[1], end_pos[2], trail_length },
             4);
         offset += 4;
-
-        // a_TexCoordVec4C1: cp start pos
         AssignVertexTimes({ data + offset, totle_size },
-                          std::array { scp[0], scp[1], scp[2], in_ParticleTrailPosition },
+                          std::array { prev_pos[0], prev_pos[1], prev_pos[2], static_cast<float>(s) },
                           4);
         offset += 4;
 
         if (opt.thick_format) {
-            // a_TexCoordVec4C2: cp end pos, size_end
             AssignVertexTimes(
-                { data + offset, totle_size }, std::array { ecp[0], ecp[1], ecp[2], size }, 4);
+                { data + offset, totle_size },
+                std::array { after_pos[0], after_pos[1], after_pos[2], size_end },
+                4);
             offset += 4;
-            // a_TexCoordVec4C3: color_end
             AssignVertexTimes({ data + offset, totle_size },
-                              std::array { p.color[0], p.color[1], p.color[2], p.alpha },
+                              std::array { color_end[0], color_end[1], color_end[2], color_end[3] },
                               4);
             offset += 4;
-            // a_TexCoordC4
             std::array t { 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
             AssignVertex({ data + offset, totle_size }, t, 4);
             offset += 4;
         } else {
-            // a_TexCoordVec3C2: cp end pos
             AssignVertexTimes(
-                { data + offset, totle_size }, std::array { ecp[0], ecp[1], ecp[2] }, 4);
+                { data + offset, totle_size }, std::array { after_pos[0], after_pos[1], after_pos[2] }, 4);
             offset += 4;
-
-            // a_TexCoordC3
             std::array t { 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
             AssignVertex({ data + offset, totle_size }, t, 4);
             offset += 4;
         }
 
-        // a_Color
         AssignVertexTimes({ data + offset, totle_size },
-                          std::array { p.color[0], p.color[1], p.color[2], p.alpha },
+                          std::array { color_start[0], color_start[1], color_start[2], color_start[3] },
                           4);
 
-        sv.SetVertexs((i++) * 4, { data, totle_size });
+        if (! sv.SetVertexs((base_index + s) * 4, { data, totle_size })) {
+            return s;
+        }
     }
-    return i == 0 ? 0 : i - 1;
+
+    return total_subsegments;
 }
 
 inline void updateIndexArray(uint16_t index, size_t count, SceneIndexArray& iarray) noexcept {
@@ -237,12 +298,19 @@ void WPParticleRawGener::GenGLData(std::span<const std::unique_ptr<ParticleInsta
 
     usize particle_num { 0 };
 
-    /*
-    if (sv.GetOption(WE_PRENDER_ROPE))
-        particle_num = GenRopeParticleData(particles, specOp, opt, sv);
-    else
-    */
-    particle_num += GenParticleData(instances, specOp, opt, sv);
+    if (sv.GetOption(WE_PRENDER_ROPE)) {
+        for (const auto& inst : instances) {
+            if (inst->IsNoLiveParticle()) continue;
+            particle_num += GenRopeParticleData(inst->Particles(),
+                                                inst->GetBoundedData().pos,
+                                                specOp,
+                                                opt,
+                                                sv,
+                                                particle_num);
+        }
+    } else {
+        particle_num += GenParticleData(instances, specOp, opt, sv);
+    }
 
     // LOG_INFO("num: %d", particle_num);
 

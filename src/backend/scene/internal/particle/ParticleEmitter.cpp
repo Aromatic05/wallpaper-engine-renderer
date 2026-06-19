@@ -69,9 +69,12 @@ inline u32 Emitt(std::vector<Particle>& particles, u32 num, u32 maxcount, bool s
     return i + 1;
 }
 
-inline Particle Spwan(GenParticleOp gen, std::vector<ParticleInitOp>& inis, double duration) {
+inline Particle Spwan(GenParticleOp gen, std::vector<ParticleInitOp>& inis,
+                      const ParticleInitInfo& info) {
     auto particle = gen();
-    for (auto& el : inis) el(particle, duration);
+    // Cherry_Blossoms_2.json relies on all initializers for one spawned particle seeing the same
+    // control-point snapshot and sequence slot; otherwise the five cursor petals drift into noise.
+    for (auto& el : inis) el(particle, info);
     return particle;
 }
 
@@ -90,10 +93,14 @@ inline void ApplySign(Eigen::Vector3d& p, int32_t x, int32_t y, int32_t z) noexc
 
 ParticleEmittOp ParticleBoxEmitterArgs::MakeEmittOp(ParticleBoxEmitterArgs a) {
     double timer { 0.0f };
-    return [a, timer](std::vector<Particle>&       ps,
-                      std::vector<ParticleInitOp>& inis,
-                      u32                          maxcount,
-                      double                       timepass) mutable {
+    // Keep a per-emitter sequence counter so mapsequencearoundcontrolpoint repeats the authored
+    // five slots even when particles are recycled or sorted by the trail renderer.
+    uint64_t sequence { 0 };
+    return [a, timer, sequence](std::vector<Particle>&       ps,
+                                std::vector<ParticleInitOp>& inis,
+                                std::span<const ParticleControlpoint> controlpoints,
+                                u32                          maxcount,
+                                double                       timepass) mutable {
         timer += timepass;
         auto GenBox = [&]() {
             Eigen::Vector3d pos;
@@ -105,14 +112,22 @@ ParticleEmittOp ParticleBoxEmitterArgs::MakeEmittOp(ParticleBoxEmitterArgs a) {
             ParticleModify::ChangeVelocity(p,
                                            Random::get(a.minSpeed, a.maxSpeed) * pos.normalized());
 
-            ParticleModify::Move(p, a.orgin[0], a.orgin[1], a.orgin[2]);
+            Eigen::Vector3d origin = Eigen::Vector3f { a.orgin.data() }.cast<double>();
+            if (a.controlpoint >= 0 && (usize)a.controlpoint < controlpoints.size()) {
+                origin += controlpoints[(usize)a.controlpoint].offset;
+            }
+            ParticleModify::Move(p, origin);
             return p;
         };
         u32 emit_num = GetEmitNum(timer, a.emitSpeed);
         emit_num     = a.one_per_frame ? 1 : emit_num;
         emit_num     = a.instantaneous > 0 && ps.empty() ? a.instantaneous : emit_num;
         Emitt(ps, emit_num, maxcount, a.sort, [&]() {
-            return Spwan(GenBox, inis, 1.0f / a.emitSpeed);
+            ParticleInitInfo init_info;
+            init_info.duration      = 1.0f / a.emitSpeed;
+            init_info.controlpoints = controlpoints;
+            init_info.sequence      = sequence++;
+            return Spwan(GenBox, inis, init_info);
         });
     };
 }
@@ -120,10 +135,15 @@ ParticleEmittOp ParticleBoxEmitterArgs::MakeEmittOp(ParticleBoxEmitterArgs a) {
 ParticleEmittOp ParticleSphereEmitterArgs::MakeEmittOp(ParticleSphereEmitterArgs a) {
     using namespace Eigen;
     double timer { 0.0f };
-    return [a, timer](std::vector<Particle>&       ps,
-                      std::vector<ParticleInitOp>& inis,
-                      u32                          maxcount,
-                      double                       timepass) mutable {
+    // Cherry_Blossoms_2.json uses this sphere emitter. The sequence counter is intentionally tied to
+    // the emitter instance, not to particle array indices, so each burst stays in the fixed 5-point
+    // order expected by mapsequencearoundcontrolpoint.
+    uint64_t sequence { 0 };
+    return [a, timer, sequence](std::vector<Particle>&       ps,
+                                std::vector<ParticleInitOp>& inis,
+                                std::span<const ParticleControlpoint> controlpoints,
+                                u32                          maxcount,
+                                double                       timepass) mutable {
         timer += timepass;
         auto GenSphere = [&]() {
             auto   p = Particle();
@@ -140,14 +160,22 @@ ParticleEmittOp ParticleSphereEmitterArgs::MakeEmittOp(ParticleSphereEmitterArgs
             ParticleModify::ChangeVelocity(p,
                                            Random::get(a.minSpeed, a.maxSpeed) * sp.normalized());
 
-            ParticleModify::Move(p, Eigen::Vector3f { a.orgin.data() }.cast<double>());
+            Eigen::Vector3d origin = Eigen::Vector3f { a.orgin.data() }.cast<double>();
+            if (a.controlpoint >= 0 && (usize)a.controlpoint < controlpoints.size()) {
+                origin += controlpoints[(usize)a.controlpoint].offset;
+            }
+            ParticleModify::Move(p, origin);
             return p;
         };
         u32 emit_num = GetEmitNum(timer, a.emitSpeed);
         emit_num     = a.one_per_frame ? 1 : emit_num;
         emit_num     = a.instantaneous > 0 && ps.empty() ? a.instantaneous : emit_num;
         Emitt(ps, emit_num, maxcount, a.sort, [&]() {
-            return Spwan(GenSphere, inis, 1.0f / a.emitSpeed);
+            ParticleInitInfo init_info;
+            init_info.duration      = 1.0f / a.emitSpeed;
+            init_info.controlpoints = controlpoints;
+            init_info.sequence      = sequence++;
+            return Spwan(GenSphere, inis, init_info);
         });
     };
 }

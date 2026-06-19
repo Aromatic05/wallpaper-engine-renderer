@@ -84,16 +84,18 @@ public:
     u32       MaxInstanceCount() const;
     void      SetSceneNode(SceneNode* node);
     void      SetRuntimeColorOverride(const std::array<float, 3>& color);
+    std::optional<std::array<float, 3>> RuntimeColorOverride() const;
     void      SetRuntimeRateOverride(float rate);
+    std::optional<float> RuntimeRateOverride() const;
     void      SetRuntimeSizeReference(float size);
     void      SetRuntimeSizeOverride(float size);
-    std::size_t InstanceCount() const { return m_instances.size(); }
-    const ParticleInstance* InstanceAt(std::size_t index) const { return m_instances.at(index).get(); }
-    std::size_t ChildCount() const { return m_children.size(); }
-    const ParticleSubSystem* ChildAt(std::size_t index) const { return m_children.at(index).get(); }
-    double Rate() const { return m_rate; }
+    std::optional<float> RuntimeSizeOverride() const;
+    void      CollectStats(size_t* subsystem_count,
+                           size_t* instance_count,
+                           size_t* particle_count) const;
 
 private:
+    void UpdateLinkedControlpoints();
     Eigen::Vector3f ResolveEventAnchorPosition(const Eigen::Vector3f& parent_position);
     void ApplyRuntimeColorOverrideToParticle(Particle& particle) const;
     void ApplyRuntimeColorOverrideToInstances();
@@ -114,7 +116,15 @@ private:
 
     ParticleRawGenSpecOp m_genSpecOp;
     u32                  m_maxcount;
+    // Wallpaper particle `instanceoverride.rate` scales the subsystem simulation clock, not just
+    // the spawn count. Keep it mutable so audio/user scripts nested under instanceoverride can
+    // speed up gravity, lifetime decay, and emitter timers after the particle system was parsed.
     double               m_rate;
+    // Keep the live rate override separate from the parsed particle clock so script init can
+    // distinguish "no runtime value has been applied yet" from a parser fallback. Audio-reactive
+    // rate scripts commonly capture init(value) as their base multiplier; returning parsed m_rate
+    // here would seed them with the already-reduced cold value and shrink every update twice.
+    std::optional<float> m_runtime_rate_override;
     double               m_time;
 
     std::vector<std::unique_ptr<ParticleSubSystem>> m_children;
@@ -125,8 +135,16 @@ private:
     SpawnType m_spawn_type { SpawnType::STATIC };
     SceneNode* m_node { nullptr };
     bool       m_logged_event_anchor_transform_error { false };
+    // Runtime particle color edits arrive after the initializer list has already produced live
+    // particles. Store the normalized replacement color separately so both future spawns and already
+    // alive particles can be synchronized without rebuilding the whole particle subsystem.
     std::optional<std::array<float, 3>> m_runtime_color_override;
+    // Wallpaper particle `instanceoverride.size` is a multiplier baked into each particle's
+    // initializer state. Remember the parse-time multiplier as a reference so live edits can scale
+    // existing particles by the precise ratio instead of treating the property as an absolute pixel
+    // size or compounding the multiplier every frame.
     std::optional<float> m_runtime_size_reference;
+    std::optional<float> m_runtime_size_override;
     float                m_runtime_size_ratio { 1.0f };
 };
 
@@ -134,13 +152,19 @@ class Scene;
 class ParticleSystem : NoCopy, NoMove {
 public:
     ParticleSystem(Scene& scene): scene(scene) {};
-    ~ParticleSystem() = default;
+    ~ParticleSystem();
 
     void Emitt();
+    void SetMousePos(float x, float y);
+    std::array<float, 2> MousePos() const;
+    Eigen::Vector3d MouseScenePosition() const;
 
     Scene& scene;
 
     std::vector<std::unique_ptr<ParticleSubSystem>> subsystems;
     std::unique_ptr<IParticleRawGener>              gener;
+
+private:
+    std::array<float, 2> m_mouse_pos { 0.5f, 0.5f };
 };
 } // namespace wallpaper

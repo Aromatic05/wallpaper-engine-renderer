@@ -152,6 +152,16 @@ inline void InitVelocity(Particle& p, double x, double y, double z) {
     InitVelocity(p, { x, y, z });
 }
 
+inline void InitRenderVelocity(Particle& p, const Eigen::Vector3d& v) {
+    // This is only a shader-facing axis for spritetrail particles such as Cherry_Blossoms_2.json.
+    // Operators keep reading p.velocity, so the five-point motion remains matched to the reference.
+    p.renderVelocity    = v.cast<float>();
+    p.hasRenderVelocity = true;
+}
+inline void InitRenderVelocity(Particle& p, double x, double y, double z) {
+    InitRenderVelocity(p, { x, y, z });
+}
+
 inline void MutiplyInitLifeTime(Particle& p, double m) {
     p.lifetime *= m;
     p.init.lifetime = p.lifetime;
@@ -180,6 +190,9 @@ inline bool IsNew(const Particle& p) { return p.mark_new; }
 
 inline const Eigen::Vector3f& GetPos(const Particle& p) { return p.position; }
 inline const Eigen::Vector3f& GetVelocity(const Particle& p) { return p.velocity; }
+inline const Eigen::Vector3f& GetRenderVelocity(const Particle& p) {
+    return p.hasRenderVelocity ? p.renderVelocity : p.velocity;
+}
 inline const Eigen::Vector3f& GetAngular(const Particle& p) { return p.rotation; }
 
 }; // namespace ParticleModify
