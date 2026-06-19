@@ -331,6 +331,28 @@ add_test(NAME property-animation-test COMMAND property-animation-test)
 
 if(WP_ENABLE_SCENESCRIPT_RUNTIME)
   add_executable(
+    scenescript-host-test
+    scenescript_host_test.cpp)
+
+  target_link_libraries(scenescript-host-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+  target_include_directories(
+    scenescript-host-test PRIVATE
+    ..
+    ../backend/scene/internal
+    ../backend/scene/internal/animation
+    ../backend/scene/internal/scene/include
+    ../backend/scene/internal/scenescript
+    ../backend/scene/internal/settings
+    ../backend/scene/internal/text
+    ../common
+    ../common/scene
+    ../common/utils/include
+    ../../third_party/nlohmann/include)
+  target_compile_options(scenescript-host-test PRIVATE ${warn_opts})
+
+  add_test(NAME scenescript-host-test COMMAND scenescript-host-test)
+
+  add_executable(
     scenescript-runtime-test
     scenescript_runtime_test.cpp)
 
