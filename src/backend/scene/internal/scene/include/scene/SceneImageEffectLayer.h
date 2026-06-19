@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <string>
+#include <Eigen/Geometry>
 #include "core/Literals.hpp"
 #include "Type.hpp"
 
@@ -69,10 +70,14 @@ public:
     const auto& FirstTarget() const { return m_pingpong_a; }
     SceneMesh&  FinalMesh() const { return *m_final_mesh; }
     SceneNode&  FinalNode() const { return *m_final_node; }
+    SceneNode*  WorldNode() const { return m_worldNode; }
     void        SetFinalBlend(BlendMode m) { m_final_blend = m; }
     void        SetFullscreen(bool value) { fullscreen = value; }
     bool        HasFinalComposite() const;
     void        SetFinalCompositeSource(std::string source);
+    void        SyncResolvedOutputMesh();
+    void        SyncResolvedNodeToWorld();
+    void        SyncResolvedNodeToMatrix(const Eigen::Affine3f& world_affine);
 
     void ResolveEffect(const SceneMesh& defualt_mesh, std::string_view effect_cam);
 

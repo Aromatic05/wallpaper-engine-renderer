@@ -38,6 +38,25 @@ void SceneImageEffectLayer::SetFinalCompositeSource(std::string source) {
     material->textures[0] = m_final_composite_source;
 }
 
+void SceneImageEffectLayer::SyncResolvedOutputMesh() {
+    if (!HasFinalComposite() || m_final_node->Mesh() == nullptr) return;
+    m_final_node->Mesh()->ChangeMeshDataFrom(*m_final_mesh);
+    m_final_node->Mesh()->SetDirty();
+}
+
+void SceneImageEffectLayer::SyncResolvedNodeToWorld() {
+    if (m_worldNode == nullptr) return;
+    m_worldNode->UpdateTrans();
+    Eigen::Affine3f world_affine;
+    world_affine.matrix() = m_worldNode->ModelTrans().cast<float>();
+    SyncResolvedNodeToMatrix(world_affine);
+}
+
+void SceneImageEffectLayer::SyncResolvedNodeToMatrix(const Eigen::Affine3f& world_affine) {
+    m_final_node->SetLocalAffine(world_affine);
+    m_final_node->UpdateTrans();
+}
+
 void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
                                           std::string_view effect_cam) {
     std::string_view ppong_a = m_pingpong_a, ppong_b = m_pingpong_b;

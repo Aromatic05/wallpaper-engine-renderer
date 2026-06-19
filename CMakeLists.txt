@@ -15,7 +15,7 @@ include_directories(SYSTEM third_party)
 link_libraries(Eigen3::Eigen)
 
 option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" OFF)
-option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" OFF)
+option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" ON)
 
 set(WP_QUICKJS_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/quickjs"

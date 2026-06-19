@@ -10,6 +10,7 @@
 #include "backend/scene/internal/scene/include/scene/SceneTextPrimitive.h"
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
 #include "backend/scene/internal/wpscene/WPTextObject.h"
+#include "common/fs/include/fs/VFS.h"
 #include "render/vulkanrender/ClearPass.hpp"
 #include "render/vulkanrender/TextPass.hpp"
 #include "rendergraph/RenderGraph.hpp"
@@ -82,6 +83,7 @@ const wallpaper::vulkan::ClearPass::Desc* FindClearPass(
 
 int main() {
     wallpaper::Scene scene;
+    scene.vfs = std::make_unique<wallpaper::fs::VFS>();
     constexpr int32_t layer_id = 501;
     const std::string video_key = "media/movie.mp4";
     const std::string bridge_target = "_rt_text_migrated_bridge";
@@ -181,8 +183,11 @@ int main() {
     text_state.object.text = "before";
     text_state.object.size = { 160.0f, 40.0f };
     text_state.object.size_explicit = true;
-    text_state.primitive = std::make_shared<wallpaper::SceneTextPrimitive>();
-    text_state.primitive->object = text_state.object;
+    std::string text_error;
+    assert(wallpaper::BuildSceneTextPrimitive(
+        *scene.vfs, text_state.object, 1, 1.0, &text_state.primitive, &text_error));
+    assert(text_state.primitive != nullptr);
+    assert(!text_state.primitive->layout.glyph_pages.empty());
     text_state.primitive->bridge.enabled = true;
     text_state.primitive->bridge.render_targets.push_back(
         wallpaper::TextBridgeRenderTarget { .name = bridge_target, .scale = 1 });
@@ -192,12 +197,15 @@ int main() {
         "text",
         wallpaper::WPDynamicValue(std::string("after"))));
     assert(text_state.object.text == "after");
-    assert(text_state.primitive->object.text == "after");
+    assert(text_state.primitive->object.text == "before");
 
     scene.textLayers[layer_id] = text_state;
     scene.textPrimitives[layer_id] = text_state.primitive;
+    node->AddText(text_state.primitive);
     assert(wallpaper::RebuildTextLayerSceneLayout(scene, layer_id));
     assert(scene.dirtyTextLayerIds.count(layer_id) == 1);
+    assert(scene.textLayers[layer_id].primitive->object.text == "after");
+    assert(scene.textLayers[layer_id].primitive->atlas_version == 2);
 
     auto graph = wallpaper::BuildWESceneRenderPlan(scene);
     assert(FindClearPass(*graph, bridge_target) != nullptr);

@@ -56,6 +56,22 @@ target_link_libraries(
           ${CMAKE_THREAD_LIBS_INIT}
           ${CMAKE_DL_LIBS})
 
+target_link_libraries(${LIB_NAME} PRIVATE
+  ${PANGOCAIRO_LIBRARIES}
+  ${PANGOFT2_LIBRARIES}
+  ${FONTCONFIG_LIBRARIES}
+  ${FREETYPE2_LIBRARIES})
+target_include_directories(${LIB_NAME} PRIVATE
+  ${PANGOCAIRO_INCLUDE_DIRS}
+  ${PANGOFT2_INCLUDE_DIRS}
+  ${FONTCONFIG_INCLUDE_DIRS}
+  ${FREETYPE2_INCLUDE_DIRS})
+target_compile_options(${LIB_NAME} PRIVATE
+  ${PANGOCAIRO_CFLAGS_OTHER}
+  ${PANGOFT2_CFLAGS_OTHER}
+  ${FONTCONFIG_CFLAGS_OTHER}
+  ${FREETYPE2_CFLAGS_OTHER})
+
 target_include_directories(${LIB_NAME} PRIVATE . ../../..)
 target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
 target_compile_definitions(${LIB_NAME} PRIVATE WP_ENABLE_SCENESCRIPT_RUNTIME=$<BOOL:${WP_ENABLE_SCENESCRIPT_RUNTIME}>)

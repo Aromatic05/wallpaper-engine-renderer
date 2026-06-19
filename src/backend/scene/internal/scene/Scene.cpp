@@ -84,6 +84,7 @@ bool Scene::DestroyLayer(int32_t layer_id) {
 
     layerOrder.erase(std::remove(layerOrder.begin(), layerOrder.end(), layer_id), layerOrder.end());
     initialLayerConfigJson.erase(layer_id);
+    layerParentBindings.erase(layer_id);
     textLayers.erase(layer_id);
     textPrimitives.erase(layer_id);
     dirtyTextLayerIds.erase(layer_id);
@@ -119,6 +120,29 @@ bool Scene::SortLayer(int32_t layer_id, int32_t target_index) {
     return true;
 }
 
+void Scene::SetLayerParentBinding(int32_t layer_id,
+                                  int32_t parent_id,
+                                  std::string attachment) {
+    if (layer_id == 0) return;
+    if (parent_id == 0 && attachment.empty()) {
+        layerParentBindings.erase(layer_id);
+        return;
+    }
+    layerParentBindings[layer_id] = LayerParentBinding {
+        .parent_id = parent_id,
+        .attachment = std::move(attachment),
+    };
+}
+
+Scene::LayerParentBinding Scene::GetLayerParentBinding(int32_t layer_id) const {
+    const auto it = layerParentBindings.find(layer_id);
+    return it == layerParentBindings.end() ? LayerParentBinding {} : it->second;
+}
+
+void Scene::ClearLayerParentBinding(int32_t layer_id) {
+    layerParentBindings.erase(layer_id);
+}
+
 int32_t Scene::ResolveLayer(std::string_view name) const {
     const auto it = layerNameToId.find(std::string(name));
     return it == layerNameToId.end() ? 0 : it->second;
@@ -133,4 +157,3 @@ int32_t Scene::LayerIndex(int32_t layer_id) const {
 }
 
 }
-

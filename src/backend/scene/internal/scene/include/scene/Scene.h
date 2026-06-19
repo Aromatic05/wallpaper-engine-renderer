@@ -29,6 +29,11 @@ class VFS;
 }
 class Scene : NoCopy, NoMove {
 public:
+    struct LayerParentBinding {
+        int32_t     parent_id { 0 };
+        std::string attachment;
+    };
+
     Scene();
     ~Scene();
 
@@ -41,6 +46,10 @@ public:
     std::vector<std::unique_ptr<SceneLight>> lights;
     std::unordered_map<int32_t, std::shared_ptr<SceneTextPrimitive>> textPrimitives;
     std::unordered_map<int32_t, TextLayerRuntimeState> textLayers;
+    std::unordered_map<int32_t, std::vector<SceneNode*>> objectRuntimeNodes;
+    std::unordered_map<int32_t, std::vector<std::string>> objectRuntimeCameraNames;
+    std::unordered_set<int32_t> deferredRuntimeTextLayerIds;
+    std::unordered_set<std::string> dirtyRenderTargetKeys;
     std::unordered_set<int32_t> dirtyTextLayerIds;
     std::unordered_map<std::string, bool> videoTexturePaused;
     std::unordered_set<std::string>       videoTextureStopped;
@@ -57,6 +66,7 @@ public:
     UserPropertyMap                      userProperties;
     std::vector<int32_t>                 layerOrder;
     std::unordered_map<int32_t, SceneNode*> layerNodes;
+    std::unordered_map<int32_t, LayerParentBinding> layerParentBindings;
     std::unordered_map<int32_t, std::string> initialLayerConfigJson;
     std::unordered_map<std::string, int32_t> layerNameToId;
     bool renderGraphTopologyDirty { false };
@@ -79,8 +89,17 @@ public:
 
     double elapsingTime { 0.0f }, frameTime { 0.0f };
     double textRenderScale { 1.0 };
+    bool renderGraphResourcesDirty { false };
+    bool renderGraphAllResourcesDirty { false };
+    void MarkRenderTargetResourcesDirty(std::string render_target_key) {
+        renderGraphResourcesDirty = true;
+        if (!renderGraphAllResourcesDirty && !render_target_key.empty()) {
+            dirtyRenderTargetKeys.insert(std::move(render_target_key));
+        }
+    }
     void MarkTextLayerResourcesDirty(int32_t layer_id) {
-        if (layer_id != 0) dirtyTextLayerIds.insert(layer_id);
+        renderGraphResourcesDirty = true;
+        if (!renderGraphAllResourcesDirty && layer_id != 0) dirtyTextLayerIds.insert(layer_id);
     }
     void   PassFrameTime(double t) {
           frameTime = t;
@@ -111,6 +130,11 @@ public:
     bool    SortLayer(int32_t layer_id, int32_t target_index);
     int32_t ResolveLayer(std::string_view name) const;
     int32_t LayerIndex(int32_t layer_id) const;
+    void    SetLayerParentBinding(int32_t layer_id,
+                                  int32_t parent_id,
+                                  std::string attachment = {});
+    LayerParentBinding GetLayerParentBinding(int32_t layer_id) const;
+    void    ClearLayerParentBinding(int32_t layer_id);
     void    MarkRenderGraphTopologyDirty() { renderGraphTopologyDirty = true; }
 };
 } // namespace wallpaper

@@ -1,11 +1,9 @@
 find_package(OpenGL REQUIRED)
 pkg_check_modules(LZ4 REQUIRED liblz4)
-
-if(WP_ENABLE_TEXT_RENDERING)
-  pkg_check_modules(PANGOCAIRO REQUIRED pangocairo)
-  pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
-  pkg_check_modules(FREETYPE2 REQUIRED freetype2)
-endif()
+pkg_check_modules(PANGOCAIRO REQUIRED pangocairo)
+pkg_check_modules(PANGOFT2 REQUIRED pangoft2)
+pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
+pkg_check_modules(FREETYPE2 REQUIRED freetype2)
 
 option(ENABLE_RENDERDOC "Build with renderdoc api" OFF)
 

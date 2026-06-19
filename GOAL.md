@@ -164,19 +164,34 @@ Planned commit:
 
 3. Text rendering parity
    Planned commits:
+   - `chore(build): enable text rasterization dependencies`
    - `feat(scene): port text layout and glyph rasterization`
+   - `feat(scene): port text primitive runtime geometry updates`
    - `feat(render): render text glyph atlases in text pass`
    Progress:
    - `feat(render): render text glyph atlases in text pass` now routes TextPass through
      scene-owned text primitives, dedicated text shaders, atlas page textures, dynamic
      mesh uploads, and real background/glyph draw submission.
    Remaining:
-   - Text layout, atlas generation, and the remaining scene-side text rasterization flow
-     still need to match the reference implementation.
+   - Add required text rasterization libraries to the build instead of compiling a
+     geometry-only fallback.
+   - Port reference `WPTextLayer` Pango/Cairo/fontconfig/FreeType font resolution,
+     text measurement, wrapping, padding, crop, glyph bitmap cache, atlas packing, and
+     per-page glyph quad generation.
+   - Build canonical `SceneTextPrimitive` background and glyph-page meshes from the
+     rasterized layout; runtime text changes must replace atlas pages and mark text-layer
+     resources dirty.
+   - Port text placement, alignment offsets, screen-anchor adjustment, bridge target sizing,
+     and effect-camera geometry refresh from the reference implementation.
+   - Add regression coverage that proves text layout produces non-empty atlas pages and
+     real glyph meshes, and that runtime text/material/transform updates choose the
+     reference update path.
    Acceptance:
    - `TextPass::execute` performs real rendering work.
    - Text layout, font selection, glyph atlas/cache behavior, alignment, color, and
      effects match the reference implementation within the available backend.
+   - No text layer path silently falls back to rectangular placeholder geometry when
+     reference behavior can rasterize the text.
 
 4. Video texture parity
    Planned commits:

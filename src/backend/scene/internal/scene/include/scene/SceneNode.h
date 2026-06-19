@@ -14,6 +14,8 @@
 namespace wallpaper
 {
 
+class SceneTextPrimitive;
+
 class SceneNode : NoCopy, NoMove {
 public:
     SceneNode()
@@ -35,6 +37,7 @@ public:
     const auto& Name() const { return m_name; }
     void        SetName(std::string name) { m_name = std::move(name); }
     void        AddMesh(std::shared_ptr<SceneMesh> mesh) { m_mesh = mesh; }
+    void        AddText(std::shared_ptr<SceneTextPrimitive> text) { m_text = std::move(text); }
     void        AppendChild(std::shared_ptr<SceneNode> sub) {
                sub->m_parent = this;
                m_children.push_back(sub);
@@ -76,6 +79,10 @@ public:
     Eigen::Matrix4d ModelTrans() const { return m_trans; };
 
     SceneMesh* Mesh() { return m_mesh.get(); }
+    const SceneMesh* Mesh() const { return m_mesh.get(); }
+    SceneTextPrimitive* Text() { return m_text.get(); }
+    const SceneTextPrimitive* Text() const { return m_text.get(); }
+    bool       HasText() const { return m_text != nullptr; }
     bool       HasMaterial() const { return m_mesh && m_mesh->Material() != nullptr; };
 
     const auto& GetChildren() const { return m_children; }
@@ -99,6 +106,7 @@ private:
     Eigen::Vector3f m_alignmentOffset { 0.0f, 0.0f, 0.0f };
 
     std::shared_ptr<SceneMesh> m_mesh;
+    std::shared_ptr<SceneTextPrimitive> m_text;
 
     // specific a camera not active, used for image effect
     std::string m_cameraName;
