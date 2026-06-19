@@ -82,6 +82,11 @@ public:
 
     SpawnType Type() const;
     u32       MaxInstanceCount() const;
+    double    Rate() const { return m_rate; }
+    usize     InstanceCount() const { return m_instances.size(); }
+    const ParticleInstance* InstanceAt(usize index) const {
+        return index < m_instances.size() ? m_instances[index].get() : nullptr;
+    }
     void      SetSceneNode(SceneNode* node);
     void      SetRuntimeColorOverride(const std::array<float, 3>& color);
     std::optional<std::array<float, 3>> RuntimeColorOverride() const;

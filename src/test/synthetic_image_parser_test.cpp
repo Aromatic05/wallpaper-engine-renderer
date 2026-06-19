@@ -34,11 +34,11 @@ std::shared_ptr<wallpaper::Image> MakeSyntheticImage() {
     image->slots.resize(1);
     image->slots[0].width  = 2;
     image->slots[0].height = 2;
-    image->slots[0].mipmaps.push_back(wallpaper::ImageData {
-        .width = 2,
-        .height = 2,
-        .size = 16,
-    });
+    wallpaper::ImageData mipmap;
+    mipmap.width  = 2;
+    mipmap.height = 2;
+    mipmap.size   = 16;
+    image->slots[0].mipmaps.push_back(std::move(mipmap));
     return image;
 }
 } // namespace

@@ -32,12 +32,13 @@ std::unique_ptr<wallpaper::Image> MakeVideoPlaceholderImage(std::string key) {
     pixels[1] = 0;
     pixels[2] = 0;
     pixels[3] = 255;
-    image->slots[0].mipmaps.push_back(wallpaper::ImageData {
-        .width = 1,
-        .height = 1,
-        .size = 4,
-        .data = wallpaper::ImageDataPtr(pixels.release(), [](uint8_t* ptr) { delete[] ptr; }),
-    });
+    wallpaper::ImageData mipmap;
+    mipmap.width  = 1;
+    mipmap.height = 1;
+    mipmap.size   = 4;
+    mipmap.data =
+        wallpaper::ImageDataPtr(pixels.release(), [](uint8_t* ptr) { delete[] ptr; });
+    image->slots[0].mipmaps.push_back(std::move(mipmap));
     return image;
 }
 } // namespace

@@ -354,7 +354,7 @@ private:
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
 #if WP_ENABLE_SCENESCRIPT_RUNTIME
-            m_scene->scriptHost = std::make_unique<WPSceneScriptHost>(m_scene.get());
+            m_scene->scriptHost = std::make_shared<WPSceneScriptHost>(m_scene.get());
             for (const auto& registration : m_scene->bindingRegistrations) {
                 m_scene->scriptHost->RegisterPropertyBinding(registration);
             }

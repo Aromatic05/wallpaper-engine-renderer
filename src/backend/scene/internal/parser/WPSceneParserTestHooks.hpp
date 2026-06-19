@@ -2,18 +2,39 @@
 
 #include "common/scene/Image.hpp"
 #include "particle/ParticleSystem.h"
+#include "WPParticleParser.hpp"
 #include "wpscene/WPParticleObject.h"
+
+std::array<wallpaper::i32, 4> ResolvePaddedSpriteSheetResolution(
+    const wallpaper::ImageHeader& texh,
+    const wallpaper::SpriteFrame& frame);
 
 namespace wallpaper
 {
 
-std::array<i32, 4> ResolvePaddedSpriteSheetResolution(const ImageHeader& texh,
-                                                      const SpriteFrame& frame);
+using ::ResolvePaddedSpriteSheetResolution;
 
-wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
-    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem);
+inline wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
+    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
+    if (! is_child_subsystem) return layer_override;
 
-void LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene::Particle& wp,
-                              const wpscene::ParticleInstanceoverride& over);
+    auto child_override = layer_override;
+    child_override.overColor  = false;
+    child_override.overColorn = false;
+    return child_override;
+}
+
+inline void LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene::Particle& wp,
+                                     const wpscene::ParticleInstanceoverride& over) {
+    const bool replaces_color = over.enabled && (over.overColor || over.overColorn);
+    for (const auto& ini : wp.initializers) {
+        if (replaces_color && ini.contains("name") && ini.at("name").is_string() &&
+            ini.at("name").get<std::string>() == "colorrandom") {
+            continue;
+        }
+        pSys.AddInitializer(WPParticleParser::genParticleInitOp(ini));
+    }
+    if (over.enabled) pSys.AddInitializer(WPParticleParser::genOverrideInitOp(over));
+}
 
 } // namespace wallpaper

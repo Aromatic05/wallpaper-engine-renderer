@@ -56,8 +56,14 @@ target_include_directories(
   resource-correctness-test PRIVATE
   ..
   ../backend/scene/internal
+  ../backend/scene/internal/animation
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../common/fs/include
   ../render/vulkan/include)
 target_compile_options(resource-correctness-test PRIVATE ${warn_opts})
@@ -68,14 +74,19 @@ add_executable(
   effect-rendergraph-correctness-test
   effect_rendergraph_correctness_test.cpp)
 
-target_link_libraries(effect-rendergraph-correctness-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(effect-rendergraph-correctness-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
 target_include_directories(
   effect-rendergraph-correctness-test PRIVATE
   ..
   ../render/rendergraph/include
   ../backend/scene/internal/scene/include
   ../backend/scene/internal
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../common/utils/include
   ../render/vulkan/include)
 target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts})
@@ -86,15 +97,21 @@ add_executable(
   particle-regression-test
   particle_regression_test.cpp)
 
-target_link_libraries(particle-regression-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(particle-regression-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
 target_include_directories(
   particle-regression-test PRIVATE
   ..
   ../backend/scene/internal
   ../backend/scene/internal/particle/include
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
-  ../common/utils/include)
+  ../common/scene
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
 target_compile_options(particle-regression-test PRIVATE ${warn_opts})
 
 add_test(NAME particle-regression-test COMMAND particle-regression-test)
@@ -109,7 +126,11 @@ target_include_directories(
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
-  ../common)
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene)
 target_compile_options(synthetic-image-parser-test PRIVATE ${warn_opts})
 
 add_test(NAME synthetic-image-parser-test COMMAND synthetic-image-parser-test)
@@ -124,7 +145,11 @@ target_include_directories(
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../common/utils/include
   ../../third_party/nlohmann/include)
 target_compile_options(scene-parity-foundation-test PRIVATE ${warn_opts})
@@ -140,8 +165,14 @@ target_include_directories(
   node-transform-resolver-test PRIVATE
   ..
   ../backend/scene/internal
+  ../backend/scene/internal/animation
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/shader
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../common/utils/include)
 target_compile_options(node-transform-resolver-test PRIVATE ${warn_opts})
 
@@ -151,13 +182,16 @@ add_executable(
   text-scene-model-test
   text_scene_model_test.cpp)
 
-target_link_libraries(text-scene-model-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_link_libraries(text-scene-model-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
 target_include_directories(
   text-scene-model-test PRIVATE
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
   ../common
+  ../common/scene
   ../common/fs/include
   ../../third_party/nlohmann/include)
 target_compile_options(text-scene-model-test PRIVATE ${warn_opts})
@@ -174,7 +208,11 @@ target_include_directories(
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../../third_party/nlohmann/include)
 target_compile_options(text-layer-runtime-test PRIVATE ${warn_opts})
 
@@ -194,7 +232,11 @@ target_include_directories(
   ../render/vulkanrender
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
-  ../common)
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene)
 target_compile_options(text-clear-pass-test PRIVATE ${warn_opts})
 
 add_test(NAME text-clear-pass-test COMMAND text-clear-pass-test)
@@ -209,7 +251,11 @@ target_include_directories(
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../render/vulkan/include)
 target_compile_options(video-texture-cache-test PRIVATE ${warn_opts})
 
@@ -229,8 +275,13 @@ target_include_directories(
   migrated-features-regression-test PRIVATE
   ..
   ../backend/scene/internal
+  ../backend/scene/internal/animation
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
   ../common
+  ../common/scene
   ../common/utils/include
   ../render
   ../render/rendergraph/include
@@ -251,6 +302,7 @@ target_include_directories(
   ..
   ../backend/scene/internal
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
   ../common
   ../common/utils/include
   ../../third_party/nlohmann/include)
@@ -267,7 +319,9 @@ target_include_directories(
   property-animation-test PRIVATE
   ..
   ../backend/scene/internal
+  ../backend/scene/internal/scenescript
   ../backend/scene/internal/scene/include
+  ../backend/scene/internal/settings
   ../common
   ../common/utils/include
   ../../third_party/nlohmann/include)
@@ -285,30 +339,19 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
     scenescript-runtime-test PRIVATE
     ..
     ../backend/scene/internal
+    ../backend/scene/internal/animation
     ../backend/scene/internal/scene/include
+    ../backend/scene/internal/scenescript
+    ../backend/scene/internal/settings
+    ../backend/scene/internal/text
     ../common
+    ../common/scene
     ../common/utils/include
     ../../third_party/nlohmann/include)
   target_compile_options(scenescript-runtime-test PRIVATE ${warn_opts})
 
   add_test(NAME scenescript-runtime-test COMMAND scenescript-runtime-test)
 
-  add_executable(
-    scenescript-host-test
-    scenescript_host_test.cpp)
-
-  target_link_libraries(scenescript-host-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
-  target_include_directories(
-    scenescript-host-test PRIVATE
-    ..
-    ../backend/scene/internal
-    ../backend/scene/internal/scene/include
-    ../common
-    ../common/utils/include
-    ../../third_party/nlohmann/include)
-  target_compile_options(scenescript-host-test PRIVATE ${warn_opts})
-
-  add_test(NAME scenescript-host-test COMMAND scenescript-host-test)
 endif()
 
 add_test(

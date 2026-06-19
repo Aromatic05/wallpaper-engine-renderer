@@ -132,7 +132,7 @@ std::vector<std::string> snapshot(rg::RenderGraph& graph) {
                                        : nullptr;
             const auto material_name = material != nullptr ? material->name : std::string();
             lines.push_back("shader:" + material_name + ":" + desc.output + ":" + tex0 + ":" +
-                            desc.cameraOverride);
+                            desc.camera_override);
         } else if (auto* copy = dynamic_cast<vk::CopyPass*>(pass)) {
             const auto& desc = copy->desc();
             lines.push_back("copy:" + desc.src + ":" + desc.dst);
@@ -267,7 +267,7 @@ int main() {
         auto normalGraph = wallpaper::BuildWESceneRenderPlan(normal->scene);
         auto* normalFinal = findShaderByMaterial(*normalGraph, "final-composite");
         assert(normalFinal != nullptr);
-        assert(normalFinal->cameraOverride.empty());
+        assert(normalFinal->camera_override.empty());
 
         auto fullscreen = makeFixture(true);
         auto fullscreenGraph = wallpaper::BuildWESceneRenderPlan(fullscreen->scene);
@@ -286,23 +286,23 @@ int main() {
         assert(finalPass->output == SpecTex_Default);
         assert(authoredFinal->output == fixture->pingA);
         assert(findCopy(*graph, fixture->pingA, SpecTex_Default.data()) == nullptr);
-        assert(finalPass->premultipliedSourceBlend);
-        assert(authoredFinal->clearBeforeDraw);
-        assert(authoredFinal->forceAlphaWrite);
+        assert(finalPass->premultiplied_source_blend);
+        assert(authoredFinal->clear_before_draw);
+        assert(authoredFinal->force_alpha_write);
 
         VkPipelineColorBlendAttachmentState blend {};
-        vk::SetBlend(BlendMode::Translucent, blend, false);
+        vk::SetBlend(BlendMode::Translucent, blend);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
         assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
 
-        vk::SetBlend(BlendMode::Translucent, blend, true);
+        vk::SetBlend(BlendMode::Translucent, blend);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
         assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
 
-        vk::SetBlend(BlendMode::Additive, blend, false);
+        vk::SetBlend(BlendMode::Additive, blend);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE);
         assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);

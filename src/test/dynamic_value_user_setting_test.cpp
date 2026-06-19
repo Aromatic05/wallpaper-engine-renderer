@@ -25,6 +25,7 @@ int main() {
     using wallpaper::UserPropertyMap;
     using wallpaper::WPDynamicValue;
     using wallpaper::WPUserSetting;
+    wallpaper::WPScriptEvaluationContext script_context;
 
     {
         const auto parsed = WPDynamicValue::FromJsonLiteral(nlohmann::json::array({ 1.0f, 2.0f }),
@@ -54,7 +55,8 @@ int main() {
                                  WPDynamicValue::Type::Float),
                 "plain value setting should parse");
         float value = 0.0f;
-        Require(setting.evaluateAs(&value, nullptr), "plain value should evaluate");
+        Require(setting.evaluateAs(&value, nullptr, nullptr, script_context),
+                "plain value should evaluate");
         Require(value == 3.5f, "plain value should stay authored");
     }
 
@@ -69,7 +71,8 @@ int main() {
         properties.emplace("enabled", UserProperty { .value = ShaderValue(1.0f), .condition = {}, .is_boolean = true });
 
         bool value = false;
-        Require(setting.evaluateAs(&value, &properties), "bound boolean should evaluate");
+        Require(setting.evaluateAs(&value, &properties, nullptr, script_context),
+                "bound boolean should evaluate");
         Require(value, "user binding should override authored value");
     }
 
@@ -86,7 +89,8 @@ int main() {
         properties.emplace("mode", UserProperty { .value = std::string("1"), .condition = {}, .is_boolean = false });
 
         bool value = true;
-        Require(setting.evaluateAs(&value, &properties), "conditional binding should evaluate");
+        Require(setting.evaluateAs(&value, &properties, nullptr, script_context),
+                "conditional binding should evaluate");
         Require(! value, "inactive conditional branch should collapse to neutral value");
     }
 

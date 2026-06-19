@@ -15,7 +15,6 @@
 #include "SceneRenderTarget.h"
 #include "SceneNode.h"
 #include "SceneLight.hpp"
-#include "WPSceneScriptHost.hpp"
 #include "WPTextLayer.hpp"
 #include "WPUserProperties.hpp"
 
@@ -27,6 +26,8 @@ class ParticleSystem;
 class ParticleSubSystem;
 class IShaderValueUpdater;
 class IImageParser;
+class WPSceneScriptHost;
+struct WPSceneScriptRegistration;
 struct Image;
 struct SceneImageEffect;
 namespace audio
@@ -161,7 +162,7 @@ public:
     std::unique_ptr<IShaderValueUpdater> shaderValueUpdater;
     std::unique_ptr<IImageParser>        imageParser;
     std::unique_ptr<fs::VFS>             vfs;
-    std::unique_ptr<WPSceneScriptHost>   scriptHost;
+    std::shared_ptr<WPSceneScriptHost>   scriptHost;
     std::vector<WPSceneScriptRegistration> bindingRegistrations;
     std::vector<WPSceneScriptRegistration> scriptRegistrations;
     std::vector<WPSceneScriptRegistration> propertyAnimationRegistrations;

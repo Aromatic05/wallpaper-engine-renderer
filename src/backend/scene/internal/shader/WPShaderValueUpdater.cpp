@@ -6,6 +6,7 @@
 #include "scene/SceneImageEffectLayer.h"
 #include "scene/SceneNode.h"
 #include "audio/SoundManager.h"
+#include "scenescript/WPSceneScriptHost.hpp"
 #include "SpriteAnimation.hpp"
 #include "SpecTexs.hpp"
 #include "core/ArrayHelper.hpp"

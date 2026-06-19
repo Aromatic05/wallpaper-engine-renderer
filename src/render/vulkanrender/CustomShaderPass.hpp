@@ -93,6 +93,7 @@ public:
     CustomShaderPass(const Desc&);
     virtual ~CustomShaderPass();
 
+    const Desc& desc() const { return m_desc; }
     void setDescTex(u32 index, std::string_view tex_key);
 
     void prepare(Scene&, const Device&, RenderingResources&) override;

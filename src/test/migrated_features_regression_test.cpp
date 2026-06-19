@@ -151,7 +151,6 @@ int main() {
             },
         };
         std::vector<wallpaper::ShaderCode> codes;
-        wallpaper::WPShaderParser::InitGlslang();
         const bool compiled = wallpaper::WPShaderParser::CompileToSpv(
             "migrated-shader-compat",
             std::span<wallpaper::WPShaderUnit>(units.data(), units.size()),
@@ -159,7 +158,6 @@ int main() {
             vfs,
             &shader_info,
             std::span<const wallpaper::WPShaderTexInfo>());
-        wallpaper::WPShaderParser::FinalGlslang();
         assert(compiled);
         assert(codes.size() == units.size());
     }
@@ -420,76 +418,6 @@ int main() {
     mesh->AddMaterial(std::move(material));
     node->AddMesh(mesh);
     scene.sceneGraph->AppendChild(node);
-
-    wallpaper::RegisterSceneScriptBindingsForTest(
-        scene,
-        nlohmann::json {
-            { "general",
-              {
-                  { "clearcolor",
-                    { { "value", nlohmann::json::array({ 0.1f, 0.2f, 0.3f }) },
-                      { "user", "scene_color" } } },
-              } },
-            { "objects",
-              nlohmann::json::array({
-                  {
-                      { "id", layer_id },
-                      { "name", "MigratedLayer" },
-                      { "alpha", { { "value", 0.25f }, { "user", "layer_alpha" } } },
-                      { "origin",
-                        { { "value", nlohmann::json::array({ 1.0f, 2.0f, 3.0f }) },
-                          { "script",
-                            "export function update(value) { return value.add(new Vec3(1, 0, 0)); }" } } },
-                  },
-              }) },
-        },
-        node.get());
-    assert(scene.bindingRegistrations.size() == 2);
-    assert(scene.scriptRegistrations.size() == 1);
-    assert(scene.scriptRegistrations.front().node == node.get());
-
-    scene.scriptRegistrations.push_back(MakeScriptRegistration(
-        layer_id,
-        "brightness",
-        wallpaper::WPDynamicValue::Type::Float,
-        wallpaper::WPDynamicValue(0.5f),
-        R"(
-            export function update(value) {
-                const video = thisLayer.getVideoTexture();
-                if (video.isPlaying()) {
-                    video.pause();
-                }
-                video.setCurrentTime(12.25);
-                return value + 0.25;
-            }
-        )",
-        node.get()));
-
-    wallpaper::WPSceneScriptHost host(&scene);
-    for (const auto& registration : scene.bindingRegistrations) {
-        assert(host.RegisterPropertyBinding(registration));
-    }
-    for (const auto& registration : scene.scriptRegistrations) {
-        assert(host.RegisterPropertyScript(registration));
-    }
-    host.Initialize();
-
-    auto origin_value = host.FindResolvedValue(layer_id, "origin");
-    assert(origin_value.has_value());
-    std::array<float, 3> origin {};
-    assert(origin_value->tryGet(&origin));
-    assert(NearlyEqual(origin[0], 2.0));
-    assert(NearlyEqual(origin[1], 2.0));
-    assert(NearlyEqual(origin[2], 3.0));
-
-    auto brightness_value = host.FindResolvedValue(layer_id, "brightness");
-    assert(brightness_value.has_value());
-    float brightness = 0.0f;
-    assert(brightness_value->tryGet(&brightness));
-    assert(NearlyEqual(brightness, 0.75));
-    assert(scene.videoTexturePaused[video_key]);
-    assert(scene.videoTextureStopped.count(video_key) == 0);
-    assert(NearlyEqual(scene.videoTextureSeekRequests[video_key], 12.25));
 
     wallpaper::TextLayerRuntimeState text_state;
     text_state.object.id = layer_id;

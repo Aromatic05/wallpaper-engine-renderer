@@ -8,7 +8,7 @@
 #include "vulkan/ShaderComp.hpp"
 #include "PassCommon.hpp"
 #include "Resource.hpp"
-#include "WPSceneScriptMedia.hpp"
+#include "interface/IShaderValueUpdater.h"
 
 #include <Eigen/Dense>
 #include <cstdint>
@@ -228,8 +228,38 @@ std::shared_ptr<wallpaper::Image> ResolveTextBackgroundImage() {
     // The direct text pipeline only needs one non-glyph texture: a 1x1 white coverage image for
     // the optional opaque background quad. Materializing it here keeps the text pass self-owned
     // and avoids routing primitive text rendering through unrelated image-parser infrastructure.
-    static const std::shared_ptr<wallpaper::Image> image =
-        wallpaper::CreateSceneScriptSolidImage(kTextBackgroundTextureKey, { 255, 255, 255, 255 });
+    static const std::shared_ptr<wallpaper::Image> image = [] {
+        auto image           = std::make_shared<wallpaper::Image>();
+        image->key           = std::string(kTextBackgroundTextureKey);
+        image->header.width  = 1;
+        image->header.height = 1;
+        image->header.extraHeader["compo1"].val = 1;
+        image->header.extraHeader["compo2"].val = 1;
+        image->header.extraHeader["compo3"].val = 1;
+        image->header.sample.wrapS     = wallpaper::TextureWrap::CLAMP_TO_EDGE;
+        image->header.sample.wrapT     = wallpaper::TextureWrap::CLAMP_TO_EDGE;
+        image->header.sample.magFilter = wallpaper::TextureFilter::LINEAR;
+        image->header.sample.minFilter = wallpaper::TextureFilter::LINEAR;
+
+        image->slots.resize(1);
+        image->slots[0].width  = 1;
+        image->slots[0].height = 1;
+
+        auto pixels = std::make_unique<uint8_t[]>(4);
+        pixels[0] = 255;
+        pixels[1] = 255;
+        pixels[2] = 255;
+        pixels[3] = 255;
+
+        wallpaper::ImageData mipmap;
+        mipmap.width  = 1;
+        mipmap.height = 1;
+        mipmap.size   = 4;
+        mipmap.data =
+            wallpaper::ImageDataPtr(pixels.release(), [](uint8_t* ptr) { delete[] ptr; });
+        image->slots[0].mipmaps.push_back(std::move(mipmap));
+        return image;
+    }();
     return image;
 }
 

@@ -45,6 +45,7 @@ public:
     TextPass(const Desc&);
     ~TextPass() override;
 
+    const Desc& desc() const { return m_desc; }
     void prepare(Scene&, const Device&, RenderingResources&) override;
     void refreshResources(Scene&, const Device&, RenderingResources&) override;
     void execute(const Device&, RenderingResources&) override;

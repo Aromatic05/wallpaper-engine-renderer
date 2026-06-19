@@ -7,6 +7,7 @@
 #include "interface/IImageParser.h"
 #include "interface/IShaderValueUpdater.h"
 #include "particle/ParticleSystem.h"
+#include "scenescript/WPSceneScriptHost.hpp"
 #include "utils/Logging.h"
 
 #include <algorithm>
