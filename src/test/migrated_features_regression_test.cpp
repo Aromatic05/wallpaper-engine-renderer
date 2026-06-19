@@ -422,6 +422,8 @@ int main() {
     mesh->AddMaterial(std::move(material));
     node->AddMesh(mesh);
     scene.sceneGraph->AppendChild(node);
+    scene.layerNodes[layer_id] = node.get();
+    scene.nodeOwners[node.get()] = layer_id;
 
     wallpaper::TextLayerRuntimeState text_state;
     text_state.object.id = layer_id;
