@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -157,6 +158,107 @@ WPDynamicValue ToDynamicValue(const WPScriptValue& value, WPDynamicValue::Type t
     }
 
     return WPDynamicValue {};
+}
+
+std::optional<ShaderValue> ToShaderValue(const WPDynamicValue& value) {
+    switch (value.type()) {
+    case WPDynamicValue::Type::Boolean: {
+        bool out = false;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out ? 1.0f : 0.0f);
+    }
+    case WPDynamicValue::Type::Int32: {
+        int32_t out = 0;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(static_cast<float>(out));
+    }
+    case WPDynamicValue::Type::UInt32: {
+        uint32_t out = 0;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(static_cast<float>(out));
+    }
+    case WPDynamicValue::Type::Float: {
+        float out = 0.0f;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out);
+    }
+    case WPDynamicValue::Type::Double: {
+        double out = 0.0;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(static_cast<float>(out));
+    }
+    case WPDynamicValue::Type::Float2: {
+        std::array<float, 2> out {};
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out);
+    }
+    case WPDynamicValue::Type::Float3: {
+        std::array<float, 3> out {};
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out);
+    }
+    case WPDynamicValue::Type::Float4: {
+        std::array<float, 4> out {};
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out);
+    }
+    case WPDynamicValue::Type::FloatVector: {
+        std::vector<float> out;
+        if (!value.tryGet(&out)) return std::nullopt;
+        return ShaderValue(out);
+    }
+    case WPDynamicValue::Type::Int3: {
+        std::array<int32_t, 3> out {};
+        if (!value.tryGet(&out)) return std::nullopt;
+        const std::array<float, 3> converted {
+            static_cast<float>(out[0]),
+            static_cast<float>(out[1]),
+            static_cast<float>(out[2]),
+        };
+        return ShaderValue(converted);
+    }
+    case WPDynamicValue::Type::String:
+    case WPDynamicValue::Type::Null:
+        break;
+    }
+
+    return std::nullopt;
+}
+
+void ApplyMaterialUniformValue(const WPSceneScriptRegistration& registration,
+                               const WPDynamicValue& resolved) {
+    if (registration.node == nullptr || registration.node->Mesh() == nullptr) return;
+
+    auto* material = registration.node->Mesh()->Material();
+    if (material == nullptr) return;
+
+    const auto shader_value = ToShaderValue(resolved);
+    if (!shader_value.has_value()) return;
+
+    std::string uniform_name = registration.property_name;
+    if (const auto alias_it = material->uniformAliases.find(uniform_name);
+        alias_it != material->uniformAliases.end()) {
+        uniform_name = alias_it->second;
+    }
+
+    material->customShader.constValues[uniform_name] = *shader_value;
+    registration.node->Mesh()->SetDirty();
+}
+
+void ApplyResolvedRegistrationValue(const WPSceneScriptRegistration& registration,
+                                    const WPDynamicValue& resolved) {
+    switch (registration.target_kind) {
+    case WPSceneScriptTargetKind::MaterialUniform:
+        ApplyMaterialUniformValue(registration, resolved);
+        break;
+    case WPSceneScriptTargetKind::Scene:
+    case WPSceneScriptTargetKind::Sound:
+    case WPSceneScriptTargetKind::Camera:
+    case WPSceneScriptTargetKind::Layer:
+    case WPSceneScriptTargetKind::AnimationLayer:
+    case WPSceneScriptTargetKind::Effect:
+        break;
+    }
 }
 
 std::vector<std::string> ResolveVideoTextureKeys(const Scene& scene, const SceneNode* node) {
@@ -392,7 +494,9 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
             const WPDynamicValue::Type value_type = registration.value_type == WPDynamicValue::Type::Null
                 ? current_value.type()
                 : registration.value_type;
-            resolved_values[key] = ToDynamicValue(*evaluated, value_type);
+            const auto resolved = ToDynamicValue(*evaluated, value_type);
+            resolved_values[key] = resolved;
+            ApplyResolvedRegistrationValue(registration, resolved);
         }
     }
     dispatch_media_thumbnail = false;
@@ -427,6 +531,7 @@ bool WPSceneScriptHost::RegisterPropertyBinding(WPSceneScriptRegistration regist
     if (m_impl->initialized) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
+        ApplyResolvedRegistrationValue(registration, resolved);
     }
 
     m_impl->binding_registrations.push_back(std::move(registration));
@@ -441,6 +546,7 @@ bool WPSceneScriptHost::RegisterPropertyScript(WPSceneScriptRegistration registr
     if (m_impl->initialized) {
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
+        ApplyResolvedRegistrationValue(registration, resolved);
     }
 
     m_impl->script_registrations.push_back(std::move(registration));
@@ -462,6 +568,7 @@ bool WPSceneScriptHost::RegisterPropertyAnimation(WPSceneScriptRegistration regi
         InitializeAnimationInstance(instance);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
     }
 
     const std::string key =
@@ -488,16 +595,19 @@ void WPSceneScriptHost::Initialize() {
         InitializeAnimationInstance(instance);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
     }
 
     for (const auto& registration : m_impl->binding_registrations) {
-        m_impl->resolved_values[MakeRegistrationKey(registration)] =
-            registration.setting.evaluate(&m_impl->user_properties);
+        const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
+        m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
+        ApplyResolvedRegistrationValue(registration, resolved);
     }
 
     for (const auto& registration : m_impl->script_registrations) {
-        m_impl->resolved_values[MakeRegistrationKey(registration)] =
-            registration.setting.evaluate(&m_impl->user_properties);
+        const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
+        m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
+        ApplyResolvedRegistrationValue(registration, resolved);
     }
 
     m_impl->initialized = true;
@@ -541,6 +651,7 @@ void WPSceneScriptHost::ApplyUserProperties(const UserPropertyMap& user_properti
 
         const auto resolved = registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(registration)] = resolved;
+        ApplyResolvedRegistrationValue(registration, resolved);
     };
 
     for (auto& registration : m_impl->binding_registrations) {
@@ -560,6 +671,7 @@ void WPSceneScriptHost::ApplyUserProperties(const UserPropertyMap& user_properti
             instance.registration.setting.evaluate(&m_impl->user_properties);
         m_impl->resolved_values[MakeRegistrationKey(instance.registration)] =
             instance.registration.base_value;
+        ApplyResolvedRegistrationValue(instance.registration, instance.registration.base_value);
     }
 
     if (!initial_dispatch || m_impl->user_property_dispatch_count == 0) {

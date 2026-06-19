@@ -142,14 +142,18 @@ Planned commit:
      `usertextures`/`usershadervalues` parse storage and preserves shader material-value
      aliases on `SceneMaterial`, giving the SceneScript material/effect bridge the same
      alias data that the reference parser exposes.
+   - `feat(scene): dispatch scenescript material uniforms` makes `MaterialUniform`
+     registrations write resolved user/script values into `SceneMaterial::customShader.constValues`,
+     resolves authored material aliases to GLSL uniform names, and marks the mesh dirty so runtime
+     material updates are visible to rendering instead of only being tracked as host diagnostics.
    Remaining:
    - Runtime-created layers are represented by a real `SceneNode` and scene registry entry,
      but full asset/config materialization still needs the reference `CreateDynamicSceneLayer`
      behavior.
    - Layer parent/children relation APIs still need the remaining reference behavior.
-   - Material/effect/native object bridges still need runtime setters/getters and user-property
-     dispatch into material uniforms; the current parser now preserves the alias/binding metadata
-     but the full bridge behavior is not complete.
+   - Material/effect/native object bridges still need runtime material proxy getters/setters,
+     effect material indexing, and native object exposure beyond the now-functional
+     `MaterialUniform` registration dispatch path.
    Acceptance:
    - No `createLayer`, `destroyLayer`, `sortLayer`, media, material, or object bridge
      path remains as a silent stub when the reference has behavior.

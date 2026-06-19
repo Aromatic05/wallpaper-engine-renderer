@@ -200,6 +200,54 @@ int main() {
     Require(animated_alpha_value->tryGet(&alpha), "animation base value should be a float");
     Require(NearlyEqual(alpha, 0.5), "animation base value should use latest user property");
 
+    Scene material_scene;
+    auto material_node = std::make_shared<SceneNode>();
+    material_node->ID() = 9;
+    auto material_mesh = std::make_shared<SceneMesh>();
+    SceneMaterial shader_material;
+    shader_material.uniformAliases["accent"] = "g_AccentColor";
+    shader_material.customShader.constValues["g_AccentColor"] =
+        ShaderValue(std::array<float, 3> { 0.1f, 0.2f, 0.3f });
+    material_mesh->AddMaterial(std::move(shader_material));
+    material_node->AddMesh(material_mesh);
+
+    WPSceneScriptHost material_host(&material_scene);
+    auto material_registration = MakeRegistration(9,
+                                                  "MaterialLayer",
+                                                  "accent",
+                                                  WPSceneScriptTargetKind::MaterialUniform,
+                                                  WPDynamicValue::Type::Float3,
+                                                  WPDynamicValue(std::array<float, 3> {
+                                                      0.1f,
+                                                      0.2f,
+                                                      0.3f,
+                                                  }));
+    material_registration.node = material_node.get();
+    BindToUserProperty(material_registration, "accent_color");
+    Require(material_host.RegisterPropertyBinding(std::move(material_registration)),
+            "material uniform binding registration should succeed");
+    material_host.Initialize();
+
+    UserPropertyMap material_properties;
+    material_properties.emplace(
+        "accent_color",
+        UserProperty {
+            .value = ShaderValue(std::array<float, 3> { 0.8f, 0.6f, 0.4f }),
+            .condition = {},
+            .is_boolean = false,
+        });
+    material_host.ApplyUserProperties(material_properties, false);
+    const auto* material = material_node->Mesh()->Material();
+    Require(material != nullptr, "material uniform test should keep material");
+    Require(material->customShader.constValues.count("g_AccentColor") == 1,
+            "material uniform binding should resolve aliases to GLSL names");
+    const auto& accent = material->customShader.constValues.at("g_AccentColor");
+    Require(accent.size() == 3, "material uniform binding should write vector width");
+    Require(NearlyEqual(accent[0], 0.8), "material uniform binding should update first channel");
+    Require(NearlyEqual(accent[1], 0.6), "material uniform binding should update second channel");
+    Require(NearlyEqual(accent[2], 0.4), "material uniform binding should update third channel");
+    Require(material_node->Mesh()->Dirty(), "material uniform binding should dirty the mesh");
+
     host.ApplyGeneralSettings({ { "language", "zh-cn" }, { "quality", "high" } }, true);
     Require(host.GeneralSettingDispatchCount() == 1, "initial general setting dispatch should be counted");
     host.ApplyGeneralSettings({ { "language", "en-us" } }, false);
