@@ -15,9 +15,9 @@
 #include "scene/SceneNode.h"
 
 #include "parser/WPSyntheticImageParser.hpp"
+#include "parser/WPSceneParser.hpp"
 #include "scenescript/WPScriptRuntime.hpp"
 #include "text/WPTextLayer.hpp"
-#include "wpscene/WPTextObject.h"
 
 namespace wallpaper
 {
@@ -324,10 +324,6 @@ std::vector<WPScriptLayerState> BuildLayerStates(const Scene& scene) {
     return states;
 }
 
-bool TryCreateRuntimeTextLayer(Scene& scene,
-                               const WPScriptLayerEvent& event,
-                               int32_t* out_layer_id);
-
 void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextureEvent>& events) {
     for (const auto& event : events) {
         if (event.key.empty()) {
@@ -349,12 +345,57 @@ void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextur
     }
 }
 
-void ApplyLayerEvents(Scene& scene, const std::vector<WPScriptLayerEvent>& events) {
+void RegisterDynamicLayerRegistrations(
+    Scene& scene,
+    const std::vector<WPSceneScriptRegistration>& binding_registrations,
+    const std::vector<WPSceneScriptRegistration>& script_registrations,
+    const std::vector<WPSceneScriptRegistration>& property_animation_registrations) {
+    if (! scene.scriptHost) return;
+    for (const auto& registration : binding_registrations) {
+        scene.scriptHost->RegisterPropertyBinding(registration);
+    }
+    for (const auto& registration : script_registrations) {
+        scene.scriptHost->RegisterPropertyScript(registration);
+    }
+    for (const auto& registration : property_animation_registrations) {
+        scene.scriptHost->RegisterPropertyAnimation(registration);
+    }
+}
+
+void ApplyLayerEvents(Scene& scene, const UserPropertyMap* user_properties,
+                      const std::vector<WPScriptLayerEvent>& events) {
     for (const auto& event : events) {
         if (event.method == "create") {
-            int32_t layer_id = 0;
-            if (! TryCreateRuntimeTextLayer(scene, event, &layer_id)) {
+            nlohmann::json config;
+            if (! event.initial_config_json.empty()) {
+                try {
+                    config = nlohmann::json::parse(event.initial_config_json);
+                } catch (const nlohmann::json::parse_error& e) {
+                    LOG_ERROR("SceneScript: dynamic layer config parse failed: %s", e.what());
+                }
+            }
+
+            std::vector<WPSceneScriptRegistration> binding_registrations;
+            std::vector<WPSceneScriptRegistration> script_registrations;
+            std::vector<WPSceneScriptRegistration> property_animation_registrations;
+            int32_t                                layer_id { 0 };
+            if (config.is_object() && CreateDynamicSceneLayer(scene,
+                                                               config,
+                                                               user_properties,
+                                                               &binding_registrations,
+                                                               &script_registrations,
+                                                               &property_animation_registrations,
+                                                               nullptr,
+                                                               &layer_id)) {
+                RegisterDynamicLayerRegistrations(scene,
+                                                  binding_registrations,
+                                                  script_registrations,
+                                                  property_animation_registrations);
+            } else if (event.initial_config_json.empty()) {
                 scene.CreateRuntimeLayer(event.name, event.initial_config_json);
+            } else {
+                LOG_ERROR("SceneScript: dynamic layer creation failed for config: %s",
+                          event.initial_config_json.c_str());
             }
         } else if (event.method == "destroy") {
             scene.DestroyLayer(event.layer_id);
@@ -429,88 +470,6 @@ bool MediaPropertiesChanged(const WPSceneScriptMediaState& lhs, const WPSceneScr
            lhs.content_type != rhs.content_type;
 }
 
-bool TryCreateRuntimeTextLayer(Scene& scene,
-                               const WPScriptLayerEvent& event,
-                               int32_t* out_layer_id) {
-    if (event.initial_config_json.empty() || scene.vfs == nullptr) {
-        return false;
-    }
-
-    std::shared_ptr<SceneNode> parent_node;
-    if (scene.cameras.count("global") != 0 && scene.cameras.at("global") != nullptr) {
-        parent_node = scene.cameras.at("global")->GetAttachedNode();
-    }
-    if (parent_node == nullptr && scene.activeCamera != nullptr) {
-        parent_node = scene.activeCamera->GetAttachedNode();
-    }
-    if (parent_node == nullptr) {
-        return false;
-    }
-
-    nlohmann::json config;
-    try {
-        config = nlohmann::json::parse(event.initial_config_json);
-    } catch (const nlohmann::json::parse_error& e) {
-        LOG_ERROR("SceneScript: dynamic layer config parse failed: %s", e.what());
-        return false;
-    }
-    if (! config.is_object() || ! config.contains("text") || config.at("text").is_null()) {
-        return false;
-    }
-
-    wpscene::WPTextObject text_object;
-    if (! text_object.FromJson(config, *scene.vfs)) {
-        return false;
-    }
-
-    const int32_t layer_id = scene.AllocateLayerId();
-    text_object.id = layer_id;
-    if (text_object.name.empty()) {
-        text_object.name = event.name.empty() ? std::string("DynamicTextLayer") : event.name;
-    }
-    config["id"] = layer_id;
-    config["name"] = text_object.name;
-
-    std::shared_ptr<SceneTextPrimitive> primitive;
-    std::string                         error;
-    if (! BuildSceneTextPrimitive(
-            *scene.vfs, text_object, 0, scene.textRenderScale, &primitive, &error)) {
-        LOG_ERROR("SceneScript: dynamic text layer '%s' build failed: %s",
-                  text_object.name.c_str(),
-                  error.c_str());
-        return false;
-    }
-
-    auto node = std::make_shared<SceneNode>(Eigen::Vector3f(text_object.origin.data()),
-                                            Eigen::Vector3f(text_object.scale.data()),
-                                            Eigen::Vector3f(text_object.angles.data()),
-                                            text_object.name);
-    node->ID() = layer_id;
-    node->AddText(primitive);
-    TextLayerRuntimeState state {
-        .object = text_object,
-        .primitive = primitive,
-        .applied_alignment = ResolveTextLayerSceneAlignment(text_object),
-    };
-    ApplyTextLayerNodePlacement(node.get(), state, text_object.origin);
-
-    SceneNode* raw_node = node.get();
-    parent_node->AppendChild(std::move(node));
-    scene.RegisterLayer(layer_id, text_object.name, raw_node, config.dump());
-    scene.SetLayerParentBinding(layer_id, text_object.parent, text_object.attachment);
-    scene.SetLayerLocalVisibility(layer_id, text_object.visible);
-    scene.textPrimitives[layer_id] = primitive;
-    scene.textLayers[layer_id] = std::move(state);
-    scene.objectRuntimeNodes[layer_id].push_back(raw_node);
-    scene.ApplyLayerVisibility(layer_id);
-    scene.MarkRenderGraphTopologyDirty();
-    scene.MarkTextLayerResourcesDirty(layer_id);
-    if (out_layer_id != nullptr) {
-        *out_layer_id = layer_id;
-    }
-    return true;
-}
-
 } // namespace
 
 struct WPSceneScriptHost::Opaque {
@@ -581,7 +540,7 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
         const auto evaluated =
             runtime.evaluate(registration.setting.script, ToScriptValue(current_value), context);
         ApplyVideoTextureEvents(*scene, video_events);
-        ApplyLayerEvents(*scene, layer_events);
+        ApplyLayerEvents(*scene, &user_properties, layer_events);
 
         if (evaluated.has_value()) {
             const WPDynamicValue::Type value_type = registration.value_type == WPDynamicValue::Type::Null

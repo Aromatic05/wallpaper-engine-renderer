@@ -65,6 +65,7 @@ struct ParseContext {
     std::shared_ptr<SceneNode> global_camera_node;
     std::shared_ptr<SceneNode> global_perspective_camera_node;
     std::unordered_map<int32_t, std::shared_ptr<SceneNode>> object_nodes;
+    std::unordered_map<int32_t, nlohmann::json> object_initial_configs;
 };
 
 using WPObjectVar = std::variant<wpscene::WPImageObject, wpscene::WPParticleObject,
@@ -78,6 +79,14 @@ nlohmann::json MakeLayerInitialConfig(int32_t id, const std::string& name) {
         { "id", id },
         { "name", name },
     };
+}
+
+std::string MakeLayerInitialConfig(ParseContext& context, int32_t id, const std::string& name) {
+    if (const auto it = context.object_initial_configs.find(id);
+        it != context.object_initial_configs.end()) {
+        return it->second.dump();
+    }
+    return MakeLayerInitialConfig(id, name).dump();
 }
 
 // mapRate < 1.0
@@ -888,6 +897,65 @@ void InitContext(ParseContext& context, fs::VFS& vfs, wpscene::WPScene& sc) {
     }
 }
 
+void LoadBaseUniforms(ParseContext& context) {
+    auto& gb              = context.global_base_uniforms;
+    gb["g_ViewUp"]        = std::array { 0.0f, 1.0f, 0.0f };
+    gb["g_ViewRight"]     = std::array { 1.0f, 0.0f, 0.0f };
+    gb["g_ViewForward"]   = std::array { 0.0f, 0.0f, -1.0f };
+    gb["g_EyePosition"]   = std::array { 0.0f, 0.0f, 0.0f };
+    gb["g_TexelSize"]     = std::array { 1.0f / 1920.0f, 1.0f / 1080.0f };
+    gb["g_TexelSizeHalf"] = std::array { 1.0f / 1920.0f / 2.0f, 1.0f / 1080.0f / 2.0f };
+    gb["g_NormalModelMatrix"] = ShaderValue::fromMatrix(Matrix4f::Identity());
+}
+
+bool InitDynamicParseContext(ParseContext& context, Scene& scene,
+                             const UserPropertyMap* user_properties) {
+    if (scene.vfs == nullptr || scene.shaderValueUpdater == nullptr ||
+        scene.imageParser == nullptr || scene.paritileSys == nullptr) {
+        return false;
+    }
+
+    context.scene = std::shared_ptr<Scene>(&scene, [](Scene*) {});
+    context.vfs = scene.vfs.get();
+    context.user_properties = user_properties;
+    context.ortho_w = scene.ortho[0];
+    context.ortho_h = scene.ortho[1];
+    context.shader_updater = dynamic_cast<WPShaderValueUpdater*>(scene.shaderValueUpdater.get());
+    if (context.shader_updater == nullptr) return false;
+
+    LoadBaseUniforms(context);
+    context.global_base_uniforms["g_LightAmbientColor"] = scene.clearColor;
+
+    if (scene.cameras.count("effect") != 0 && scene.cameras.at("effect") != nullptr) {
+        context.effect_camera_node = scene.cameras.at("effect")->GetAttachedNode();
+    }
+    if (scene.cameras.count("global") != 0 && scene.cameras.at("global") != nullptr) {
+        context.global_camera_node = scene.cameras.at("global")->GetAttachedNode();
+    }
+    if (scene.cameras.count("global_perspective") != 0 &&
+        scene.cameras.at("global_perspective") != nullptr) {
+        context.global_perspective_camera_node =
+            scene.cameras.at("global_perspective")->GetAttachedNode();
+    }
+    if (context.global_camera_node == nullptr && scene.activeCamera != nullptr) {
+        context.global_camera_node = scene.activeCamera->GetAttachedNode();
+    }
+    if (context.global_camera_node == nullptr) return false;
+
+    for (const auto& [layer_id, node] : scene.layerNodes) {
+        if (node != nullptr) {
+            context.object_nodes[layer_id] = std::shared_ptr<SceneNode>(node, [](SceneNode*) {});
+        }
+    }
+    for (const auto& [layer_id, config_json] : scene.initialLayerConfigJson) {
+        nlohmann::json object_json;
+        if (PARSE_JSON(config_json, object_json)) {
+            context.object_initial_configs[layer_id] = std::move(object_json);
+        }
+    }
+    return true;
+}
+
 void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
     auto& wpimgobj = img_obj;
     if (! wpimgobj.visible) return;
@@ -944,7 +1012,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
     spImgNode->SetName(wpimgobj.name);
     context.object_nodes[wpimgobj.id] = spImgNode;
     context.scene->RegisterLayer(
-        wpimgobj.id, wpimgobj.name, spImgNode.get(), MakeLayerInitialConfig(wpimgobj.id, wpimgobj.name).dump());
+        wpimgobj.id, wpimgobj.name, spImgNode.get(), MakeLayerInitialConfig(context, wpimgobj.id, wpimgobj.name));
     context.scene->SetLayerLocalVisibility(wpimgobj.id, wpimgobj.visible);
 
     SceneMaterial     material;
@@ -1316,7 +1384,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
         context.scene->RegisterLayer(wppartobj.id,
                                      wppartobj.name,
                                      spNode.get(),
-                                     MakeLayerInitialConfig(wppartobj.id, wppartobj.name).dump());
+                                     MakeLayerInitialConfig(context, wppartobj.id, wppartobj.name));
         context.scene->SetLayerLocalVisibility(wppartobj.id, wppartobj.visible);
     }
 
@@ -1477,9 +1545,17 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
 }
 
 void ParseLightObj(ParseContext& context, wpscene::WPLightObject& light_obj) {
+    if (! light_obj.visible) return;
+
     auto node = std::make_shared<SceneNode>(Vector3f(light_obj.origin.data()),
                                             Vector3f(light_obj.scale.data()),
                                             Vector3f(light_obj.angles.data()));
+    node->ID() = light_obj.id;
+    node->SetName(light_obj.name);
+    context.object_nodes[light_obj.id] = node;
+    context.scene->RegisterLayer(
+        light_obj.id, light_obj.name, node.get(), MakeLayerInitialConfig(context, light_obj.id, light_obj.name));
+    context.scene->SetLayerLocalVisibility(light_obj.id, light_obj.visible);
 
     context.scene->lights.emplace_back(std::make_unique<SceneLight>(
         Vector3f(light_obj.color.data()), light_obj.radius, light_obj.intensity));
@@ -1488,6 +1564,8 @@ void ParseLightObj(ParseContext& context, wpscene::WPLightObject& light_obj) {
     light.setNode(node);
 
     context.scene->sceneGraph->AppendChild(node);
+    context.scene->objectRuntimeNodes[light_obj.id].push_back(node.get());
+    context.scene->ApplyLayerVisibility(light_obj.id);
 }
 
 void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
@@ -1501,7 +1579,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
     node->SetName(text_obj.name);
     context.object_nodes[text_obj.id] = node;
     context.scene->RegisterLayer(
-        text_obj.id, text_obj.name, node.get(), MakeLayerInitialConfig(text_obj.id, text_obj.name).dump());
+        text_obj.id, text_obj.name, node.get(), MakeLayerInitialConfig(context, text_obj.id, text_obj.name));
     context.scene->SetLayerParentBinding(text_obj.id, text_obj.parent, text_obj.attachment);
     context.scene->SetLayerLocalVisibility(text_obj.id, text_obj.visible);
     context.global_camera_node->AppendChild(node);
@@ -1531,6 +1609,74 @@ void AddWPObject(std::vector<WPObjectVar>& objs, const nlohmann::json& json_obj,
     if (! wpobj.visible) return;
     objs.push_back(wpobj);
 }
+
+bool ParseDynamicSceneObject(ParseContext& context, nlohmann::json& object_json,
+                             const UserPropertyMap* user_properties, int32_t* out_layer_id) {
+    if (! object_json.is_object()) return false;
+
+    ScopedJsonUserProperties json_user_scope(user_properties, &object_json);
+    int32_t                  object_id { 0 };
+    std::string              object_name;
+    if (! GetObjectIdAndName(object_json, &object_id, &object_name)) return false;
+
+    if (object_json.contains("image") && ! object_json.at("image").is_null()) {
+        wpscene::WPImageObject object;
+        if (! object.FromJson(object_json, *context.vfs)) return false;
+        const bool local_visible = object.visible;
+        object.id = object_id;
+        if (object.name.empty()) object.name = object_name;
+        object.visible = true;
+        ParseImageObj(context, object);
+        context.scene->SetLayerLocalVisibility(object.id, local_visible);
+        context.scene->ApplyLayerVisibility(object.id);
+        if (out_layer_id != nullptr) *out_layer_id = object.id;
+        return context.object_nodes.count(object.id) != 0;
+    }
+
+    if (object_json.contains("particle") && ! object_json.at("particle").is_null()) {
+        wpscene::WPParticleObject object;
+        if (! object.FromJson(object_json, *context.vfs)) return false;
+        const bool local_visible = object.visible;
+        object.id = object_id;
+        if (object.name.empty()) object.name = object_name;
+        object.visible = true;
+        ParseParticleObj(context, object);
+        context.scene->SetLayerLocalVisibility(object.id, local_visible);
+        context.scene->ApplyLayerVisibility(object.id);
+        if (out_layer_id != nullptr) *out_layer_id = object.id;
+        return context.object_nodes.count(object.id) != 0;
+    }
+
+    if (object_json.contains("text") && ! object_json.at("text").is_null()) {
+        wpscene::WPTextObject object;
+        if (! object.FromJson(object_json, *context.vfs)) return false;
+        const bool local_visible = object.visible;
+        object.id = object_id;
+        if (object.name.empty()) object.name = object_name;
+        object.visible = true;
+        ParseTextObj(context, object);
+        context.scene->SetLayerLocalVisibility(object.id, local_visible);
+        context.scene->ApplyLayerVisibility(object.id);
+        if (out_layer_id != nullptr) *out_layer_id = object.id;
+        return context.object_nodes.count(object.id) != 0;
+    }
+
+    if (object_json.contains("light") && ! object_json.at("light").is_null()) {
+        wpscene::WPLightObject object;
+        if (! object.FromJson(object_json, *context.vfs)) return false;
+        const bool local_visible = object.visible;
+        object.id = object_id;
+        if (object.name.empty()) object.name = object_name;
+        object.visible = true;
+        ParseLightObj(context, object);
+        context.scene->SetLayerLocalVisibility(object.id, local_visible);
+        context.scene->ApplyLayerVisibility(object.id);
+        if (out_layer_id != nullptr) *out_layer_id = object.id;
+        return context.object_nodes.count(object.id) != 0;
+    }
+
+    return false;
+}
 } // namespace
 
 std::array<i32, 4> wallpaper::ResolvePaddedSpriteSheetResolution(const ImageHeader& texh,
@@ -1546,6 +1692,80 @@ wpscene::ParticleInstanceoverride wallpaper::ResolveParticleSubsystemOverride(
 void wallpaper::LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene::Particle& wp,
                                          const wpscene::ParticleInstanceoverride& over) {
     LoadParticleInitializersImpl(pSys, wp, over);
+}
+
+bool wallpaper::CreateDynamicSceneLayer(
+    Scene& scene,
+    const nlohmann::json& object_json,
+    const UserPropertyMap* user_properties,
+    std::vector<WPSceneScriptRegistration>* out_binding_registrations,
+    std::vector<WPSceneScriptRegistration>* out_script_registrations,
+    std::vector<WPSceneScriptRegistration>* out_property_animation_registrations,
+    std::string* out_initial_config_json,
+    int32_t* out_layer_id) {
+    if (! object_json.is_object()) return false;
+
+    ParseContext context {};
+    if (! InitDynamicParseContext(context, scene, user_properties)) return false;
+
+    nlohmann::json normalized_object_json = object_json;
+    int32_t        layer_id { 0 };
+    std::string    layer_name;
+    (void)GetObjectIdAndName(normalized_object_json, &layer_id, &layer_name);
+    if (layer_id <= 0 || scene.layerNodes.count(layer_id) != 0 ||
+        scene.objectRuntimeNodes.count(layer_id) != 0) {
+        layer_id = scene.AllocateLayerId();
+        normalized_object_json["id"] = layer_id;
+    }
+    if (! normalized_object_json.contains("name") ||
+        ! normalized_object_json.at("name").is_string() ||
+        normalized_object_json.at("name").get<std::string>().empty()) {
+        normalized_object_json["name"] = "DynamicLayer" + std::to_string(layer_id);
+    }
+    context.object_initial_configs[layer_id] = normalized_object_json;
+
+    if (! ParseDynamicSceneObject(context, normalized_object_json, user_properties, &layer_id)) {
+        return false;
+    }
+
+    auto node_it = context.object_nodes.find(layer_id);
+    SceneNode* layer_node =
+        node_it != context.object_nodes.end() && node_it->second ? node_it->second.get() : nullptr;
+    if (layer_node == nullptr) return false;
+
+    const auto binding_start = scene.bindingRegistrations.size();
+    const auto script_start = scene.scriptRegistrations.size();
+    const auto property_animation_start = scene.propertyAnimationRegistrations.size();
+    RegisterSceneScripts(context, nlohmann::json { { "objects", nlohmann::json::array({ normalized_object_json }) } });
+
+    scene.layerNodes[layer_id] = layer_node;
+    scene.initialLayerConfigJson[layer_id] = normalized_object_json.dump();
+    if (! layer_node->Name().empty()) {
+        scene.layerNameToId[layer_node->Name()] = layer_id;
+    }
+    scene.ApplyLayerVisibility(layer_id);
+    scene.MarkRenderGraphTopologyDirty();
+
+    if (out_binding_registrations != nullptr) {
+        out_binding_registrations->assign(scene.bindingRegistrations.begin() + binding_start,
+                                          scene.bindingRegistrations.end());
+    }
+    if (out_script_registrations != nullptr) {
+        out_script_registrations->assign(scene.scriptRegistrations.begin() + script_start,
+                                         scene.scriptRegistrations.end());
+    }
+    if (out_property_animation_registrations != nullptr) {
+        out_property_animation_registrations->assign(scene.propertyAnimationRegistrations.begin() +
+                                                         property_animation_start,
+                                                     scene.propertyAnimationRegistrations.end());
+    }
+    if (out_initial_config_json != nullptr) {
+        *out_initial_config_json = scene.initialLayerConfigJson.at(layer_id);
+    }
+    if (out_layer_id != nullptr) {
+        *out_layer_id = layer_id;
+    }
+    return true;
 }
 
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
@@ -1573,6 +1793,11 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view       scene_id,
     std::vector<WPObjectVar> wp_objs;
 
     for (auto& obj : json.at("objects")) {
+        int32_t     object_id { 0 };
+        std::string object_name;
+        if (GetObjectIdAndName(obj, &object_id, &object_name)) {
+            context.object_initial_configs[object_id] = obj;
+        }
         if (obj.contains("image") && ! obj.at("image").is_null()) {
             AddWPObject<wpscene::WPImageObject>(wp_objs, obj, vfs);
         } else if (obj.contains("particle") && ! obj.at("particle").is_null()) {

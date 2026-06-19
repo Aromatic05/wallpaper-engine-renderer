@@ -223,15 +223,26 @@ Planned commit:
      visibility state to `Scene` and `SceneNode`, propagates parent layer visibility through
      runtime nodes, seeds parser/runtime layer registrations with authored visibility, and makes
      render graph traversal skip nodes whose effective visibility is false.
+   - `feat(scene): port dynamic scene layer materialization` introduces the parser-level
+     `CreateDynamicSceneLayer` entry used by SceneScript `createLayer` events. Runtime-created
+     image, particle, text, and light configs now go through the same object parsers as static
+     scene objects, receive real layer ids, runtime nodes, visibility state, full initial config
+     storage, render-graph topology invalidation, and newly-created binding/script/animation
+     registrations. Configured dynamic layers that cannot be materialized no longer fall back to
+     empty placeholder nodes.
+   - Static image, particle, text, and light layer registration now stores the full authored object
+     JSON as the layer initial config instead of the earlier `{id,name}` compatibility shell, so
+     SceneScript layer enumeration and `getInitialLayerConfig` see the same config shape that
+     dynamic materialization consumes.
    Remaining:
-   - Dynamic parser/materialization still needs to pass user properties through the same material
-     loading path used by the static parser.
-   - Dynamic parser/materialization still needs the same root-scoped JSON user-property/script
-     evaluation path when runtime-created layers are materialized from stored config JSON.
+   - Dynamic parser/materialization now receives the active user-property map for supported
+     image/particle/text/light configs, but still needs the full reference root-scoped scene JSON
+     context for dynamic configs whose script expressions depend on broader scene metadata.
    - Full reference parser visibility contracts, dependency-aware lazy materialization,
      deferred image/particle materialization, model layers, shape/direct-draw layers, and dynamic
-     `CreateDynamicSceneLayer` object construction for non-text layers remain separate parity
-     gaps; they are not hidden behind the parser-time JSON value migration above.
+     `CreateDynamicSceneLayer` object construction for sound, shape/direct-draw, model, and empty
+     layers remain separate parity gaps; they are not hidden behind the parser-time JSON value
+     migration above.
    Acceptance:
    - Reference modules such as `WPEffect`, `WPNodeTransformResolver`, and
      `WPImageAlignment` have equivalent current-repository implementations.
