@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
+include(ExternalProject)
 
 include(CTest)
 
@@ -16,6 +17,93 @@ link_libraries(Eigen3::Eigen)
 
 option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" OFF)
 option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" ON)
+
+set(HANABI_DXC_ROOT "" CACHE PATH "Path to Hanabi staged DirectXShaderCompiler SDK")
+set(HANABI_DXC_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/DirectXShaderCompiler"
+    CACHE PATH "Path to Hanabi vendored DirectXShaderCompiler checkout")
+set(HANABI_BUILD_VENDORED_DXC ON CACHE BOOL "Build the vendored DXC checkout for WE shaders")
+
+if(HANABI_BUILD_VENDORED_DXC AND EXISTS "${HANABI_DXC_SOURCE_DIR}/CMakeLists.txt")
+    if(NOT HANABI_DXC_ROOT)
+        set(HANABI_DXC_ROOT "${CMAKE_CURRENT_BINARY_DIR}/dxc-stage" CACHE PATH "Path to Hanabi staged DirectXShaderCompiler SDK" FORCE)
+    endif()
+    set(HANABI_DXC_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/dxc-build" CACHE PATH "Hanabi vendored DirectXShaderCompiler build directory")
+    set(HANABI_DXC_INCLUDE_DIR "${HANABI_DXC_ROOT}/include")
+    set(HANABI_DXCOMPILER_LIBRARY "${HANABI_DXC_ROOT}/lib/libdxcompiler.so")
+    set(HANABI_DXC_EXECUTABLE "${HANABI_DXC_ROOT}/bin/dxc")
+
+    file(MAKE_DIRECTORY "${HANABI_DXC_ROOT}/include" "${HANABI_DXC_ROOT}/lib" "${HANABI_DXC_ROOT}/bin")
+
+    ExternalProject_Add(HanabiVendoredDxc
+        SOURCE_DIR "${HANABI_DXC_SOURCE_DIR}"
+        BINARY_DIR "${HANABI_DXC_BUILD_DIR}"
+        CMAKE_ARGS
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            -DCMAKE_INSTALL_PREFIX=${HANABI_DXC_ROOT}
+            -DENABLE_SPIRV_CODEGEN=ON
+            -DLLVM_TARGETS_TO_BUILD=None
+            -DLLVM_ENABLE_EH=ON
+            -DLLVM_ENABLE_RTTI=ON
+            -DLLVM_INCLUDE_TESTS=OFF
+            -DCLANG_INCLUDE_TESTS=OFF
+            -DHLSL_INCLUDE_TESTS=OFF
+            -DSPIRV_BUILD_TESTS=OFF
+            -DLLVM_INCLUDE_DOCS=OFF
+            -DCLANG_INCLUDE_DOCS=OFF
+            -DLLVM_INCLUDE_EXAMPLES=OFF
+            -DLLVM_BUILD_EXAMPLES=OFF
+            -DCLANG_BUILD_EXAMPLES=OFF
+            -DHLSL_BUILD_DXILCONV=OFF
+            -DCLANG_ENABLE_ARCMT=OFF
+            -DCLANG_ENABLE_STATIC_ANALYZER=OFF
+        BUILD_COMMAND
+            ${CMAKE_COMMAND} --build <BINARY_DIR> --target dxcompiler dxc
+        INSTALL_COMMAND
+            ${CMAKE_COMMAND} --build <BINARY_DIR> --target install-dxcompiler install-dxc install-dxc-headers
+        BUILD_BYPRODUCTS
+            "${HANABI_DXCOMPILER_LIBRARY}"
+            "${HANABI_DXC_EXECUTABLE}"
+            "${HANABI_DXC_ROOT}/include/dxc/dxcapi.h"
+        USES_TERMINAL_CONFIGURE TRUE
+        USES_TERMINAL_BUILD TRUE
+        USES_TERMINAL_INSTALL TRUE)
+
+    add_library(Hanabi::DxCompiler SHARED IMPORTED GLOBAL)
+    set_target_properties(Hanabi::DxCompiler PROPERTIES
+        IMPORTED_LOCATION "${HANABI_DXCOMPILER_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${HANABI_DXC_INCLUDE_DIR}")
+    set(HANABI_HAS_DXC ON CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+    message(STATUS "Hanabi vendored DXC SDK will be staged at: ${HANABI_DXC_ROOT}")
+elseif(HANABI_DXC_ROOT)
+    find_path(HANABI_DXC_INCLUDE_DIR
+        NAMES dxc/dxcapi.h
+        PATHS "${HANABI_DXC_ROOT}/include"
+        NO_DEFAULT_PATH)
+    find_library(HANABI_DXCOMPILER_LIBRARY
+        NAMES dxcompiler
+        PATHS "${HANABI_DXC_ROOT}/lib" "${HANABI_DXC_ROOT}/lib64"
+        NO_DEFAULT_PATH)
+    find_program(HANABI_DXC_EXECUTABLE
+        NAMES dxc
+        PATHS "${HANABI_DXC_ROOT}/bin"
+        NO_DEFAULT_PATH)
+
+    if(HANABI_DXC_INCLUDE_DIR AND HANABI_DXCOMPILER_LIBRARY)
+        add_library(Hanabi::DxCompiler SHARED IMPORTED GLOBAL)
+        set_target_properties(Hanabi::DxCompiler PROPERTIES
+            IMPORTED_LOCATION "${HANABI_DXCOMPILER_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${HANABI_DXC_INCLUDE_DIR}")
+        set(HANABI_HAS_DXC ON CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+        message(STATUS "Hanabi DXC SDK: ${HANABI_DXC_ROOT}")
+    else()
+        set(HANABI_HAS_DXC OFF CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+        message(WARNING "HANABI_DXC_ROOT was set to '${HANABI_DXC_ROOT}', but dxcapi.h or libdxcompiler was not found")
+    endif()
+else()
+    set(HANABI_HAS_DXC OFF CACHE BOOL "Hanabi staged DXC SDK is available" FORCE)
+    message(WARNING "Hanabi vendored DXC checkout was not found at '${HANABI_DXC_SOURCE_DIR}'")
+endif()
 
 set(WP_QUICKJS_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/quickjs"
