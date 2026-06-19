@@ -3326,6 +3326,7 @@ bool wallpaper::RebuildTextLayerSceneLayout(Scene& scene, int32_t layer_id) {
 
     state.primitive = rebuilt_primitive;
     state.object = rebuilt_primitive->object;
+    scene.textPrimitives[layer_id] = rebuilt_primitive;
     SyncTextPrimitiveCanonicalState(state, false);
 
     if (!ApplyTextLayerSceneGeometry(scene,

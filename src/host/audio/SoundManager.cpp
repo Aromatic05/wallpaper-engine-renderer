@@ -244,3 +244,13 @@ void SoundManager::SetMuted(bool v) {
 }
 
 void SoundManager::SetVolume(float v) { pImpl->device.SetVolume(v); }
+
+void SoundManager::GetSpectrum(uint32_t resolution,
+                               std::vector<float>* left,
+                               std::vector<float>* right,
+                               std::vector<float>* average) const {
+    const auto size = static_cast<std::size_t>(resolution);
+    if (left != nullptr) left->assign(size, 0.0f);
+    if (right != nullptr) right->assign(size, 0.0f);
+    if (average != nullptr) average->assign(size, 0.0f);
+}

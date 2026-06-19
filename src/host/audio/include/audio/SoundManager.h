@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <cstdint>
+#include <vector>
 #include "utils/Logging.h"
 #include "core/NoCopyMove.hpp"
 
@@ -57,6 +58,10 @@ public:
     bool  Muted() const;
     void  SetMuted(bool);
     void  SetVolume(float);
+    void  GetSpectrum(uint32_t resolution,
+                      std::vector<float>* left,
+                      std::vector<float>* right,
+                      std::vector<float>* average) const;
 
 private:
     class impl;

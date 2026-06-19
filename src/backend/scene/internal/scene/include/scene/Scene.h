@@ -180,6 +180,7 @@ public:
     std::unordered_map<int32_t, uint32_t>                 objectRuntimeSoundHandles;
     std::unordered_map<int32_t, ImageLayerRuntimeState>   imageLayers;
     std::unordered_map<int32_t, TextLayerRuntimeState>    textLayers;
+    std::unordered_map<int32_t, std::shared_ptr<SceneTextPrimitive>> textPrimitives;
     std::unordered_map<int32_t, CameraLayerRuntimeState>  cameraLayers;
     std::vector<int32_t>                                  cameraLayerOrder;
     std::unordered_map<SceneNode*, int32_t> nodeOwners;

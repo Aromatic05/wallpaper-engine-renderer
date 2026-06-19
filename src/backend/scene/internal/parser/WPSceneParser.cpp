@@ -5034,6 +5034,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
         .primitive         = primitive,
         .applied_alignment = ResolveTextLayerSceneAlignment(text_obj),
     };
+    context.scene->textPrimitives[text_obj.id] = primitive;
 
     ApplyTextLayerNodePlacement(spWorldNode.get(),
                                 context.scene->textLayers[text_obj.id],
