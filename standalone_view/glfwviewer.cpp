@@ -62,6 +62,17 @@ int main(int argc, char** argv) {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
+    if (window == nullptr) {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    int framebuffer_width  = static_cast<int>(w_width);
+    int framebuffer_height = static_cast<int>(w_height);
+    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+    if (framebuffer_width <= 0) framebuffer_width = static_cast<int>(w_width);
+    if (framebuffer_height <= 0) framebuffer_height = static_cast<int>(w_height);
 
     UserData data;
     data.width  = w_width;
@@ -69,8 +80,9 @@ int main(int argc, char** argv) {
 
     wallpaper::RenderInitInfo info;
     info.enable_valid_layer = program.get<bool>(OPT_VALID_LAYER);
-    info.width              = w_width;
-    info.height             = w_height;
+    info.width              = static_cast<uint16_t>(framebuffer_width);
+    info.height             = static_cast<uint16_t>(framebuffer_height);
+    info.render_scale       = static_cast<double>(framebuffer_width) / static_cast<double>(w_width);
     info.redraw_callback    = updateCallback;
 
     auto& sf_info = info.surface_info;
@@ -84,12 +96,6 @@ int main(int argc, char** argv) {
         sf_info.createSurfaceOp = [window](VkInstance inst, VkSurfaceKHR* surface) {
             return glfwCreateWindowSurface(inst, window, NULL, surface);
         };
-    }
-
-    if (window == nullptr) {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
     }
 
     glfwShowWindow(window);

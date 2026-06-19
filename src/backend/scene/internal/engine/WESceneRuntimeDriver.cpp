@@ -10,6 +10,7 @@
 #include "scenescript/WPSceneScriptHost.hpp"
 #include "scene/Scene.h"
 #include "settings/WPUserProperties.hpp"
+#include "text/WPTextLayer.hpp"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
 
@@ -25,6 +26,7 @@
 #include "render/vulkanrender/VulkanRender.hpp"
 #include <atomic>
 #include <charconv>
+#include <cmath>
 #include <optional>
 
 using namespace wallpaper;
@@ -291,6 +293,8 @@ public:
 
     bool renderInited() const { return m_render->inited(); }
 
+    double textRenderScale() const { return std::max(1.0, m_render_scale); }
+
     void setMousePos(double x, double y) { m_mouse_pos.store(std::array { (float)x, (float)y }); }
 
 private:
@@ -353,6 +357,17 @@ private:
     }
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
+            const double requested_text_render_scale = textRenderScale();
+            const double parsed_text_render_scale    = m_scene->textRenderScale;
+            m_scene->textRenderScale                 = requested_text_render_scale;
+            const bool requires_initial_text_rerender =
+                std::abs(parsed_text_render_scale - requested_text_render_scale) > 0.001;
+            for (const auto& [layer_id, _] : m_scene->textLayers) {
+                if (m_scene->deferredRuntimeTextLayerIds.count(layer_id) != 0) continue;
+                if (! requires_initial_text_rerender) continue;
+                RebuildTextLayerSceneLayout(*m_scene, layer_id);
+            }
+
 #if WP_ENABLE_SCENESCRIPT_RUNTIME
             m_scene->scriptHost = std::make_shared<WPSceneScriptHost>(m_scene.get());
             for (const auto& registration : m_scene->bindingRegistrations) {
@@ -396,6 +411,7 @@ private:
     MHANDLER_CMD(INIT_VULKAN) {
         std::shared_ptr<RenderInitInfo> info;
         if (msg->findObject("info", &info)) {
+            m_render_scale = std::max(1.0, info->render_scale);
             m_render->init(*info);
 
             // inited, callback to laod scene
@@ -411,6 +427,7 @@ private:
     std::unique_ptr<FrameTimer> m_frameTimer;
     std::shared_ptr<Scene> m_scene { nullptr };
     float                  m_speed { 1.0f };
+    double                 m_render_scale { 1.0 };
 
     std::unique_ptr<vulkan::VulkanRender> m_render;
     std::unique_ptr<rg::RenderGraph>      m_rg { nullptr };
@@ -670,7 +687,12 @@ void MainHandler::loadScene() {
             LOG_ERROR("Not supported scene type");
             return;
         }
-        scene = m_scene_parser.Parse(scene_id, scene_src, vfs, *m_sound_manager, &m_user_properties);
+        scene = m_scene_parser.Parse(scene_id,
+                                     scene_src,
+                                     vfs,
+                                     *m_sound_manager,
+                                     &m_user_properties,
+                                     m_render_handler->textRenderScale());
         m_scene = scene;
         scene->vfs.swap(pVfs);
     }
