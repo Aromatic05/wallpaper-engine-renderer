@@ -273,6 +273,71 @@ int main() {
     Require(NearlyEqual(media_scene.videoTextureSeekRequests["movie"], 0.0),
             "negative seeks should clamp to zero");
 
+    Scene layer_scene;
+    auto back_node = std::make_shared<SceneNode>();
+    back_node->ID() = 31;
+    auto front_node = std::make_shared<SceneNode>();
+    front_node->ID() = 32;
+    layer_scene.sceneGraph->AppendChild(back_node);
+    layer_scene.sceneGraph->AppendChild(front_node);
+    Require(layer_scene.RegisterLayer(31, "Back", back_node.get(), R"({"id":31,"name":"Back"})"),
+            "back layer registration should succeed");
+    Require(layer_scene.RegisterLayer(32, "Front", front_node.get(), R"({"id":32,"name":"Front"})"),
+            "front layer registration should succeed");
+
+    WPSceneScriptHost sort_host(&layer_scene);
+    auto sort_registration = MakeRegistration(31,
+                                              "Back",
+                                              "alpha",
+                                              WPSceneScriptTargetKind::Layer,
+                                              WPDynamicValue::Type::Float,
+                                              WPDynamicValue(1.0f));
+    sort_registration.node = back_node.get();
+    sort_registration.setting.script = R"(
+        export function update(value) {
+            const back = thisScene.getLayer('Back');
+            if (!back || thisScene.getLayerCount() !== 2) return 0;
+            thisScene.sortLayer(back, 1);
+            return value + 1;
+        }
+    )";
+    Require(sort_host.RegisterPropertyScript(std::move(sort_registration)),
+            "sort layer script registration should succeed");
+    sort_host.Initialize();
+    Require(layer_scene.LayerIndex(31) == 1, "sortLayer should reorder existing layers");
+
+    layer_scene.renderGraphTopologyDirty = false;
+    WPSceneScriptHost layer_host(&layer_scene);
+    auto layer_registration = MakeRegistration(31,
+                                               "Back",
+                                               "alpha",
+                                               WPSceneScriptTargetKind::Layer,
+                                               WPDynamicValue::Type::Float,
+                                               WPDynamicValue(1.0f));
+    layer_registration.node = back_node.get();
+    layer_registration.setting.script = R"(
+        export function update(value) {
+            const back = thisScene.getLayer('Back');
+            const front = thisScene.getLayer('Front');
+            if (!back || !front || thisScene.getLayerCount() !== 2) return 0;
+            if (thisScene.getInitialLayerConfig(back).name !== 'Back') return 0;
+            thisScene.destroyLayer(front);
+            thisScene.createLayer({ name: 'DynamicLayer', visible: true });
+            return value + 2;
+        }
+    )";
+    Require(layer_host.RegisterPropertyScript(std::move(layer_registration)),
+            "layer operation script registration should succeed");
+    layer_host.Initialize();
+    const auto layer_value = layer_host.FindResolvedValue(31, "alpha");
+    Require(layer_value.has_value(), "layer script should resolve a value");
+    alpha = 0.0f;
+    Require(layer_value->tryGet(&alpha), "layer script value should be a float");
+    Require(NearlyEqual(alpha, 3.0), "layer script should return updated value");
+    Require(layer_scene.ResolveLayer("Front") == 0, "destroyLayer should remove named layer lookup");
+    Require(layer_scene.ResolveLayer("DynamicLayer") > 0, "createLayer should register a dynamic layer");
+    Require(layer_scene.renderGraphTopologyDirty, "layer operations should mark render graph topology dirty");
+
     Scene parsed_scene;
     wallpaper::SceneNode parsed_node;
     RegisterSceneScriptBindingsForTest(

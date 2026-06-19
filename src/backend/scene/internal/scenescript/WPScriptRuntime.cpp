@@ -314,6 +314,25 @@ JSValue VideoTextureStatesToJS(JSContext* context,
     return array;
 }
 
+JSValue LayerStatesToJS(JSContext* context, const std::vector<WPScriptLayerState>& states) {
+    JSValue array = JS_NewArray(context);
+    for (uint32_t index = 0; index < states.size(); index++) {
+        const auto& state = states[static_cast<size_t>(index)];
+        JSValue item = JS_NewObject(context);
+        JS_SetPropertyStr(context, item, "id", JS_NewInt32(context, state.id));
+        JS_SetPropertyStr(
+            context, item, "name", JS_NewStringLen(context, state.name.c_str(), state.name.size()));
+        JS_SetPropertyStr(context,
+                          item,
+                          "initialConfig",
+                          JS_NewStringLen(context,
+                                          state.initial_config_json.c_str(),
+                                          state.initial_config_json.size()));
+        JS_SetPropertyUint32(context, array, index, item);
+    }
+    return array;
+}
+
 JSValue ColorToJS(JSContext* context, const std::array<float, 3>& color) {
     JSValue array = JS_NewArray(context);
     for (uint32_t i = 0; i < color.size(); i++) {
@@ -384,6 +403,57 @@ void ReadVideoTextureEventsFromJS(JSContext* context,
             out_events->push_back(std::move(event));
         }
 
+        JS_FreeValue(context, item);
+    }
+
+    JS_FreeValue(context, events);
+}
+
+void ReadLayerEventsFromJS(JSContext* context,
+                           JSValueConst global,
+                           std::vector<WPScriptLayerEvent>* out_events) {
+    if (out_events == nullptr) {
+        return;
+    }
+
+    JSValue events = JS_GetPropertyStr(context, global, "__sceneLayerEvents");
+    if (JS_IsException(events) || !JS_IsArray(events)) {
+        JS_FreeValue(context, events);
+        return;
+    }
+
+    uint32_t length = 0;
+    if (!ReadJSArrayLength(context, events, &length)) {
+        JS_FreeValue(context, events);
+        return;
+    }
+
+    for (uint32_t index = 0; index < length; index++) {
+        JSValue item = JS_GetPropertyUint32(context, events, index);
+        if (JS_IsException(item) || !JS_IsObject(item)) {
+            JS_FreeValue(context, item);
+            continue;
+        }
+
+        WPScriptLayerEvent event;
+        if (!ReadJSObjectString(context, item, "method", &event.method) || event.method.empty()) {
+            JS_FreeValue(context, item);
+            continue;
+        }
+
+        double layer_id = 0.0;
+        if (ReadJSObjectNumber(context, item, "layerId", &layer_id)) {
+            event.layer_id = static_cast<int32_t>(layer_id);
+        }
+
+        double target_index = 0.0;
+        if (ReadJSObjectNumber(context, item, "targetIndex", &target_index)) {
+            event.target_index = static_cast<int32_t>(target_index);
+        }
+
+        ReadJSObjectString(context, item, "name", &event.name);
+        ReadJSObjectString(context, item, "initialConfig", &event.initial_config_json);
+        out_events->push_back(std::move(event));
         JS_FreeValue(context, item);
     }
 
@@ -751,23 +821,30 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "  if (typeof thisLayer.getAnimation !== 'function') thisLayer.getAnimation = () => __makeNoopAnimation();\n"
             << "  if (typeof thisLayer.getAnimationLayer !== 'function') thisLayer.getAnimationLayer = () => __makeNoopAnimation();\n"
             << "  thisLayer.getVideoTexture = __makeLayerVideoTexture;\n"
-            << "  const __sceneLayerStore = (globalThis.__sceneLayerStore && typeof globalThis.__sceneLayerStore.get === 'function')\n"
-            << "    ? globalThis.__sceneLayerStore\n"
-            << "    : (globalThis.__sceneLayerStore = new Map());\n"
-            << "  const __getSceneLayerStub = (name) => {\n"
-            << "    const key = String(name ?? '');\n"
+            << "  const __sceneLayers = Array.isArray(globalThis.__sceneLayers) ? globalThis.__sceneLayers : [];\n"
+            << "  const __sceneLayerEvents = [];\n"
+            << "  globalThis.__sceneLayerEvents = __sceneLayerEvents;\n"
+            << "  const __sceneLayerStore = new Map();\n"
+            << "  const __sceneLayerById = new Map();\n"
+            << "  const __sceneLayerByName = new Map();\n"
+            << "  const __recordLayerEvent = (event) => { __sceneLayerEvents.push(event); };\n"
+            << "  const __makeSceneLayerProxy = (layer) => {\n"
+            << "    const id = __toNumber(layer && layer.id, 0);\n"
+            << "    const name = String((layer && layer.name) ?? '');\n"
+            << "    const key = String(id);\n"
             << "    if (__sceneLayerStore.has(key)) return __sceneLayerStore.get(key);\n"
-            << "    const target = {};\n"
+            << "    const target = { id, name };\n"
             << "    const proxy = new Proxy(target, {\n"
             << "      get(obj, prop, receiver) {\n"
-            << "        if (prop === 'getLayer') return __getSceneLayerStub;\n"
-            << "        if (prop === 'getLayerIndex') return () => -1;\n"
-            << "        if (prop === 'getInitialLayerConfig') return () => ({});\n"
+            << "        if (prop === 'getLayer') return __getSceneLayer;\n"
+            << "        if (prop === 'getLayerIndex') return () => __getSceneLayerIndex(id);\n"
+            << "        if (prop === 'getInitialLayerConfig') return () => __parseLayerInitialConfig(id);\n"
             << "        if (prop === 'getTransformMatrix') return __makeIdentityTransformMatrix;\n"
             << "        if (prop === 'getParent') return () => proxy;\n"
             << "        if (prop === 'getTextureAnimation' || prop === 'getAnimation' || prop === 'getAnimationLayer') return () => __makeNoopAnimation();\n"
             << "        if (prop === 'getVideoTexture') return () => __makeNoopVideoTexture();\n"
-            << "        if (prop === 'destroyLayer' || prop === 'sortLayer') return () => {};\n"
+            << "        if (prop === 'destroyLayer') return () => __destroySceneLayer(id);\n"
+            << "        if (prop === 'sortLayer') return (targetIndex) => __sortSceneLayer(id, targetIndex);\n"
             << "        return Reflect.get(obj, prop, receiver);\n"
             << "      },\n"
             << "      set(obj, prop, value) {\n"
@@ -776,19 +853,66 @@ std::string BuildWrappedScript(std::string_view script_source) {
             << "      }\n"
             << "    });\n"
             << "    __sceneLayerStore.set(key, proxy);\n"
+            << "    if (id > 0) __sceneLayerById.set(id, layer);\n"
+            << "    if (name) __sceneLayerByName.set(name, layer);\n"
             << "    return proxy;\n"
+            << "  };\n"
+            << "  for (const layer of __sceneLayers) __makeSceneLayerProxy(layer);\n"
+            << "  const __resolveSceneLayer = (ref) => {\n"
+            << "    if (ref && typeof ref === 'object' && Number.isFinite(Number(ref.id))) return Number(ref.id);\n"
+            << "    if (typeof ref === 'number') {\n"
+            << "      if (__sceneLayerById.has(ref)) return ref;\n"
+            << "      const byIndex = __sceneLayers[ref];\n"
+            << "      return byIndex ? __toNumber(byIndex.id, 0) : 0;\n"
+            << "    }\n"
+            << "    const byName = __sceneLayerByName.get(String(ref ?? ''));\n"
+            << "    return byName ? __toNumber(byName.id, 0) : 0;\n"
+            << "  };\n"
+            << "  const __getSceneLayer = (ref) => {\n"
+            << "    const id = __resolveSceneLayer(ref);\n"
+            << "    if (id <= 0) return undefined;\n"
+            << "    const layer = __sceneLayerById.get(id);\n"
+            << "    return layer ? __makeSceneLayerProxy(layer) : undefined;\n"
+            << "  };\n"
+            << "  const __getSceneLayerIndex = (ref) => {\n"
+            << "    const id = __resolveSceneLayer(ref);\n"
+            << "    return __sceneLayers.findIndex((layer) => __toNumber(layer.id, 0) === id);\n"
+            << "  };\n"
+            << "  const __parseLayerInitialConfig = (ref) => {\n"
+            << "    const id = __resolveSceneLayer(ref);\n"
+            << "    const layer = __sceneLayerById.get(id);\n"
+            << "    if (!layer || typeof layer.initialConfig !== 'string' || layer.initialConfig.length === 0) return undefined;\n"
+            << "    try { return JSON.parse(layer.initialConfig); } catch (__configError) { return undefined; }\n"
+            << "  };\n"
+            << "  const __createSceneLayer = (config) => {\n"
+            << "    const normalized = (config && typeof config === 'object') ? config : { name: String(config ?? '') };\n"
+            << "    const name = String(normalized.name ?? normalized.id ?? '');\n"
+            << "    __recordLayerEvent({ method: 'create', name, initialConfig: JSON.stringify(normalized) });\n"
+            << "    return __makeSceneLayerProxy({ id: 0, name, initialConfig: JSON.stringify(normalized) });\n"
+            << "  };\n"
+            << "  const __destroySceneLayer = (ref) => {\n"
+            << "    const id = __resolveSceneLayer(ref);\n"
+            << "    if (id <= 0) return false;\n"
+            << "    __recordLayerEvent({ method: 'destroy', layerId: id });\n"
+            << "    return true;\n"
+            << "  };\n"
+            << "  const __sortSceneLayer = (ref, targetIndex) => {\n"
+            << "    const id = __resolveSceneLayer(ref);\n"
+            << "    if (id <= 0) return false;\n"
+            << "    __recordLayerEvent({ method: 'sort', layerId: id, targetIndex: __toNumber(targetIndex, 0) });\n"
+            << "    return true;\n"
             << "  };\n"
             << "  const __sceneTarget = (globalThis.thisScene && typeof globalThis.thisScene === 'object')\n"
             << "    ? globalThis.thisScene\n"
             << "    : {};\n"
-            << "  if (typeof __sceneTarget.getLayer !== 'function') __sceneTarget.getLayer = __getSceneLayerStub;\n"
-            << "  if (typeof __sceneTarget.getLayerCount !== 'function') __sceneTarget.getLayerCount = () => 0;\n"
-            << "  if (typeof __sceneTarget.enumerateLayers !== 'function') __sceneTarget.enumerateLayers = () => [];\n"
-            << "  if (typeof __sceneTarget.createLayer !== 'function') __sceneTarget.createLayer = (name) => __getSceneLayerStub(name);\n"
-            << "  if (typeof __sceneTarget.destroyLayer !== 'function') __sceneTarget.destroyLayer = () => {};\n"
-            << "  if (typeof __sceneTarget.sortLayer !== 'function') __sceneTarget.sortLayer = () => {};\n"
-            << "  if (typeof __sceneTarget.getLayerIndex !== 'function') __sceneTarget.getLayerIndex = () => -1;\n"
-            << "  if (typeof __sceneTarget.getInitialLayerConfig !== 'function') __sceneTarget.getInitialLayerConfig = () => ({});\n"
+            << "  __sceneTarget.getLayer = __getSceneLayer;\n"
+            << "  __sceneTarget.getLayerCount = () => __sceneLayers.length;\n"
+            << "  __sceneTarget.enumerateLayers = () => __sceneLayers.map((layer) => __makeSceneLayerProxy(layer));\n"
+            << "  __sceneTarget.createLayer = __createSceneLayer;\n"
+            << "  __sceneTarget.destroyLayer = __destroySceneLayer;\n"
+            << "  __sceneTarget.sortLayer = __sortSceneLayer;\n"
+            << "  __sceneTarget.getLayerIndex = __getSceneLayerIndex;\n"
+            << "  __sceneTarget.getInitialLayerConfig = __parseLayerInitialConfig;\n"
             << "  if (typeof __sceneTarget.on !== 'function') __sceneTarget.on = () => {};\n"
             << "  globalThis.thisScene = __sceneTarget;\n"
             << "  const thisScene = globalThis.thisScene;\n"
@@ -981,6 +1105,10 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
                        global,
                        "__videoTextureStates",
                        VideoTextureStatesToJS(js_context, context.video_textures));
+    InstallGlobalValue(js_context,
+                       global,
+                       "__sceneLayers",
+                       LayerStatesToJS(js_context, context.scene_layers));
     InstallGlobalValue(js_context, global, "__mediaState", MediaStateToJS(js_context, context.media_state));
     InstallGlobalValue(
         js_context, global, "__dispatchMediaThumbnail", JS_NewBool(js_context, context.dispatch_media_thumbnail));
@@ -999,6 +1127,7 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
 
     if (!JS_IsException(result)) {
         ReadVideoTextureEventsFromJS(js_context, global, context.video_texture_events);
+        ReadLayerEventsFromJS(js_context, global, context.layer_events);
     }
 
     InstallGlobalValue(js_context, global, "__scriptProps", JS_UNDEFINED);
@@ -1006,6 +1135,8 @@ std::optional<WPScriptValue> WPScriptRuntime::evaluate(std::string_view script_s
     InstallGlobalValue(js_context, global, "__propertyName", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__videoTextureStates", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__videoTextureEvents", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__sceneLayers", JS_UNDEFINED);
+    InstallGlobalValue(js_context, global, "__sceneLayerEvents", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__mediaState", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__dispatchMediaThumbnail", JS_UNDEFINED);
     InstallGlobalValue(js_context, global, "__dispatchMediaProperties", JS_UNDEFINED);

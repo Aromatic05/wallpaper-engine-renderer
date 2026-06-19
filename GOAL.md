@@ -132,6 +132,18 @@ Planned commit:
    - `feat(scene): port scenescript native media support`
    - `feat(scene): port scenescript native layer operations`
    - `feat(scene): port scenescript native material and effect bindings`
+   Progress:
+   - `feat(scene): port scenescript layer operations` added a real scene-layer registry,
+     parser population for image/particle/text layer IDs and names, and SceneScript
+     `getLayer`, `getLayerCount`, `enumerateLayers`, `getLayerIndex`,
+     `getInitialLayerConfig`, `sortLayer`, `destroyLayer`, and `createLayer` event
+     application into `Scene`.
+   Remaining:
+   - Runtime-created layers are represented by a real `SceneNode` and scene registry entry,
+     but full asset/config materialization still needs the reference `CreateDynamicSceneLayer`
+     behavior.
+   - Layer parent/children relation APIs and material/effect/native object bridges still need
+     the remaining reference behavior.
    Acceptance:
    - No `createLayer`, `destroyLayer`, `sortLayer`, media, material, or object bridge
      path remains as a silent stub when the reference has behavior.

@@ -197,6 +197,27 @@ std::vector<WPScriptVideoTextureState> BuildVideoTextureStates(const Scene& scen
     return states;
 }
 
+std::vector<WPScriptLayerState> BuildLayerStates(const Scene& scene) {
+    std::vector<WPScriptLayerState> states;
+    states.reserve(scene.layerOrder.size());
+    for (const auto layer_id : scene.layerOrder) {
+        WPScriptLayerState state;
+        state.id = layer_id;
+        for (const auto& [name, id] : scene.layerNameToId) {
+            if (id == layer_id) {
+                state.name = name;
+                break;
+            }
+        }
+        if (const auto config_it = scene.initialLayerConfigJson.find(layer_id);
+            config_it != scene.initialLayerConfigJson.end()) {
+            state.initial_config_json = config_it->second;
+        }
+        states.push_back(std::move(state));
+    }
+    return states;
+}
+
 void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextureEvent>& events) {
     for (const auto& event : events) {
         if (event.key.empty()) {
@@ -214,6 +235,18 @@ void ApplyVideoTextureEvents(Scene& scene, const std::vector<WPScriptVideoTextur
             scene.videoTextureStopped.insert(event.key);
         } else if (event.method == "setCurrentTime" && std::isfinite(event.current_time)) {
             scene.videoTextureSeekRequests[event.key] = std::max(0.0, event.current_time);
+        }
+    }
+}
+
+void ApplyLayerEvents(Scene& scene, const std::vector<WPScriptLayerEvent>& events) {
+    for (const auto& event : events) {
+        if (event.method == "create") {
+            scene.CreateRuntimeLayer(event.name, event.initial_config_json);
+        } else if (event.method == "destroy") {
+            scene.DestroyLayer(event.layer_id);
+        } else if (event.method == "sort") {
+            scene.SortLayer(event.layer_id, event.target_index);
         }
     }
 }
@@ -339,9 +372,12 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
         }
 
         std::vector<WPScriptVideoTextureEvent> video_events;
+        std::vector<WPScriptLayerEvent> layer_events;
         const auto video_keys = ResolveVideoTextureKeys(*scene, registration.node);
         context.video_textures = BuildVideoTextureStates(*scene, video_keys);
         context.video_texture_events = &video_events;
+        context.scene_layers = BuildLayerStates(*scene);
+        context.layer_events = &layer_events;
         context.media_state = &media_state;
         context.dispatch_media_thumbnail = dispatch_media_thumbnail;
         context.dispatch_media_properties = dispatch_media_properties;
@@ -350,6 +386,7 @@ void WPSceneScriptHost::Opaque::ExecuteScriptRegistrations(Scene* scene) {
         const auto evaluated =
             runtime.evaluate(registration.setting.script, ToScriptValue(current_value), context);
         ApplyVideoTextureEvents(*scene, video_events);
+        ApplyLayerEvents(*scene, layer_events);
 
         if (evaluated.has_value()) {
             const WPDynamicValue::Type value_type = registration.value_type == WPDynamicValue::Type::Null

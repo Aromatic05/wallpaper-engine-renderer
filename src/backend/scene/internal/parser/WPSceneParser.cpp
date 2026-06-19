@@ -71,6 +71,13 @@ using WPObjectVar = std::variant<wpscene::WPImageObject, wpscene::WPParticleObje
 
 namespace
 {
+nlohmann::json MakeLayerInitialConfig(int32_t id, const std::string& name) {
+    return nlohmann::json {
+        { "id", id },
+        { "name", name },
+    };
+}
+
 // mapRate < 1.0
 void GenCardMesh(SceneMesh& mesh, const std::array<uint16_t, 2> size,
                  const std::array<float, 2> mapRate = { 1.0f, 1.0f }) {
@@ -793,7 +800,10 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                                  Vector3f(wpimgobj.angles.data()));
     LoadAlignment(*spImgNode, wpimgobj.alignment, { wpimgobj.size[0], wpimgobj.size[1] });
     spImgNode->ID() = wpimgobj.id;
+    spImgNode->SetName(wpimgobj.name);
     context.object_nodes[wpimgobj.id] = spImgNode;
+    context.scene->RegisterLayer(
+        wpimgobj.id, wpimgobj.name, spImgNode.get(), MakeLayerInitialConfig(wpimgobj.id, wpimgobj.name).dump());
 
     SceneMaterial     material;
     WPShaderValueData svData;
@@ -1148,7 +1158,12 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                              Vector3f(wppartobj.scale.data()),
                                              Vector3f(wppartobj.angles.data()));
         spNode->ID() = wppartobj.id;
+        spNode->SetName(wppartobj.name);
         context.object_nodes[wppartobj.id] = spNode;
+        context.scene->RegisterLayer(wppartobj.id,
+                                     wppartobj.name,
+                                     spNode.get(),
+                                     MakeLayerInitialConfig(wppartobj.id, wppartobj.name).dump());
     }
 
     wpscene::ParticleInstanceoverride override =
@@ -1322,7 +1337,10 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                                             Vector3f(text_obj.angles.data()));
     LoadAlignment(*node, text_obj.anchor, { text_obj.size[0], text_obj.size[1] });
     node->ID() = text_obj.id;
+    node->SetName(text_obj.name);
     context.object_nodes[text_obj.id] = node;
+    context.scene->RegisterLayer(
+        text_obj.id, text_obj.name, node.get(), MakeLayerInitialConfig(text_obj.id, text_obj.name).dump());
     context.global_camera_node->AppendChild(node);
 
     auto primitive = std::make_shared<SceneTextPrimitive>();
@@ -1464,8 +1482,11 @@ void wallpaper::RegisterSceneScriptBindingsForTest(Scene& scene, const nlohmann:
             int32_t     object_id { 0 };
             std::string object_name;
             if (GetObjectIdAndName(object_json, &object_id, &object_name) && node != nullptr) {
+                node->ID() = object_id;
+                node->SetName(object_name);
                 context.object_nodes[object_id] =
                     std::shared_ptr<SceneNode>(node, [](SceneNode*) {});
+                scene.RegisterLayer(object_id, object_name, node, object_json.dump());
             }
         }
     }

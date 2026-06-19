@@ -55,6 +55,11 @@ public:
     std::vector<WPSceneScriptRegistration> scriptRegistrations;
     std::vector<WPSceneScriptRegistration> propertyAnimationRegistrations;
     UserPropertyMap                      userProperties;
+    std::vector<int32_t>                 layerOrder;
+    std::unordered_map<int32_t, SceneNode*> layerNodes;
+    std::unordered_map<int32_t, std::string> initialLayerConfigJson;
+    std::unordered_map<std::string, int32_t> layerNameToId;
+    bool renderGraphTopologyDirty { false };
 
     std::string scene_id { "unknown_id" };
 
@@ -93,5 +98,19 @@ public:
             }
         }
     }
+
+    int32_t AllocateLayerId() const;
+    bool    RegisterLayer(int32_t layer_id,
+                          std::string name,
+                          SceneNode* node,
+                          std::string initial_config_json = {});
+    bool    CreateRuntimeLayer(std::string name,
+                                std::string initial_config_json,
+                                int32_t* out_layer_id = nullptr);
+    bool    DestroyLayer(int32_t layer_id);
+    bool    SortLayer(int32_t layer_id, int32_t target_index);
+    int32_t ResolveLayer(std::string_view name) const;
+    int32_t LayerIndex(int32_t layer_id) const;
+    void    MarkRenderGraphTopologyDirty() { renderGraphTopologyDirty = true; }
 };
 } // namespace wallpaper

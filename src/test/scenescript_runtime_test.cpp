@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -146,6 +147,42 @@ int main() {
         Require(second.has_value(), "timer dispatch script should evaluate");
         Require(NearlyEqual(second->numeric_values[0], 5.0),
                 "zero-delay timer should run on the next runtime dispatch");
+    }
+
+    {
+        WPScriptEvaluationContext context;
+        context.property_name = "alpha";
+        context.scene_layers = {
+            { .id = 7, .name = "Back", .initial_config_json = R"({"id":7,"name":"Back"})" },
+            { .id = 9, .name = "Front", .initial_config_json = R"({"id":9,"name":"Front"})" },
+        };
+        std::vector<wallpaper::WPScriptLayerEvent> layer_events;
+        context.layer_events = &layer_events;
+
+        const auto result = runtime.evaluate(R"(
+            function update(value) {
+              const back = thisScene.getLayer('Back');
+              if (!back || back.getLayerIndex() !== 0) return 0;
+              if (thisScene.getLayerCount() !== 2) return 0;
+              if (thisScene.getInitialLayerConfig(back).name !== 'Back') return 0;
+              thisScene.sortLayer(back, 1);
+              thisScene.destroyLayer('Front');
+              thisScene.createLayer({ name: 'DynamicLayer', visible: true });
+              return value + 1;
+            }
+        )",
+                                             WPScriptValue::Number(4.0),
+                                             context);
+        Require(result.has_value(), "layer scenescript should evaluate");
+        Require(NearlyEqual(result->numeric_values[0], 5.0), "layer script result should match");
+        Require(layer_events.size() == 3, "layer script should emit create/sort/destroy events");
+        Require(layer_events[0].method == "sort" && layer_events[0].layer_id == 7 &&
+                    layer_events[0].target_index == 1,
+                "sort layer event should preserve layer id and target index");
+        Require(layer_events[1].method == "destroy" && layer_events[1].layer_id == 9,
+                "destroy layer event should resolve layer names");
+        Require(layer_events[2].method == "create" && layer_events[2].name == "DynamicLayer",
+                "create layer event should preserve config name");
     }
 
     return 0;

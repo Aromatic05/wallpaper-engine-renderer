@@ -32,6 +32,8 @@ public:
 
     const auto& Camera() const { return m_cameraName; }
     void        SetCamera(const std::string& name) { m_cameraName = name; }
+    const auto& Name() const { return m_name; }
+    void        SetName(std::string name) { m_name = std::move(name); }
     void        AddMesh(std::shared_ptr<SceneMesh> mesh) { m_mesh = mesh; }
     void        AppendChild(std::shared_ptr<SceneNode> sub) {
                sub->m_parent = this;

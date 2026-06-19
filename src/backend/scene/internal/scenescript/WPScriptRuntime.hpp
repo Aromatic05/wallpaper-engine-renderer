@@ -50,12 +50,28 @@ struct WPScriptVideoTextureEvent {
     double current_time { 0.0 };
 };
 
+struct WPScriptLayerState {
+    int32_t id { 0 };
+    std::string name;
+    std::string initial_config_json;
+};
+
+struct WPScriptLayerEvent {
+    std::string method;
+    int32_t layer_id { 0 };
+    int32_t target_index { 0 };
+    std::string name;
+    std::string initial_config_json;
+};
+
 struct WPScriptEvaluationContext {
     WPScriptPropertyMap script_properties;
     std::array<double, 2> canvas_size { 0.0, 0.0 };
     std::string property_name;
     std::vector<WPScriptVideoTextureState> video_textures;
     std::vector<WPScriptVideoTextureEvent>* video_texture_events { nullptr };
+    std::vector<WPScriptLayerState> scene_layers;
+    std::vector<WPScriptLayerEvent>* layer_events { nullptr };
     const WPSceneScriptMediaState* media_state { nullptr };
     bool dispatch_media_thumbnail { false };
     bool dispatch_media_properties { false };
