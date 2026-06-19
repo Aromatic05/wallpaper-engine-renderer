@@ -407,10 +407,10 @@ static bool CompileShaderUnitWithDxc(const ShaderCompUnit& unit,
     }
     if (! errors.empty()) {
         const auto debug_name = EffectiveDebugName(unit);
-        LOG_WARN("dxc(%.*s): %s",
-                 static_cast<int>(debug_name.size()),
-                 debug_name.data(),
-                 errors.c_str());
+        LOG_VERBOSE("dxc(%.*s): %s",
+                    static_cast<int>(debug_name.size()),
+                    debug_name.data(),
+                    errors.c_str());
     }
 
     CComPtr<IDxcBlob> object;
