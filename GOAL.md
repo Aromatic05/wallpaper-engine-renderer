@@ -297,6 +297,10 @@ Planned commit:
      layout, font resolution, glyph bitmap caching, atlas packing, canonical text
      primitive meshes, runtime relayout, screen-anchor placement, bridge sizing, and
      regression coverage for non-empty atlas pages and glyph meshes.
+   - `feat(scene): match wallpaper engine text scene scaling` now matches the original
+     engine's scene-height-scaled text sizing contract and adds regression coverage for
+     larger scenes. The detailed investigation and reverse-engineering notes now live in
+     [docs/bugfix/2026-06-19-text-scene-scaling.md](/home/aromatic/Applications/OwnProject/we-new/wallpaper-engine-renderer/docs/bugfix/2026-06-19-text-scene-scaling.md).
    Remaining:
    - Audit parser/effect integration against the reference after render-graph resource
      refresh consumes text dirty keys.

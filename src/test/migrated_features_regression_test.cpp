@@ -462,5 +462,34 @@ int main() {
     assert(text_pass->node == node.get());
     assert(text_pass->clear_output);
 
+    wallpaper::wpscene::WPTextObject baseline_text;
+    baseline_text.id = 91;
+    baseline_text.name = "BaselineText";
+    baseline_text.text = "12345";
+    baseline_text.horizontalalign = "left";
+    baseline_text.verticalalign = "top";
+    baseline_text.pointsize = 35.0f;
+    baseline_text.size = { 1.0f, 1.0f };
+    baseline_text.size_explicit = false;
+
+    wallpaper::wpscene::WPTextObject scaled_text = baseline_text;
+    scaled_text.id = 92;
+    scaled_text.name = "ScaledText";
+
+    std::shared_ptr<wallpaper::SceneTextPrimitive> baseline_primitive;
+    std::shared_ptr<wallpaper::SceneTextPrimitive> scaled_primitive;
+    std::string baseline_error;
+    std::string scaled_error;
+    assert(wallpaper::BuildSceneTextPrimitive(
+        *scene.vfs, baseline_text, 1, 1.0, 768.0f, &baseline_primitive, &baseline_error));
+    assert(wallpaper::BuildSceneTextPrimitive(
+        *scene.vfs, scaled_text, 1, 1.0, 2160.0f, &scaled_primitive, &scaled_error));
+    assert(baseline_primitive != nullptr);
+    assert(scaled_primitive != nullptr);
+    assert(scaled_primitive->layout.glyph_display_size[0] >
+           baseline_primitive->layout.glyph_display_size[0] * 2.5f);
+    assert(scaled_primitive->layout.glyph_display_size[1] >
+           baseline_primitive->layout.glyph_display_size[1] * 2.5f);
+
     return 0;
 }

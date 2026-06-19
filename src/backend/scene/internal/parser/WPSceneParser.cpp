@@ -4759,7 +4759,13 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
     std::shared_ptr<SceneTextPrimitive> primitive;
     std::string                         error;
     if (! BuildSceneTextPrimitive(
-            *context.vfs, text_obj, 0, context.scene->textRenderScale, &primitive, &error)) {
+            *context.vfs,
+            text_obj,
+            0,
+            context.scene->textRenderScale,
+            static_cast<float>(std::max(context.ortho_h, 1)),
+            &primitive,
+            &error)) {
         LOG_ERROR("build text primitive '%s' failed: %s", text_obj.name.c_str(), error.c_str());
         return;
     }

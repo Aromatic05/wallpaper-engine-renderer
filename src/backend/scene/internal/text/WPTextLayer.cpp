@@ -48,6 +48,7 @@ constexpr int    kTextGlyphAtlasMaxExtent { 1024 };
 constexpr int    kTextGlyphAtlasPadding { 1 };
 constexpr float  kScreenAnchoredTextStackGap { 1.0f };
 constexpr float  kTextPlacementEpsilon { 0.000001f };
+constexpr float  kWallpaperEngineTextSceneHeightBaseline { 768.0f };
 
 uint16_t ResolveTextMeshExtent(float value) {
     return static_cast<uint16_t>(std::max(1, static_cast<int>(std::lround(value))));
@@ -1783,6 +1784,7 @@ std::optional<TextGlyphAtlasBuildResult> BuildTextGlyphAtlas(
 
 bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
                              const std::string& texture_key, double render_scale,
+                             float scene_height,
                              TextRasterLayoutResult* out_image, std::string* out_error) {
     if (out_image == nullptr) return false;
 
@@ -1832,7 +1834,12 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
     ApplyTextResolution(measure_layout);
 
     pango_font_description_set_family(desc, font_family.c_str());
-    const double effective_point_size = std::max(1.0, static_cast<double>(object.pointsize));
+    const double authored_point_size = std::max(1.0, static_cast<double>(object.pointsize));
+    const double scene_point_scale =
+        std::max(1.0, static_cast<double>(scene_height)) /
+        static_cast<double>(kWallpaperEngineTextSceneHeightBaseline);
+    const double effective_point_size =
+        authored_point_size * scene_point_scale;
     ApplyWallpaperEngineTextSize(desc, effective_point_size);
     pango_layout_set_font_description(measure_layout, desc);
 
@@ -3067,6 +3074,7 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
                                         wpscene::WPTextObject&           object,
                                         uint32_t                         texture_version,
                                         double                           render_scale,
+                                        float                            scene_height,
                                         std::shared_ptr<SceneTextPrimitive>* out_primitive,
                                         std::string*                     out_error) {
     if (out_primitive == nullptr) return false;
@@ -3076,6 +3084,7 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
                                       object,
                                       MakeTextLayerTextureKey(object.id),
                                       render_scale,
+                                      scene_height,
                                       &generated,
                                       out_error)) {
         return false;
@@ -3104,6 +3113,17 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
     return true;
 }
 
+bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
+                                        wpscene::WPTextObject&           object,
+                                        uint32_t                         texture_version,
+                                        double                           render_scale,
+                                        std::shared_ptr<SceneTextPrimitive>* out_primitive,
+                                        std::string*                     out_error) {
+    return BuildSceneTextPrimitive(
+        vfs, object, texture_version, render_scale, kWallpaperEngineTextSceneHeightBaseline,
+        out_primitive, out_error);
+}
+
 bool wallpaper::SyncTextLayerSceneMaterials(Scene& scene, int32_t layer_id) {
     auto state_it = scene.textLayers.find(layer_id);
     if (state_it == scene.textLayers.end()) return false;
@@ -3124,11 +3144,24 @@ bool wallpaper::RasterizeTextPrimitiveLayout(fs::VFS& vfs,
                                              wpscene::WPTextObject& object,
                                              const std::string& texture_key,
                                              double render_scale,
+                                             float scene_height,
                                              TextRasterLayoutResult* out_image,
                                              std::string* out_error) {
     // Production text rasterization is deliberately silent; failures travel through `out_error`
     // so callers can decide how to surface hard rasterization errors.
-    return GenerateTextLayoutImage(vfs, object, texture_key, render_scale, out_image, out_error);
+    return GenerateTextLayoutImage(
+        vfs, object, texture_key, render_scale, scene_height, out_image, out_error);
+}
+
+bool wallpaper::RasterizeTextPrimitiveLayout(fs::VFS& vfs,
+                                             wpscene::WPTextObject& object,
+                                             const std::string& texture_key,
+                                             double render_scale,
+                                             TextRasterLayoutResult* out_image,
+                                             std::string* out_error) {
+    return RasterizeTextPrimitiveLayout(
+        vfs, object, texture_key, render_scale, kWallpaperEngineTextSceneHeightBaseline,
+        out_image, out_error);
 }
 
 bool wallpaper::UpdateTextLayerSceneTransform(Scene& scene, int32_t layer_id) {
@@ -3302,6 +3335,7 @@ bool wallpaper::RebuildTextLayerSceneLayout(Scene& scene, int32_t layer_id) {
                                  state.object,
                                  next_texture_version,
                                  scene.textRenderScale,
+                                 static_cast<float>(std::max(scene.ortho[1], 1)),
                                  &rebuilt_primitive,
                                  &error)) {
         return false;
