@@ -150,11 +150,13 @@ Planned commit:
      registrations write resolved user/script values into `SceneMaterial::customShader.constValues`,
      resolves authored material aliases to GLSL uniform names, and marks the mesh dirty so runtime
      material updates are visible to rendering instead of only being tracked as host diagnostics.
+   - `feat(scene): extend scenescript sound and parent layer calls` adds script-visible
+     sound layer `play`, `pause`, `stop`, `isPlaying`, and `volume` event dispatch through the
+     lightweight SceneScript runtime, and wires `getParent`/`setParent` through the scene layer
+     parent binding state instead of returning a self-parent placeholder.
    Remaining:
-   - Runtime-created layers are represented by a real `SceneNode` and scene registry entry,
-     but full asset/config materialization still needs the reference `CreateDynamicSceneLayer`
-     behavior.
-   - Layer parent/children relation APIs still need the remaining reference behavior.
+   - Layer children/enumeration and attachment-aware parent relation APIs still need the remaining
+     reference behavior.
    - Material/effect/native object bridges still need runtime material proxy getters/setters,
      effect material indexing, and native object exposure beyond the now-functional
      `MaterialUniform` registration dispatch path.
@@ -240,12 +242,29 @@ Planned commit:
      `Scene::DestroyLayer` unloads the matching sound stream, SceneScript-created sound configs are
      materialized instead of rejected, and live `volume` bindings write through to the mounted
      channel.
+   - In-progress fast parity import copied the reference parser/model/text/SceneScript/scene model
+     surface directly over the current implementation, including `WPSceneParser`, `WPMdlParser`,
+     `WPShaderValueUpdater`, `Scene`, `WPTextLayer`, `WPJson`, `WPPuppet`, `WPUserSetting`, and
+     `WPSceneScriptHost`. This intentionally prioritizes reference behavior transfer over immediate
+     local include/build adaptation; compile cleanup is deferred to the next pass.
+   - The fast parity import now also carries the reference model render graph path through
+     `CustomShaderPass`, `VulkanPass`, `VulkanRender`, and the newly added `SceneToRenderGraph`
+     translation unit. Include roots were expanded so reference-style local headers resolve inside
+     this repository's split directory layout.
+   - The fast parity import additionally refreshed the remaining reference support modules that the
+     expanded parser/runtime depends on: `WPDynamicValue`, `WPParticleParser`, `WPPkgFs`,
+     `WPPropertyAnimation`, `WPShaderParser`, `WPSyntheticImageParser`, `WPTexImageParser`,
+     `SpecTexs`, `Image`, `SpriteAnimation`, `Type`, and the RenderGraph support headers/sources.
+     Reference include paths have been mechanically mapped back to this repository's lower-case
+     module layout; build and API reconciliation remain deferred.
+   - `feat(scene): schedule random sound layer delays` ports the reference random ambient sound
+     timing behavior: random sound layers now stay mounted, emit silence during the authored
+     `mintime`/`maxtime` delay window, avoid immediate repeats, and resume playback without
+     letting the mixer retire the channel.
    Remaining:
    - Dynamic parser/materialization now receives the active user-property map for supported
      image/particle/text/light/sound configs, but still needs the full reference root-scoped scene
      JSON context for dynamic configs whose script expressions depend on broader scene metadata.
-   - Sound random playback now avoids immediate repeats, but the reference min/max random ambient
-     delay scheduling still needs to be migrated.
    - Full reference parser visibility contracts, dependency-aware lazy materialization,
      deferred image/particle materialization, model layers, shape/direct-draw layers, and dynamic
      `CreateDynamicSceneLayer` object construction for shape/direct-draw, model, and empty
