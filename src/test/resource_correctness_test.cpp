@@ -430,6 +430,59 @@ void TestVfsTextureCacheIsolation() {
     assert(tex1.slots.front().view != tex2.slots.front().view);
 }
 
+void TestTextureCacheDeferredGraphActivation() {
+    VulkanFixture vk;
+    auto&         cache = vk.device.tex_cache();
+
+    const vk::TextureKey key {
+        .width = 1,
+        .height = 1,
+        .usage = vk::TexUsage::COLOR,
+        .format = TextureFormat::RGBA8,
+        .sample = {},
+        .mipmap_level = 1,
+    };
+
+    auto first = cache.Query("rt/first", key);
+    assert(first.has_value());
+
+    cache.BeginDeferredGraphActivation();
+    cache.MarkShareReady("rt/first");
+
+    auto second = cache.Query("rt/second", key);
+    assert(second.has_value());
+    assert(second->handle != first->handle);
+    assert(second->view != first->view);
+
+    cache.EndDeferredGraphActivation();
+
+    auto third = cache.Query("rt/third", key);
+    assert(third.has_value());
+    assert(third->handle == first->handle);
+    assert(third->view == first->view);
+
+    const vk::TextureKey cancel_key {
+        .width = 2,
+        .height = 1,
+        .usage = vk::TexUsage::COLOR,
+        .format = TextureFormat::RGBA8,
+        .sample = {},
+        .mipmap_level = 1,
+    };
+
+    auto cancel_first = cache.Query("rt/cancel-first", cancel_key);
+    assert(cancel_first.has_value());
+
+    cache.BeginDeferredGraphActivation();
+    cache.MarkShareReady("rt/cancel-first");
+    cache.CancelDeferredGraphActivation();
+
+    auto cancel_second = cache.Query("rt/cancel-second", cancel_key);
+    assert(cancel_second.has_value());
+    assert(cancel_second->handle != cancel_first->handle);
+    assert(cancel_second->view != cancel_first->view);
+}
+
 void TestDecoderFailureHandling() {
     const SoundStream::Desc desc { .channels = 2, .sampleRate = 44100 };
     assert(CreateSoundStream(nullptr, desc) == nullptr);
@@ -528,6 +581,7 @@ int main() {
     TestLimitedBinaryStream();
     TestVfsIdentityAndCacheIsolation();
     TestVfsTextureCacheIsolation();
+    TestTextureCacheDeferredGraphActivation();
     TestDecoderFailureHandling();
     TestDecoderProbeAndRewind();
     return 0;

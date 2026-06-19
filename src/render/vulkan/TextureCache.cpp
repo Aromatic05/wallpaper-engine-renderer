@@ -547,6 +547,8 @@ void TextureCache::Clear() {
     m_tex_map.clear();
     m_query_texs.clear();
     m_query_map.clear();
+    m_deferred_graph_activation_depth = 0;
+    m_deferred_share_ready_keys.clear();
 }
 
 std::optional<ImageParameters> TextureCache::Query(std::string_view key, TextureKey content_hash,
@@ -590,12 +592,46 @@ std::optional<ImageParameters> TextureCache::Query(std::string_view key, Texture
 }
 
 void TextureCache::MarkShareReady(std::string_view key) {
-    if (exists(m_query_map, key)) {
-        auto& query = m_query_map.find(key)->second;
-        if (query->persist) return;
-        query->share_ready = true;
-        m_query_map.erase(key.data());
+    const std::string key_string(key);
+    const auto        query_it = m_query_map.find(key_string);
+    if (query_it == m_query_map.end()) return;
+
+    auto* query = query_it->second;
+    if (query == nullptr) {
+        m_query_map.erase(query_it);
+        return;
     }
+    if (query->persist) return;
+
+    if (m_deferred_graph_activation_depth != 0) {
+        m_deferred_share_ready_keys.insert(key_string);
+        return;
+    }
+
+    query->query_keys.erase(key_string);
+    m_query_map.erase(query_it);
+    query->share_ready = query->query_keys.empty();
+}
+
+void TextureCache::BeginDeferredGraphActivation() {
+    m_deferred_graph_activation_depth++;
+}
+
+void TextureCache::EndDeferredGraphActivation() {
+    if (m_deferred_graph_activation_depth == 0) return;
+    m_deferred_graph_activation_depth--;
+    if (m_deferred_graph_activation_depth != 0) return;
+
+    auto deferred_keys = std::move(m_deferred_share_ready_keys);
+    m_deferred_share_ready_keys.clear();
+    for (const auto& deferred_key : deferred_keys) {
+        MarkShareReady(deferred_key);
+    }
+}
+
+void TextureCache::CancelDeferredGraphActivation() {
+    m_deferred_graph_activation_depth = 0;
+    m_deferred_share_ready_keys.clear();
 }
 
 void TextureCache::RecGenerateMipmaps(vvk::CommandBuffer& cmd, const ImageParameters& image) const {

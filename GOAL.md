@@ -232,9 +232,13 @@ Planned commit:
      refresh when a resident graph already exists, advances that queue during `drawFrame`
      with a frame budget, and keeps CopyPass dependencies synchronously prepared so
      reused shader passes can bind copy targets.
+   - `feat(render): port texture cache deferred graph activation` keeps transient
+     render-target alias release intents behind the deferred graph activation fence,
+     replays them only after queued passes become resident, and fixes multi-key
+     `MarkShareReady` so shared query textures are reusable only after every logical key
+     reaches its last read.
    Remaining:
-   - TextureCache deferred graph activation and real pass-specific resource-wait states
-     still need their reference behavior.
+   - Real pass-specific resource-wait states still need their reference behavior.
    - Pipeline warmup still needs the reference hidden-layer warmup render graph, not only
      the public warmup entry over the active graph.
    Acceptance:

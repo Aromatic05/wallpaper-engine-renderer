@@ -279,6 +279,7 @@ void VulkanRender::Impl::destroy() {
         }
         m_deferred_prepare_indices.clear();
         m_deferred_waiting_indices_logged.clear();
+        m_device->tex_cache().CancelDeferredGraphActivation();
         m_vertex_buf->destroy();
         m_dyn_buf->destroy();
 
@@ -522,6 +523,7 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
 }
 
 void VulkanRender::Impl::clearLastRenderGraph() {
+    m_device->tex_cache().CancelDeferredGraphActivation();
     for (auto& p : m_passes) {
         p->destory(*m_device, m_rendering_resources);
     }
@@ -580,6 +582,7 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
     auto nodes             = rg.topologicalOrder();
     auto node_release_texs = rg.getLastReadTexs(nodes);
 
+    m_device->tex_cache().CancelDeferredGraphActivation();
     m_passes.clear();
     m_deferred_prepare_indices.clear();
     m_deferred_waiting_indices_logged.clear();
@@ -670,6 +673,9 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
             }
         }
     }
+    if (!m_deferred_prepare_indices.empty()) {
+        m_device->tex_cache().BeginDeferredGraphActivation();
+    }
     glslang::FinalizeProcess();
 
     // Upload work queued by prepare() is recorded in the next frame command buffer before any
@@ -729,6 +735,7 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
 
     if (m_deferred_prepare_indices.empty()) {
         m_deferred_waiting_indices_logged.clear();
+        m_device->tex_cache().EndDeferredGraphActivation();
     }
     glslang::FinalizeProcess();
 }

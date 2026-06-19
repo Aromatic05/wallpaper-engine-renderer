@@ -51,6 +51,9 @@ public:
                                          bool persist = false);
 
     void MarkShareReady(std::string_view key);
+    void BeginDeferredGraphActivation();
+    void EndDeferredGraphActivation();
+    void CancelDeferredGraphActivation();
 
     void RecGenerateMipmaps(vvk::CommandBuffer& cmd, const ImageParameters& image) const;
 
@@ -73,6 +76,8 @@ private:
     };
     std::vector<std::unique_ptr<QueryTex>> m_query_texs;
     Map<std::string, QueryTex*>            m_query_map;
+    std::size_t                            m_deferred_graph_activation_depth { 0 };
+    Set<std::string>                       m_deferred_share_ready_keys;
 };
 
 } // namespace vulkan
