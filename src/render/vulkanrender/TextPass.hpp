@@ -34,9 +34,11 @@ public:
     std::string residencyKey() const override;
 
     const Desc& desc() const { return m_desc; }
+    bool executionDiagnosticEmitted() const { return m_execution_diagnostic_emitted; }
 
 private:
     Desc m_desc;
+    bool m_execution_diagnostic_emitted { false };
 };
 
 } // namespace vulkan

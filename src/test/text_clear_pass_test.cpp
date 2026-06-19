@@ -2,6 +2,7 @@
 #include "render/vulkanrender/ClearPass.hpp"
 #include "render/vulkanrender/CopyPass.hpp"
 #include "render/vulkanrender/CustomShaderPass.hpp"
+#include "render/vulkanrender/Resource.hpp"
 #include "render/vulkanrender/TextPass.hpp"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 
@@ -62,6 +63,12 @@ int main() {
     assert(clear_pass->residencyKey() == "ClearPass|target=_rt_text");
     assert(text_pass->residencyKey().find("TextPass|node=") == 0);
     assert(text_pass->residencyKey().find("|layer=7|output=_rt_text") != std::string::npos);
+    assert(!text_pass->prepared());
+    wallpaper::vulkan::Device device;
+    wallpaper::vulkan::RenderingResources resources;
+    text_pass->execute(device, resources);
+    assert(text_pass->executionDiagnosticEmitted());
+    assert(!text_pass->prepared());
 
     wallpaper::vulkan::ClearPass::Desc clear_desc;
     clear_desc.target = "_rt_text";

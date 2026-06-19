@@ -44,8 +44,14 @@ void TextPass::prepare(Scene& scene, const Device& device, RenderingResources&) 
 }
 
 void TextPass::execute(const Device&, RenderingResources&) {
-    // The pass is intentionally render-graph visible before full text raster draw submission lands.
-    // Later migration steps will bind text meshes/atlas textures here without changing graph shape.
+    if (!m_execution_diagnostic_emitted) {
+        LOG_ERROR("TextPass: glyph atlas draw submission is not migrated yet for layer %d "
+                  "output '%s'",
+                  m_desc.layer_id,
+                  m_desc.output.c_str());
+        m_execution_diagnostic_emitted = true;
+    }
+    setPrepared(false);
 }
 
 void TextPass::destory(const Device&, RenderingResources&) {
