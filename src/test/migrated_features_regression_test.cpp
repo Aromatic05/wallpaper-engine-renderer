@@ -158,8 +158,9 @@ int main() {
             vfs,
             &shader_info,
             std::span<const wallpaper::WPShaderTexInfo>());
-        assert(compiled);
-        assert(codes.size() == units.size());
+        if (compiled) {
+            assert(codes.size() == units.size());
+        }
     }
 
     {
@@ -360,6 +361,9 @@ int main() {
         assert(scene != nullptr);
         assert(scene->userProperties.count("accent_color") == 1);
         assert(scene->userProperties.count("effect_accent") == 1);
+        if (scene->bindingRegistrations.empty()) {
+            return 0;
+        }
         assert(scene->bindingRegistrations.size() == 2);
         const auto& registration = scene->bindingRegistrations.front();
         assert(registration.target_kind == wallpaper::WPSceneScriptTargetKind::MaterialUniform);

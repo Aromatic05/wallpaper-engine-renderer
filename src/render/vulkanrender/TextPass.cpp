@@ -363,6 +363,7 @@ TextPass::TextPass(const Desc& desc) {
     m_desc.layer_id            = desc.layer_id;
     m_desc.execute_when_hidden = desc.execute_when_hidden;
     m_desc.output              = desc.output;
+    m_desc.clear_output        = desc.clear_output;
 }
 TextPass::~TextPass() = default;
 

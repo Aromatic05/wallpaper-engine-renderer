@@ -5,8 +5,8 @@
 
 #include "Sha.hpp"
 
-constexpr const char* level_names[] = { "INFO", "ERROR" };
-constexpr const char* level_fmt[]   = { "%-5s", "%-5s %s:%d " };
+constexpr const char* level_names[] = { "INFO", "WARN", "ERROR" };
+constexpr const char* level_fmt[]   = { "%-5s", "%-5s %s:%d ", "%-5s %s:%d " };
 
 void WallpaperLog(int level, const char* file, int line, const char* fmt, ...) {
     std::va_list args;

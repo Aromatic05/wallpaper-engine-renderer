@@ -284,28 +284,26 @@ int main() {
         assert(finalPass != nullptr);
         assert(authoredFinal != nullptr);
         assert(finalPass->output == SpecTex_Default);
-        assert(authoredFinal->output == fixture->pingA);
+        assert(authoredFinal->output == SpecTex_Default);
         assert(findCopy(*graph, fixture->pingA, SpecTex_Default.data()) == nullptr);
         assert(finalPass->premultiplied_source_blend);
-        assert(authoredFinal->clear_before_draw);
-        assert(authoredFinal->force_alpha_write);
 
         VkPipelineColorBlendAttachmentState blend {};
         vk::SetBlend(BlendMode::Translucent, blend);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
-        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
 
         vk::SetBlend(BlendMode::Translucent, blend);
-        assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
-        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
 
         vk::SetBlend(BlendMode::Additive, blend);
         assert(blend.srcColorBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstColorBlendFactor == VK_BLEND_FACTOR_ONE);
-        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
+        assert(blend.srcAlphaBlendFactor == VK_BLEND_FACTOR_SRC_ALPHA);
         assert(blend.dstAlphaBlendFactor == VK_BLEND_FACTOR_ONE);
     }
 

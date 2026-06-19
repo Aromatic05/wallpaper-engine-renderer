@@ -182,7 +182,7 @@ int main() {
     wallpaper::vulkan::CustomShaderPass matching_shader(shader_desc);
     shader_desc.output = "_rt_other";
     wallpaper::vulkan::CustomShaderPass other_shader(shader_desc);
-    assert(shader.residencyKey().find("CustomShaderPass|node=") == 0);
+    assert(shader.residencyKey().find("CustomShaderPass|layer=") == 0);
     assert(shader.residencyKey().find("|output=_rt_shader") != std::string::npos);
     assert(shader.canReuseForResidency(matching_shader));
     assert(!shader.canReuseForResidency(other_shader));

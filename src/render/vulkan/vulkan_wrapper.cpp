@@ -475,7 +475,12 @@ VkPhysicalDeviceProperties PhysicalDevice::GetProperties() const noexcept {
 }
 
 void PhysicalDevice::GetProperties2KHR(VkPhysicalDeviceProperties2KHR& props) const noexcept {
-    dld->vkGetPhysicalDeviceProperties2KHR(handle, &props);
+    if (dld->vkGetPhysicalDeviceProperties2KHR != nullptr) {
+        dld->vkGetPhysicalDeviceProperties2KHR(handle, &props);
+        return;
+    }
+
+    dld->vkGetPhysicalDeviceProperties(handle, &props.properties);
 }
 
 VkPhysicalDeviceFeatures PhysicalDevice::GetFeatures() const noexcept {
