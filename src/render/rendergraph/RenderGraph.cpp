@@ -39,7 +39,7 @@ std::shared_ptr<Pass> RenderGraph::getPassShared(NodeID id) const {
 }
 
 bool RenderGraph::replacePass(NodeID id, std::shared_ptr<Pass> pass) {
-    if (!exists(m_set_passnode, id) || pass == nullptr) return false;
+    if (!exists(m_map_pass, id) || !pass) return false;
     m_map_pass[id] = std::move(pass);
     return true;
 }

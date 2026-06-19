@@ -4,6 +4,7 @@
 
 #include "TexNode.hpp"
 #include "core/MapSet.hpp"
+#include <memory>
 #include <span>
 
 namespace wallpaper
@@ -40,7 +41,7 @@ public:
     TexNode*  getTexNode(NodeID) const;
     Pass*     getPass(NodeID) const;
     std::shared_ptr<Pass> getPassShared(NodeID) const;
-    bool replacePass(NodeID, std::shared_ptr<Pass>);
+    bool                  replacePass(NodeID, std::shared_ptr<Pass>);
 
     // all render pass
     std::vector<NodeID>                topologicalOrder() const;
