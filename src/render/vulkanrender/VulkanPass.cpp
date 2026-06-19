@@ -17,6 +17,12 @@ void VulkanPass::refreshResources(Scene& scene,
     prepare(scene, device, resources);
 }
 
+void VulkanPass::prepareDeferred(Scene& scene,
+                                 const Device& device,
+                                 RenderingResources& resources) {
+    prepare(scene, device, resources);
+}
+
 void VulkanPass::absorbResidencyGraphState(const VulkanPass& next_pass) {
     m_release_texs = next_pass.m_release_texs;
 }

@@ -4,12 +4,35 @@
 #include "render/vulkanrender/CustomShaderPass.hpp"
 #include "render/vulkanrender/Resource.hpp"
 #include "render/vulkanrender/TextPass.hpp"
+#include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 
+#include <array>
 #include <cassert>
 #include <memory>
 #include <string>
 #include <unordered_set>
+
+namespace
+{
+class DeferredProbePass : public wallpaper::vulkan::VulkanPass {
+public:
+    void prepare(wallpaper::Scene&,
+                 const wallpaper::vulkan::Device&,
+                 wallpaper::vulkan::RenderingResources&) override {
+        prepare_count++;
+        setPrepared();
+    }
+    void execute(const wallpaper::vulkan::Device&,
+                 wallpaper::vulkan::RenderingResources&) override {}
+    void destory(const wallpaper::vulkan::Device&,
+                 wallpaper::vulkan::RenderingResources&) override {
+        setPrepared(false);
+    }
+
+    int prepare_count { 0 };
+};
+} // namespace
 
 int main() {
     wallpaper::rg::RenderGraph graph;
@@ -163,6 +186,24 @@ int main() {
     assert(shader.residencyKey().find("|output=_rt_shader") != std::string::npos);
     assert(shader.canReuseForResidency(matching_shader));
     assert(!shader.canReuseForResidency(other_shader));
+
+    wallpaper::Scene deferred_scene;
+    DeferredProbePass deferred_probe;
+    assert(deferred_probe.requestDeferredPrepareResources(deferred_scene, device) ==
+           wallpaper::vulkan::DeferredPrepareResourcesState::Ready);
+    assert(!deferred_probe.prepared());
+    deferred_probe.prepareDeferred(deferred_scene, device, resources);
+    assert(deferred_probe.prepared());
+    assert(deferred_probe.prepare_count == 1);
+    deferred_probe.clearReleaseTexs();
+    deferred_probe.addReleaseTexs(std::array<std::string_view, 3> {
+        "_rt_a",
+        "_rt_b",
+        "_rt_a",
+    });
+    assert(deferred_probe.releaseTexs().size() == 2);
+    assert(deferred_probe.releaseTexs()[0] == "_rt_a");
+    assert(deferred_probe.releaseTexs()[1] == "_rt_b");
 
     return 0;
 }

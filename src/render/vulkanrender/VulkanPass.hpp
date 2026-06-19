@@ -20,12 +20,22 @@ class Device;
 class RenderingResources;
 class Resource;
 
+enum class DeferredPrepareResourcesState
+{
+    Ready,
+    Waiting,
+};
+
 class VulkanPass : public rg::Pass {
 public:
     VulkanPass()                                                     = default;
     virtual ~VulkanPass()                                            = default;
     virtual void prepare(Scene&, const Device&, RenderingResources&) = 0;
     virtual void refreshResources(Scene&, const Device&, RenderingResources&);
+    virtual DeferredPrepareResourcesState requestDeferredPrepareResources(Scene&, const Device&) {
+        return DeferredPrepareResourcesState::Ready;
+    }
+    virtual void prepareDeferred(Scene&, const Device&, RenderingResources&);
     virtual void execute(const Device&, RenderingResources&)         = 0;
     virtual void destory(const Device&, RenderingResources&)         = 0;
     virtual bool warmupPipeline(Scene&, const Device&, RenderingResources&) { return false; }
@@ -50,10 +60,14 @@ public:
     }
 
     void addReleaseTexs(std::span<const std::string_view> texs) {
-        m_release_texs.clear();
-        std::transform(texs.begin(), texs.end(), std::back_inserter(m_release_texs), [](auto& sv) {
-            return std::string(sv);
-        });
+        for (const auto tex : texs) {
+            if (tex.empty()) continue;
+            if (std::find(m_release_texs.begin(), m_release_texs.end(), tex) !=
+                m_release_texs.end()) {
+                continue;
+            }
+            m_release_texs.emplace_back(tex);
+        }
     }
     bool                         prepared() const { return m_prepared; }
     std::span<const std::string> releaseTexs() const { return m_release_texs; }

@@ -227,9 +227,14 @@ Planned commit:
      dynamic uploads in the frame command buffer before pass execution, exposes pipeline
      warmup over the current render graph, and gives ClearPass/CopyPass real
      render-target reference, refresh, and residency-gate handoff behavior.
+   - `feat(render): port deferred render graph preparation queue` adds the pass-level
+     deferred prepare/resource-wait contract, queues cold non-copy passes on topology
+     refresh when a resident graph already exists, advances that queue during `drawFrame`
+     with a frame budget, and keeps CopyPass dependencies synchronously prepared so
+     reused shader passes can bind copy targets.
    Remaining:
-   - Deferred runtime preparation still needs the reference frame-budgeted queue and
-     resource-wait state.
+   - TextureCache deferred graph activation and real pass-specific resource-wait states
+     still need their reference behavior.
    - Pipeline warmup still needs the reference hidden-layer warmup render graph, not only
      the public warmup entry over the active graph.
    Acceptance:

@@ -17,16 +17,19 @@
 #include "VulkanPass.hpp"
 #include "PrePass.hpp"
 #include "FinPass.hpp"
+#include "CopyPass.hpp"
 #include "Resource.hpp"
 
 #include "core/ArrayHelper.hpp"
 
 #include <cassert>
-#include <vector>
+#include <chrono>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #if ENABLE_RENDERDOC_API
 #    include "RenderDoc.h"
@@ -36,6 +39,8 @@ using namespace wallpaper::vulkan;
 
 constexpr uint64_t vk_wait_time { 10u * 1000u * 1000000u };
 constexpr uint32_t vk_command_num { 1 };
+constexpr std::size_t kDeferredPrepareMaxPassesPerFrame { 96 };
+constexpr double      kDeferredPrepareFrameBudgetMs { 2.0 };
 
 constexpr std::array base_inst_exts {
     Extension { false, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME },
@@ -89,6 +94,7 @@ struct VulkanRender::Impl {
     bool initRes();
     void drawFrameSwapchain();
     void drawFrameOffscreen();
+    void processDeferredGraphPreparation(Scene&);
     void setRenderTargetSize(Scene&, rg::RenderGraph&);
 
     Instance                m_instance;
@@ -109,6 +115,8 @@ struct VulkanRender::Impl {
     bool m_with_surface { false };
     bool m_inited { false };
     bool m_pass_loaded { false };
+    std::deque<std::size_t> m_deferred_prepare_indices;
+    std::unordered_set<std::size_t> m_deferred_waiting_indices_logged;
 
     std::unique_ptr<VulkanExSwapchain> m_ex_swapchain;
     RenderingResources                 m_rendering_resources;
@@ -269,6 +277,8 @@ void VulkanRender::Impl::destroy() {
         for (auto& p : m_passes) {
             p->destory(*m_device, m_rendering_resources);
         }
+        m_deferred_prepare_indices.clear();
+        m_deferred_waiting_indices_logged.clear();
         m_vertex_buf->destroy();
         m_dyn_buf->destroy();
 
@@ -307,6 +317,8 @@ void VulkanRender::Impl::DestroyRenderingResource(RenderingResources& rr) {}
 
 void VulkanRender::Impl::drawFrame(Scene& scene) {
     if (! (m_inited && m_pass_loaded)) return;
+
+    processDeferredGraphPreparation(scene);
 
         // LOG_INFO("used ram: %fm", (m_device->GetUsage()/1024.0f)/1024.0f);
 
@@ -515,6 +527,8 @@ void VulkanRender::Impl::clearLastRenderGraph() {
     }
     m_passes.clear();
     m_compiled_pass_refs.clear();
+    m_deferred_prepare_indices.clear();
+    m_deferred_waiting_indices_logged.clear();
     m_device->tex_cache().Clear();
     m_device->video_tex_cache().Clear();
 
@@ -530,6 +544,7 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
                                             bool refresh_resources_only) {
     if (! m_inited) return;
     m_pass_loaded = false;
+    const bool had_resident_graph = !m_compiled_pass_refs.empty();
 
     if (refresh_resources_only && !m_passes.empty()) {
         setRenderTargetSize(scene, rg);
@@ -566,6 +581,8 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
     auto node_release_texs = rg.getLastReadTexs(nodes);
 
     m_passes.clear();
+    m_deferred_prepare_indices.clear();
+    m_deferred_waiting_indices_logged.clear();
     m_passes.resize(nodes.size());
 
     std::unordered_map<std::string, std::shared_ptr<rg::Pass>> reusable_passes;
@@ -630,11 +647,27 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
 
     glslang::InitializeProcess();
     for (auto* p : m_passes) {
+        if (p == nullptr || p->prepared()) continue;
+        if (dynamic_cast<CopyPass*>(p) == nullptr) continue;
+        p->prepare(scene, *m_device, m_rendering_resources);
+    }
+    for (size_t pass_index = 0; pass_index < m_passes.size(); ++pass_index) {
+        auto* p = m_passes[pass_index];
+        if (p == nullptr) continue;
         if (reused_passes.count(p) != 0 && p->prepared()) {
             p->refreshResources(scene, *m_device, m_rendering_resources);
         }
         if (! p->prepared()) {
-            p->prepare(scene, *m_device, m_rendering_resources);
+            const bool is_copy_dependency = dynamic_cast<CopyPass*>(p) != nullptr;
+            const bool can_defer_runtime_prepare =
+                had_resident_graph && p != m_prepass.get() && p != m_finpass.get() &&
+                !is_copy_dependency;
+            if (can_defer_runtime_prepare) {
+                p->requestDeferredPrepareResources(scene, *m_device);
+                m_deferred_prepare_indices.push_back(pass_index);
+            } else {
+                p->prepare(scene, *m_device, m_rendering_resources);
+            }
         }
     }
     glslang::FinalizeProcess();
@@ -644,6 +677,61 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene,
     // refreshes on the frame path instead of turning visibility changes into scene-load stalls.
     m_pass_loaded = true;
 };
+
+void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
+    if (m_deferred_prepare_indices.empty()) return;
+
+    const auto batch_started_at = std::chrono::steady_clock::now();
+    std::size_t attempted = 0;
+
+    glslang::InitializeProcess();
+    while (attempted < kDeferredPrepareMaxPassesPerFrame &&
+           !m_deferred_prepare_indices.empty()) {
+        if (attempted != 0) {
+            const auto batch_elapsed_ms =
+                static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::steady_clock::now() - batch_started_at)
+                                        .count()) /
+                1000.0;
+            if (batch_elapsed_ms >= kDeferredPrepareFrameBudgetMs) break;
+        }
+
+        const auto pass_index = m_deferred_prepare_indices.front();
+        if (pass_index >= m_passes.size()) {
+            m_deferred_prepare_indices.pop_front();
+            m_deferred_waiting_indices_logged.erase(pass_index);
+            continue;
+        }
+
+        auto* pass = m_passes[pass_index];
+        if (pass == nullptr || pass->prepared()) {
+            m_deferred_prepare_indices.pop_front();
+            m_deferred_waiting_indices_logged.erase(pass_index);
+            continue;
+        }
+
+        if (pass->requestDeferredPrepareResources(scene, *m_device) ==
+            DeferredPrepareResourcesState::Waiting) {
+            m_deferred_waiting_indices_logged.insert(pass_index);
+            break;
+        }
+
+        m_deferred_waiting_indices_logged.erase(pass_index);
+        pass->prepareDeferred(scene, *m_device, m_rendering_resources);
+        attempted++;
+
+        if (pass->prepared()) {
+            m_deferred_prepare_indices.pop_front();
+        } else {
+            break;
+        }
+    }
+
+    if (m_deferred_prepare_indices.empty()) {
+        m_deferred_waiting_indices_logged.clear();
+    }
+    glslang::FinalizeProcess();
+}
 
 void VulkanRender::Impl::warmupRenderGraphPipelines(Scene& scene, rg::RenderGraph& rg) {
     if (!m_inited) return;
