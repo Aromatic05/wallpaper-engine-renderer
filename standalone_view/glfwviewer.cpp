@@ -1,6 +1,9 @@
 #include <iostream>
 #include <set>
 #include <fstream>
+#include <filesystem>
+#include <thread>
+#include <chrono>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -79,15 +82,21 @@ int main(int argc, char** argv) {
     argparse::ArgumentParser program("scene-viewer");
     setAndParseArg(program, argc, argv);
     auto [w_width, w_height] = program.get<Resolution>(OPT_RESOLUTION);
+    const std::string dump_frame_path = program.get<std::string>(OPT_DUMP_FRAME);
+    const bool dump_frame = !dump_frame_path.empty();
+    const int32_t dump_frame_number = std::max<int32_t>(1, program.get<int32_t>(OPT_DUMP_FRAME_NUMBER));
 
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
-    if (window == nullptr) {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
+    GLFWwindow* window = nullptr;
+    if (!dump_frame) {
+        window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
+        if (window == nullptr) {
+            std::cout << "Failed to create GLFW window" << std::endl;
+            glfwTerminate();
+            return -1;
+        }
     }
 
     UserData data;
@@ -100,9 +109,10 @@ int main(int argc, char** argv) {
     info.height             = static_cast<uint16_t>(w_height);
     info.render_scale       = 1.0;
     info.redraw_callback    = updateCallback;
+    info.offscreen          = dump_frame;
 
     auto& sf_info = info.surface_info;
-    {
+    if (!dump_frame) {
         uint32_t glfwExtCount = 0;
         auto     exts         = glfwGetRequiredInstanceExtensions(&glfwExtCount);
         for (int i = 0; i < glfwExtCount; i++) {
@@ -114,7 +124,9 @@ int main(int argc, char** argv) {
         };
     }
 
-    glfwShowWindow(window);
+    if (!dump_frame) {
+        glfwShowWindow(window);
+    }
 
     wallpaper::WallpaperRuntime runtime;
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
@@ -132,12 +144,49 @@ int main(int argc, char** argv) {
         std::cerr << "LoadWEScene failed: " << result.error().message << std::endl;
         return -1;
     }
-    if (auto result = wallpaper::BindWESceneOutput(*session, info); ! result) {
-        std::cerr << "BindWESceneOutput failed: " << result.error().message << std::endl;
+    auto binding_result = wallpaper::BindWESceneOutput(*session, info);
+    if (!binding_result) {
+        std::cerr << "BindWESceneOutput failed: " << binding_result.error().message << std::endl;
         return -1;
     }
     if (auto result = session->play(); ! result) {
         std::cerr << "session->play failed: " << result.error().message << std::endl;
+        return -1;
+    }
+
+    if (dump_frame) {
+        const auto dump_parent = std::filesystem::path(dump_frame_path).parent_path();
+        if (!dump_parent.empty()) {
+            std::filesystem::create_directories(dump_parent);
+        }
+        std::error_code remove_error;
+        std::filesystem::remove(dump_frame_path, remove_error);
+        if (auto result = session->setProperty(wallpaper::WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER,
+                                               dump_frame_number);
+            !result) {
+            std::cerr << "failed to set capture frame number: " << result.error().message
+                      << std::endl;
+            return -1;
+        }
+        if (auto result = session->setProperty(wallpaper::WE_SCENE_PROPERTY_CAPTURE_FRAME,
+                                               dump_frame_path);
+            !result) {
+            std::cerr << "capture request failed: " << result.error().message << std::endl;
+            return -1;
+        }
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (auto tickResult = runtime.tick(*session); !tickResult) {
+                std::cerr << "runtime.tick failed: " << tickResult.error().message << std::endl;
+                return -1;
+            }
+            if (std::filesystem::exists(dump_frame_path)) {
+                return 0;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        std::cerr << "timed out waiting for frame dump: " << dump_frame_path << std::endl;
         return -1;
     }
 
@@ -155,7 +204,9 @@ int main(int argc, char** argv) {
         glfwPollEvents();
     }
     // wgl.Clear();
-    glfwDestroyWindow(window);
+    if (window != nullptr) {
+        glfwDestroyWindow(window);
+    }
     glfwTerminate();
     return 0;
 }

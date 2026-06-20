@@ -6,7 +6,10 @@
 #include "Type.hpp"
 
 #include <cstdio>
+#include <optional>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace wallpaper
 {
@@ -34,6 +37,8 @@ public:
     void warmupRenderGraphPipelines(Scene&, rg::RenderGraph&);
     void refreshImportedTextures(Scene&);
     void UpdateCameraFillMode(Scene&, wallpaper::FillMode);
+    bool captureNextOffscreenFrame(std::string output_path, int32_t frame_number = 1,
+                                   std::string* error_message = nullptr);
 
     ExSwapchain* exSwapchain() const;
     bool inited() const;

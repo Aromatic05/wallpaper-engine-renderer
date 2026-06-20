@@ -11,6 +11,8 @@ constexpr std::string_view OPT_GRAPHVIZ    = "--graphviz";
 constexpr std::string_view OPT_FPS         = "--fps";
 constexpr std::string_view OPT_RESOLUTION  = "--resolution";
 constexpr std::string_view OPT_CACHE_PATH  = "--cache-path";
+constexpr std::string_view OPT_DUMP_FRAME  = "--dump-frame";
+constexpr std::string_view OPT_DUMP_FRAME_NUMBER = "--dump-frame-number";
 
 struct Resolution {
 	uint w;
@@ -49,6 +51,18 @@ void setAndParseArg(argparse::ArgumentParser& arg, int argc, char** argv) {
         .default_value(std::string())
         .nargs(1)
         .append();
+
+    arg.add_argument("-D", OPT_DUMP_FRAME)
+        .help("render offscreen and dump the next frame to a PNG path")
+        .default_value(std::string())
+        .nargs(1)
+        .append();
+
+    arg.add_argument("-N", OPT_DUMP_FRAME_NUMBER)
+        .help("dump the specified offscreen frame number (1-based)")
+        .default_value<int32_t>(1)
+        .nargs(1)
+        .scan<'i', int32_t>();
 
     arg.add_argument("-R", OPT_RESOLUTION)
         .help("Set the resolution, eg. 1920x1080")

@@ -222,6 +222,7 @@ private:
     MHANDLER_CMD(SET_PROPERTY);
     MHANDLER_CMD(STOP);
     MHANDLER_CMD(FIRST_FRAME);
+    MHANDLER_CMD(CAPTURE_FRAME);
 
 private:
     bool m_inited { false };
@@ -239,6 +240,7 @@ private:
     FirstFrameCallback                   m_first_frame_callback;
     UserPropertyMap                      m_user_properties;
     std::shared_ptr<std::vector<float>>  m_audio_samples;
+    int32_t                              m_capture_frame_number { 1 };
 
 private:
     std::shared_ptr<looper::Looper> m_main_loop;
@@ -260,6 +262,7 @@ public:
         CMD_MOUSE_LEFT_BUTTON,
         CMD_APPLY_USER_PROPERTIES,
         CMD_APPLY_AUDIO_SAMPLES,
+        CMD_CAPTURE_FRAME,
         CMD_STOP,
         CMD_DRAW,
         CMD_NO
@@ -291,6 +294,7 @@ public:
                 CASE_CMD(MOUSE_LEFT_BUTTON);
                 CASE_CMD(APPLY_USER_PROPERTIES);
                 CASE_CMD(APPLY_AUDIO_SAMPLES);
+                CASE_CMD(CAPTURE_FRAME);
                 CASE_CMD(INIT_VULKAN);
             default: break;
             }
@@ -439,6 +443,22 @@ private:
             return;
 
         m_scene->scriptHost->ApplyAudioSamples(*audio_samples);
+    }
+    MHANDLER_CMD(CAPTURE_FRAME) {
+        std::string path;
+        if (!msg->findString("value", &path) || path.empty()) return;
+        int32_t frame_number { 1 };
+        msg->findInt32("frame_number", &frame_number);
+
+        std::string error_message;
+        if (!m_render->captureNextOffscreenFrame(path, frame_number, &error_message)) {
+            LOG_ERROR("frame capture request rejected: path=%s frame=%d error=%s",
+                      path.c_str(),
+                      frame_number,
+                      error_message.c_str());
+        } else {
+            LOG_INFO("frame capture requested: path=%s frame=%d", path.c_str(), frame_number);
+        }
     }
     MHANDLER_CMD(APPLY_USER_PROPERTIES) {
         std::shared_ptr<UserPropertyMap> user_properties;
@@ -632,6 +652,20 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                 CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_AUDIO_SAMPLES);
             nmsg->setObject("value", m_audio_samples);
             nmsg->post();
+        } else if (property == PROPERTY_CAPTURE_FRAME) {
+            std::string path;
+            if (msg->findString("value", &path) && !path.empty()) {
+                auto nmsg =
+                    CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_CAPTURE_FRAME);
+                nmsg->setString("value", path);
+                nmsg->setInt32("frame_number", m_capture_frame_number);
+                nmsg->post();
+            }
+        } else if (property == PROPERTY_CAPTURE_FRAME_NUMBER) {
+            int32_t frame_number { 1 };
+            if (msg->findInt32("value", &frame_number)) {
+                m_capture_frame_number = std::max(1, frame_number);
+            }
         } else if (property == PROPERTY_SPEED) {
             float speed { 1.0f };
             if (msg->findFloat("value", &speed)) {

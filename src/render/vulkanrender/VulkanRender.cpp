@@ -28,7 +28,10 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <cstring>
+#include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -77,6 +80,137 @@ void DestroyPassOnce(VulkanPass* pass, const Device& device, RenderingResources&
     pass->destory(device, resources);
 }
 
+bool CreateReadbackBuffer(VmaAllocator allocator, std::size_t size,
+                          VmaBufferParameters& buffer) {
+    VkBufferCreateInfo ci {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+    buffer.req_size = ci.size;
+
+    VmaAllocationCreateInfo vma_info = {};
+    vma_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+    VVK_CHECK_BOOL_RE(vvk::CreateBuffer(allocator, ci, vma_info, buffer.handle));
+    return true;
+}
+
+constexpr unsigned char kPngSignature[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+
+uint32_t Crc32(const uint8_t* data, std::size_t size) {
+    uint32_t crc = 0xffffffffu;
+    for (std::size_t i = 0; i < size; ++i) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            const uint32_t mask = -(crc & 1u);
+            crc = (crc >> 1u) ^ (0xedb88320u & mask);
+        }
+    }
+    return ~crc;
+}
+
+void AppendBigEndian32(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xffu));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xffu));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xffu));
+    out.push_back(static_cast<uint8_t>(value & 0xffu));
+}
+
+void AppendChunk(std::vector<uint8_t>& out, const char type[4], std::span<const uint8_t> data) {
+    AppendBigEndian32(out, static_cast<uint32_t>(data.size()));
+    const std::size_t type_offset = out.size();
+    out.insert(out.end(), type, type + 4);
+    out.insert(out.end(), data.begin(), data.end());
+    const uint32_t crc = Crc32(out.data() + type_offset, 4 + data.size());
+    AppendBigEndian32(out, crc);
+}
+
+uint32_t Adler32(std::span<const uint8_t> data) {
+    constexpr uint32_t mod = 65521u;
+    uint32_t a = 1u;
+    uint32_t b = 0u;
+    for (uint8_t byte : data) {
+        a = (a + byte) % mod;
+        b = (b + a) % mod;
+    }
+    return (b << 16u) | a;
+}
+
+bool WriteRgbaPng(const std::string& path, uint32_t width, uint32_t height,
+                  std::span<const uint8_t> rgba, std::string* error_message) {
+    if (width == 0 || height == 0) {
+        if (error_message) *error_message = "cannot write png with zero-sized image";
+        return false;
+    }
+    const std::size_t expected_size = static_cast<std::size_t>(width) * height * 4u;
+    if (rgba.size() != expected_size) {
+        if (error_message) {
+            *error_message = "rgba buffer size does not match image dimensions";
+        }
+        return false;
+    }
+
+    std::vector<uint8_t> png;
+    png.insert(png.end(), std::begin(kPngSignature), std::end(kPngSignature));
+
+    std::vector<uint8_t> ihdr;
+    ihdr.reserve(13);
+    AppendBigEndian32(ihdr, width);
+    AppendBigEndian32(ihdr, height);
+    ihdr.push_back(8); // bit depth
+    ihdr.push_back(6); // rgba
+    ihdr.push_back(0); // compression
+    ihdr.push_back(0); // filter
+    ihdr.push_back(0); // interlace
+    AppendChunk(png, "IHDR", ihdr);
+
+    const std::size_t stride = static_cast<std::size_t>(width) * 4u;
+    std::vector<uint8_t> filtered;
+    filtered.reserve((stride + 1u) * height);
+    for (uint32_t row = 0; row < height; ++row) {
+        filtered.push_back(0); // no filter
+        const auto row_offset = static_cast<std::size_t>(row) * stride;
+        filtered.insert(filtered.end(), rgba.begin() + static_cast<std::ptrdiff_t>(row_offset),
+                        rgba.begin() + static_cast<std::ptrdiff_t>(row_offset + stride));
+    }
+
+    std::vector<uint8_t> zlib;
+    zlib.push_back(0x78);
+    zlib.push_back(0x01);
+    std::size_t offset = 0;
+    while (offset < filtered.size()) {
+        const std::size_t remaining = filtered.size() - offset;
+        const uint16_t block_size =
+            static_cast<uint16_t>(std::min<std::size_t>(remaining, 65535u));
+        const bool final_block = (offset + block_size) == filtered.size();
+        zlib.push_back(final_block ? 0x01 : 0x00);
+        zlib.push_back(static_cast<uint8_t>(block_size & 0xffu));
+        zlib.push_back(static_cast<uint8_t>((block_size >> 8) & 0xffu));
+        const uint16_t nlen = static_cast<uint16_t>(~block_size);
+        zlib.push_back(static_cast<uint8_t>(nlen & 0xffu));
+        zlib.push_back(static_cast<uint8_t>((nlen >> 8) & 0xffu));
+        zlib.insert(zlib.end(), filtered.begin() + static_cast<std::ptrdiff_t>(offset),
+                    filtered.begin() + static_cast<std::ptrdiff_t>(offset + block_size));
+        offset += block_size;
+    }
+    AppendBigEndian32(zlib, Adler32(filtered));
+    AppendChunk(png, "IDAT", zlib);
+    AppendChunk(png, "IEND", {});
+
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        if (error_message) *error_message = "failed to open png output path";
+        return false;
+    }
+    output.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+    if (!output.good()) {
+        if (error_message) *error_message = "failed while writing png output";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 struct VulkanRender::Impl {
@@ -88,6 +222,8 @@ struct VulkanRender::Impl {
 
     void drawFrame(Scene&);
     void setPaused(bool paused);
+    bool requestOffscreenFrameDump(std::string output_path, int32_t frame_number,
+                                   std::string* error_message);
 
     bool CreateRenderingResource(RenderingResources&);
     void DestroyRenderingResource(RenderingResources&);
@@ -103,6 +239,8 @@ struct VulkanRender::Impl {
     bool initRes();
     void drawFrameSwapchain();
     void drawFrameOffscreen();
+    bool captureOffscreenFrameToPng(const ImageParameters& image, std::string_view output_path,
+                                    std::string* error_message);
     void processDeferredGraphPreparation(Scene&);
     void setRenderTargetSize(Scene&, rg::RenderGraph&);
     bool isDeviceFaultResult(VkResult) const;
@@ -138,6 +276,17 @@ struct VulkanRender::Impl {
     std::vector<VulkanPass*> m_passes;
     std::vector<std::shared_ptr<rg::Pass>> m_compiled_pass_refs;
 
+    struct PendingFrameCapture {
+        std::string path;
+        std::string last_error;
+        int32_t target_frame { 1 };
+        bool requested { false };
+        bool completed { false };
+        bool succeeded { false };
+    };
+    std::optional<PendingFrameCapture> m_pending_frame_capture;
+    int32_t                            m_offscreen_frame_index { 0 };
+
 };
 
 VulkanRender::VulkanRender(): pImpl(std::make_unique<Impl>()) {}
@@ -165,6 +314,10 @@ void VulkanRender::refreshImportedTextures(Scene& scene) {
 void VulkanRender::UpdateCameraFillMode(Scene& scene, wallpaper::FillMode fill) {
     pImpl->UpdateCameraFillMode(scene, fill);
 };
+bool VulkanRender::captureNextOffscreenFrame(std::string output_path, int32_t frame_number,
+                                             std::string* error_message) {
+    return pImpl->requestOffscreenFrameDump(std::move(output_path), frame_number, error_message);
+}
 
 wallpaper::ExSwapchain* VulkanRender::exSwapchain() const { return pImpl->m_ex_swapchain.get(); };
 
@@ -678,6 +831,7 @@ void VulkanRender::Impl::drawFrameSwapchain() {
         return;
 }
 void VulkanRender::Impl::drawFrameOffscreen() {
+    ++m_offscreen_frame_index;
     RenderingResources& rr    = m_rendering_resources;
     ImageParameters     image = m_ex_swapchain->GetInprogressImage();
 
@@ -727,7 +881,205 @@ void VulkanRender::Impl::drawFrameOffscreen() {
     m_device->tex_cache().RetireCompletedUploads();
     if (!checkVkResult(rr.fence_frame.Reset(), "reset offscreen frame fence"))
         return;
+    if (m_pending_frame_capture && m_pending_frame_capture->requested &&
+        m_pending_frame_capture->target_frame == m_offscreen_frame_index &&
+        !m_pending_frame_capture->completed) {
+        m_pending_frame_capture->succeeded =
+            captureOffscreenFrameToPng(image,
+                                       m_pending_frame_capture->path,
+                                       &m_pending_frame_capture->last_error);
+        m_pending_frame_capture->completed = true;
+    }
     m_ex_swapchain->renderFrame();
+}
+
+bool VulkanRender::Impl::requestOffscreenFrameDump(std::string output_path,
+                                                   int32_t frame_number,
+                                                   std::string* error_message) {
+    if (output_path.empty()) {
+        if (error_message) *error_message = "capture path is empty";
+        return false;
+    }
+    if (frame_number < 1) {
+        if (error_message) *error_message = "capture frame number must be >= 1";
+        return false;
+    }
+    m_pending_frame_capture = PendingFrameCapture {
+        .path = std::move(output_path),
+        .last_error = {},
+        .target_frame = frame_number,
+        .requested = true,
+        .completed = false,
+        .succeeded = false,
+    };
+    return true;
+}
+
+bool VulkanRender::Impl::captureOffscreenFrameToPng(const ImageParameters& image,
+                                                    std::string_view       output_path,
+                                                    std::string*           error_message) {
+    if (output_path.empty()) {
+        if (error_message) *error_message = "capture path is empty";
+        return false;
+    }
+
+    if (!m_device) {
+        if (error_message) *error_message = "renderer device is not initialized";
+        return false;
+    }
+
+    const uint32_t width = image.extent.width;
+    const uint32_t height = image.extent.height;
+    const std::size_t pixel_bytes = static_cast<std::size_t>(width) * height * 4u;
+    if (pixel_bytes == 0) {
+        if (error_message) *error_message = "offscreen frame has zero size";
+        return false;
+    }
+
+    VmaBufferParameters readback_buffer;
+    if (!CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
+        if (error_message) *error_message = "failed to allocate readback buffer";
+        return false;
+    }
+
+    vvk::CommandBuffers command_buffers;
+    VVK_CHECK_BOOL_RE(m_device->cmd_pool().Allocate(1, VK_COMMAND_BUFFER_LEVEL_PRIMARY, command_buffers));
+    vvk::CommandBuffer command(command_buffers[0], m_device->handle().Dispatch());
+
+    if (!checkVkResult(command.Begin(VkCommandBufferBeginInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        }),
+        "begin frame capture command buffer")) {
+        return false;
+    }
+
+    VkImageMemoryBarrier image_to_transfer {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image.handle,
+        .subresourceRange = VkImageSubresourceRange {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            0,
+                            image_to_transfer);
+
+    VkBufferImageCopy copy_region {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = VkImageSubresourceLayers {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = image.extent,
+    };
+    command.CopyImageToBuffer(image.handle,
+                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              *readback_buffer.handle,
+                              spanone { copy_region });
+
+    VkBufferMemoryBarrier buffer_ready {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = *readback_buffer.handle,
+        .offset = 0,
+        .size = VK_WHOLE_SIZE,
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_HOST_BIT,
+                            0,
+                            buffer_ready);
+
+    VkImageMemoryBarrier image_restore {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image.handle,
+        .subresourceRange = image_to_transfer.subresourceRange,
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            0,
+                            image_restore);
+
+    if (!checkVkResult(command.End(), "end frame capture command buffer")) {
+        return false;
+    }
+
+    vvk::Fence fence;
+    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(VkFenceCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    }, fence));
+    VkSubmitInfo submit {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = command.address(),
+    };
+    if (!checkVkResult(m_device->graphics_queue().handle.Submit(submit, *fence),
+                       "submit frame capture")) {
+        return false;
+    }
+    if (!checkVkResult(fence.Wait(vk_wait_time), "wait frame capture")) {
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (readback_buffer.handle.MapMemory(&mapped) != VK_SUCCESS) {
+        if (error_message) *error_message = "failed to map readback buffer";
+        return false;
+    }
+    std::vector<uint8_t> rgba(pixel_bytes);
+    std::memcpy(rgba.data(), mapped, pixel_bytes);
+    readback_buffer.handle.UnMapMemory();
+
+    // Vulkan images are bottom-up relative to the fullscreen quad we present from; flip to match
+    // what the viewer window shows.
+    const std::size_t row_bytes = static_cast<std::size_t>(width) * 4u;
+    std::vector<uint8_t> flipped(pixel_bytes);
+    for (uint32_t row = 0; row < height; ++row) {
+        const std::size_t src_offset = static_cast<std::size_t>(height - 1 - row) * row_bytes;
+        const std::size_t dst_offset = static_cast<std::size_t>(row) * row_bytes;
+        std::memcpy(flipped.data() + dst_offset, rgba.data() + src_offset, row_bytes);
+    }
+
+    // The offscreen export is a debugging surface dump. Some scenes leave the swap image alpha at
+    // zero even when RGB contains valid content, which makes the PNG appear blank in normal image
+    // viewers. Force opaque alpha so the exported frame is directly inspectable.
+    for (std::size_t pixel = 0; pixel < pixel_bytes; pixel += 4u) {
+        flipped[pixel + 3u] = 0xffu;
+    }
+
+    return WriteRgbaPng(std::string(output_path), width, height, flipped, error_message);
 }
 
 void VulkanRender::Impl::setRenderTargetSize(Scene& scene, rg::RenderGraph& rg) {

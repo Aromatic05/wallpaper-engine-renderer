@@ -20,4 +20,6 @@ constexpr std::string_view WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK = "first_frame
 constexpr std::string_view WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES = "load_user_properties";
 constexpr std::string_view WE_SCENE_PROPERTY_USER_PROPERTIES      = "user_properties";
 constexpr std::string_view WE_SCENE_PROPERTY_AUDIO_SAMPLES        = "audio_samples";
+constexpr std::string_view WE_SCENE_PROPERTY_CAPTURE_FRAME        = "capture_frame";
+constexpr std::string_view WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER = "capture_frame_number";
 } // namespace wallpaper
