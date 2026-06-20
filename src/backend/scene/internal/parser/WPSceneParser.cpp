@@ -4091,10 +4091,6 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
     auto& vfs = *context.vfs;
 
-    const auto register_logical_only_layer = [&]() {
-        RegisterLogicalImageLayer(context, wpimgobj, false);
-    };
-
     // coloBlendMode load passthrough manaully
     if (wpimgobj.colorBlendMode != 0) {
         wpscene::WPImageEffect colorEffect;
@@ -4147,7 +4143,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             : wpimgobj.size;
     // skip no effect fullscreen layer
     if (! hasEffect && wpimgobj.fullscreen) {
-        register_logical_only_layer();
+        RegisterLogicalImageLayer(context, wpimgobj, false);
         return;
     }
 
@@ -4156,7 +4152,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     // image meshes can sample `_rt_default` and write it back through the scene camera, which
     // applies a second projection to the already-composited frame on non-authored output aspects.
     if (! hasEffect && (isCompose || isProjectLayer) && ! is_offscreen_dependency_source) {
-        register_logical_only_layer();
+        RegisterLogicalImageLayer(context, wpimgobj, false);
         return;
     }
 
@@ -4646,7 +4642,6 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                     eff_mat_ok = false;
                     break;
                 }
-
                 // load glname from alias and load to constvalue
                 LoadConstvalue(material, wpmat, wpEffShaderInfo);
                 LoadUserShaderValue(material, wpmat, wpEffShaderInfo, context.user_properties);

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <sstream>
 
 using namespace wallpaper::vulkan;
 
@@ -598,6 +599,29 @@ CustomShaderRenderState BuildCustomShaderRenderState(
     ApplyModelPassDesc(material, desc, state.color_load_op);
     ApplyExplicitClearPolicy(desc, material, state.color_load_op);
     LogForcedAlphaPolicy(desc, material, camera_name, writes_alpha, color_mask);
+    if (WallpaperDebugLayerEnabled(desc.layer_id)) {
+        std::ostringstream textures_oss;
+        textures_oss << "[";
+        for (size_t i = 0; i < desc.textures.size(); i++) {
+            if (i != 0) textures_oss << ", ";
+            textures_oss << desc.textures[i];
+        }
+        textures_oss << "]";
+        LOG_INFO("DebugLayerShaderState: layer=%d node='%s' material='%s' output='%s' "
+                 "blend=%d blending=%s load-op=%d force-alpha=%s clear-before=%s "
+                 "premultiplied-source=%s textures=%s",
+                 desc.layer_id,
+                 desc.node != nullptr ? desc.node->Name().c_str() : "",
+                 material.name.c_str(),
+                 desc.output.c_str(),
+                 static_cast<int>(material.blenmode),
+                 desc.blending ? "true" : "false",
+                 static_cast<int>(state.color_load_op),
+                 desc.force_alpha_write ? "true" : "false",
+                 desc.clear_before_draw ? "true" : "false",
+                 desc.premultiplied_source_blend ? "true" : "false",
+                 textures_oss.str().c_str());
+    }
     return state;
 }
 

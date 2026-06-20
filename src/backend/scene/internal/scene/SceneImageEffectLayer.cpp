@@ -112,18 +112,53 @@ bool SceneImageEffectLayer::HasVisibleSourceLessContribution() const {
 }
 
 bool SceneImageEffectLayer::ShouldRunFinalComposite() const {
+    const int32_t debug_layer_id = m_worldNode != nullptr ? m_worldNode->ID() : -1;
     // The neutral final composite has two modes. Ordinary image/text layers keep their historical
     // direct final writer while visible and use this pass only as a preserve-source hidden fallback.
     // Source-less passthrough helpers have no meaningful base image, so this pass becomes the only
     // screen publisher and draws only while the helper chain has a visible source contribution.
     if (!HasFinalComposite() || m_final_composite.output_effect == nullptr) return false;
-    if (m_final_composite.publishes_visible_output) return HasVisibleSourceLessContribution();
-    if (m_final_composite.publishes_private_output) {
-        if (m_final_composite.output_effect->LocalVisible()) return true;
-        return m_final_composite.hidden_policy == HiddenFinalCompositePolicy::PreserveSource;
+    if (m_final_composite.publishes_visible_output) {
+        const bool should_run = HasVisibleSourceLessContribution();
+        if (WallpaperDebugLayerEnabled(debug_layer_id)) {
+            LOG_INFO("DebugLayerFinalCompositeGate: layer=%d name='%s' mode='visible-output' "
+                     "should-run=%s effect-visible=%s runtime-visible-contrib=%s "
+                     "hidden-policy=%d",
+                     debug_layer_id,
+                     m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                     should_run ? "true" : "false",
+                     m_final_composite.output_effect->LocalVisible() ? "true" : "false",
+                     HasVisibleRuntimeVisibilityContribution() ? "true" : "false",
+                     static_cast<int>(m_final_composite.hidden_policy));
+        }
+        return should_run;
     }
-    if (m_final_composite.output_effect->LocalVisible()) return false;
-    return m_final_composite.hidden_policy == HiddenFinalCompositePolicy::PreserveSource;
+    if (m_final_composite.publishes_private_output) {
+        const bool should_run = m_final_composite.output_effect->LocalVisible() ||
+            m_final_composite.hidden_policy == HiddenFinalCompositePolicy::PreserveSource;
+        if (WallpaperDebugLayerEnabled(debug_layer_id)) {
+            LOG_INFO("DebugLayerFinalCompositeGate: layer=%d name='%s' mode='private-output' "
+                     "should-run=%s effect-visible=%s hidden-policy=%d",
+                     debug_layer_id,
+                     m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                     should_run ? "true" : "false",
+                     m_final_composite.output_effect->LocalVisible() ? "true" : "false",
+                     static_cast<int>(m_final_composite.hidden_policy));
+        }
+        return should_run;
+    }
+    const bool should_run = !m_final_composite.output_effect->LocalVisible() &&
+        m_final_composite.hidden_policy == HiddenFinalCompositePolicy::PreserveSource;
+    if (WallpaperDebugLayerEnabled(debug_layer_id)) {
+        LOG_INFO("DebugLayerFinalCompositeGate: layer=%d name='%s' mode='hidden-fallback' "
+                 "should-run=%s effect-visible=%s hidden-policy=%d",
+                 debug_layer_id,
+                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                 should_run ? "true" : "false",
+                 m_final_composite.output_effect->LocalVisible() ? "true" : "false",
+                 static_cast<int>(m_final_composite.hidden_policy));
+    }
+    return should_run;
 }
 
 void SceneImageEffectLayer::SetFinalCompositeSource(std::string source) {
@@ -361,6 +396,19 @@ void SceneImageEffectLayer::ResolveFinalCompositeNode(
                 m_final_composite.publishes_private_output ? "true" : "false",
                 m_final_composite.uses_source_mesh ? "true" : "false",
                 static_cast<int>(m_final_composite.hidden_policy));
+    if (WallpaperDebugLayerEnabled(m_worldNode != nullptr ? m_worldNode->ID() : -1)) {
+        LOG_INFO("DebugLayerFinalCompositeResolve: layer=%d name='%s' output='%s' source='%s' "
+                 "blend=%d publish=%s publish-private=%s source-mesh=%s policy=%d",
+                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                 std::string(final_output).c_str(),
+                 std::string(final_composite_source).c_str(),
+                 static_cast<int>(material.blenmode),
+                 m_final_composite.publishes_visible_output ? "true" : "false",
+                 m_final_composite.publishes_private_output ? "true" : "false",
+                 m_final_composite.uses_source_mesh ? "true" : "false",
+                 static_cast<int>(m_final_composite.hidden_policy));
+    }
 }
 
 void SceneImageEffectLayer::ResolveVisibleFinalOutput(
@@ -413,6 +461,15 @@ void SceneImageEffectLayer::ResolveVisibleFinalOutput(
                 std::string(final_output).c_str(),
                 material.name.c_str(),
                 static_cast<int>(material.blenmode));
+    if (WallpaperDebugLayerEnabled(m_worldNode != nullptr ? m_worldNode->ID() : -1)) {
+        LOG_INFO("DebugLayerFinalOutputResolve: layer=%d name='%s' output='%s' material='%s' "
+                 "blend=%d private=false",
+                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                 m_worldNode != nullptr ? m_worldNode->Name().c_str() : "",
+                 std::string(final_output).c_str(),
+                 material.name.c_str(),
+                 static_cast<int>(material.blenmode));
+    }
 }
 
 void SceneImageEffectLayer::ResolvePrivateFinalOutput(

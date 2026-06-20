@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <span>
 
@@ -42,5 +43,7 @@ enum
 
 void WallpaperLog(int level, const char* file, int line, const char* fmt, ...);
 bool WallpaperVerboseLogEnabled();
+bool WallpaperDebugLogEnabled();
+bool WallpaperDebugLayerEnabled(int32_t layer_id);
 
 std::string logToTmpfileWithSha1(std::span<const char>, const char* fmt, ...);

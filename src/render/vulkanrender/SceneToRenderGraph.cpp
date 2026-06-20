@@ -14,6 +14,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -506,6 +507,22 @@ static void AddNodePass(SceneNode* node, std::string_view output, i32 imgId, Ext
     const bool is_model_pass = material->modelRenderState.has_value();
     const bool clear_model_depth = is_model_pass &&
         extra.model_depth_outputs_seen.insert(output_key).second;
+    if (WallpaperDebugLayerEnabled(imgId)) {
+        LOG_INFO("DebugLayerGraphNodePass: layer=%d node='%s' material='%s' output='%s' "
+                 "textures=%zu clear-before=%s force-alpha=%s premultiplied-source=%s "
+                 "camera-override='%s' active-camera-uniforms=%s model-pass=%s",
+                 imgId,
+                 node != nullptr ? node->Name().c_str() : "",
+                 material != nullptr ? material->name.c_str() : "",
+                 output_key.c_str(),
+                 material != nullptr ? material->textures.size() : 0,
+                 options.clear_before_draw ? "true" : "false",
+                 options.force_alpha_write ? "true" : "false",
+                 options.premultiplied_source_blend ? "true" : "false",
+                 options.camera_override.c_str(),
+                 options.use_active_camera_for_uniforms ? "true" : "false",
+                 is_model_pass ? "true" : "false");
+    }
 
     std::string passName = material->name;
     rgraph.addPass<vulkan::CustomShaderPass>(
@@ -592,6 +609,23 @@ static void AddNodePass(SceneNode* node, std::string_view output, i32 imgId, Ext
                 }
                 builder.read(input);
                 pdesc.textures.emplace_back(input->key());
+            }
+            if (WallpaperDebugLayerEnabled(imgId)) {
+                std::ostringstream textures_oss;
+                textures_oss << "[";
+                for (size_t idx = 0; idx < pdesc.textures.size(); idx++) {
+                    if (idx != 0) textures_oss << ", ";
+                    textures_oss << pdesc.textures[idx];
+                }
+                textures_oss << "]";
+                LOG_INFO("DebugLayerGraphNodePassPrepared: layer=%d node='%s' material='%s' "
+                         "output='%s' execute-when-hidden=%s textures=%s",
+                         imgId,
+                         node != nullptr ? node->Name().c_str() : "",
+                         material != nullptr ? material->name.c_str() : "",
+                         output_key.c_str(),
+                         pdesc.execute_when_hidden ? "true" : "false",
+                         textures_oss.str().c_str());
             }
 
             rg::TexNode* output_node { nullptr };
