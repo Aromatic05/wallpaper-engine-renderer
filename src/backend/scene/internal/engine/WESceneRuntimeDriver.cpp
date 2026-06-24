@@ -13,6 +13,10 @@
 #include "text/WPTextLayer.hpp"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
+#include "resources/WPJson.hpp"
+#include <nlohmann/json.hpp>
+#include <filesystem>
+#include <fstream>
 
 #include "fs/VFS.h"
 #include "fs/PhysicalFs.h"
@@ -736,6 +740,47 @@ void MainHandler::loadScene() {
     std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").native();
     std::string pkgDir   = pkgPath_fs.parent_path().native();
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
+
+    // Wallpaper Engine scene packages ship a project.json beside the scene pkg. Its
+    // general.properties block defines every user-facing property with default values and
+    // optional visibility conditions. When the host application did not supply user properties
+    // before load, seed them from those defaults so scene scripts that read g_zoom, av_count,
+    // color_av, etc. do not run against an empty property map.
+    if (m_user_properties.empty()) {
+        std::filesystem::path projectJsonPath = pkgPath_fs.parent_path() / "project.json";
+        if (std::filesystem::exists(projectJsonPath)) {
+            std::ifstream pf(projectJsonPath, std::ios::binary);
+            if (pf) {
+                std::string project_src((std::istreambuf_iterator<char>(pf)),
+                                        std::istreambuf_iterator<char>());
+                nlohmann::json project_json;
+                if (PARSE_JSON(project_src, project_json)) {
+                    auto general = project_json.value("general", nlohmann::json::object());
+                    auto props   = general.value("properties", nlohmann::json::object());
+                    UserPropertyMap defaults;
+                    for (auto it = props.begin(); it != props.end(); ++it) {
+                        const auto& prop = it.value();
+                        UserProperty user_prop;
+                        user_prop.condition = prop.value("condition", "");
+                        user_prop.is_boolean = prop.value("type", "") == "bool";
+                        const auto& value = prop.value("value", nlohmann::json());
+                        if (value.is_boolean()) {
+                            user_prop.value = ShaderValue(value.get<bool>() ? 1.0f : 0.0f);
+                        } else if (value.is_number()) {
+                            user_prop.value = ShaderValue(static_cast<float>(value.get<double>()));
+                        } else if (value.is_string()) {
+                            user_prop.value = value.get<std::string>();
+                        } else {
+                            continue;
+                        }
+                        defaults.emplace(it.key(), std::move(user_prop));
+                    }
+                    m_user_properties = std::move(defaults);
+                    LOG_INFO("seed user-properties from project.json: count=%zu", m_user_properties.size());
+                }
+            }
+        }
+    }
 
     // load pkgfile
     std::unique_ptr<fs::Fs> pkgFs;
