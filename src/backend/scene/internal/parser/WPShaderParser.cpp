@@ -1608,7 +1608,53 @@ inline std::string SanitizeBrokenPreprocessorDirectives(const std::string& src,
     std::string out;
     out.reserve(src.size());
 
-    std::vector<std::string::size_type> if_stack;
+    struct IfFrame {
+        std::string::size_type pos { 0 };
+        bool                   runtime_condition { false };
+    };
+
+    const auto trim_view = [](std::string_view text) {
+        const auto first = text.find_first_not_of(" \t\r");
+        if (first == std::string_view::npos) return std::string_view {};
+        const auto last = text.find_last_not_of(" \t\r");
+        return text.substr(first, last - first + 1);
+    };
+    const auto runtime_if_condition = [&](std::string_view directive,
+                                          std::string_view keyword) -> std::optional<std::string> {
+        if (directive.size() <= keyword.size()) return std::nullopt;
+
+        auto condition = trim_view(directive.substr(keyword.size()));
+        if (condition.empty()) return std::nullopt;
+
+        // Some stock WE effect shaders use texture-resolution uniforms directly inside `#if`
+        // expressions, for example `#if g_Texture0Resolution.y <= 640`. DXC only accepts integer
+        // macro expressions there, so preserve the authored branch by lowering this narrow pattern
+        // into an ordinary runtime `if (...)` block instead of dropping the pass entirely.
+        if (condition.find("g_Texture") == std::string_view::npos ||
+            condition.find("Resolution.") == std::string_view::npos) {
+            return std::nullopt;
+        }
+
+        return std::string(condition);
+    };
+    const auto repair_runtime_condition_line = [&](std::string_view line) {
+        const auto trimmed = trim_view(line);
+        if (trimmed.empty() || trimmed.starts_with("//")) return std::string(line);
+        if (trimmed.back() == ';' || trimmed.back() == '{' || trimmed.back() == '}') {
+            return std::string(line);
+        }
+        // The stock AA effect carries branch-local assignments such as `v_TexCoord.w = 0`
+        // without a trailing semicolon inside the compile-time `#if` block. Once that block is
+        // lowered into a runtime `if`, HLSL needs the ordinary statement terminator.
+        if (trimmed.find('=') != std::string_view::npos) {
+            std::string repaired(line);
+            repaired.push_back(';');
+            return repaired;
+        }
+        return std::string(line);
+    };
+
+    std::vector<IfFrame> if_stack;
     std::string::size_type              pos { 0 };
     usize                               removed_endifs { 0 };
 
@@ -1621,22 +1667,65 @@ inline std::string SanitizeBrokenPreprocessorDirectives(const std::string& src,
         auto first_non_ws = line.find_first_not_of(" \t\r");
         bool handled      = false;
         if (first_non_ws != std::string::npos && line[first_non_ws] == '#') {
-            auto directive = line.substr(first_non_ws);
-            if (directive.rfind("#if", 0) == 0) {
-                if_stack.push_back(pos);
+            const auto directive  = std::string_view(line).substr(first_non_ws);
+            const auto line_prefix = std::string_view(line).substr(0, first_non_ws);
+            if (directive.rfind("#if ", 0) == 0 || directive == "#if") {
+                if (const auto condition = runtime_if_condition(directive, "#if");
+                    condition.has_value()) {
+                    out.append(line_prefix);
+                    out.append("if (");
+                    out.append(*condition);
+                    out.append(") {");
+                    handled = true;
+                    if_stack.push_back(IfFrame { .pos = pos, .runtime_condition = true });
+                } else {
+                    if_stack.push_back(IfFrame { .pos = pos, .runtime_condition = false });
+                }
+            } else if (directive.rfind("#ifdef", 0) == 0 ||
+                       directive.rfind("#ifndef", 0) == 0) {
+                if_stack.push_back(IfFrame { .pos = pos, .runtime_condition = false });
+            } else if (directive.rfind("#elif ", 0) == 0 || directive == "#elif") {
+                if (! if_stack.empty() && if_stack.back().runtime_condition) {
+                    const auto condition =
+                        runtime_if_condition(directive, "#elif").value_or(
+                            std::string(trim_view(directive.substr(5))));
+                    out.append(line_prefix);
+                    out.append("} else if (");
+                    out.append(condition);
+                    out.append(") {");
+                    handled = true;
+                }
+            } else if (directive.rfind("#else", 0) == 0) {
+                if (! if_stack.empty() && if_stack.back().runtime_condition) {
+                    out.append(line_prefix);
+                    out.append("} else {");
+                    handled = true;
+                }
             } else if (directive.rfind("#endif", 0) == 0) {
                 if (if_stack.empty()) {
                     out.append(line.substr(0, first_non_ws));
                     out.append("// stripped unmatched #endif");
                     handled = true;
                     removed_endifs++;
+                } else if (if_stack.back().runtime_condition) {
+                    out.append(line_prefix);
+                    out.append("}");
+                    handled = true;
+                    if_stack.pop_back();
                 } else {
                     if_stack.pop_back();
                 }
             }
         }
 
-        if (!handled) out.append(line);
+        if (!handled) {
+            if (! if_stack.empty() && if_stack.back().runtime_condition &&
+                !(first_non_ws != std::string::npos && line[first_non_ws] == '#')) {
+                out.append(repair_runtime_condition_line(line));
+            } else {
+                out.append(line);
+            }
+        }
         if (line_end == std::string::npos) break;
         out.push_back('\n');
         pos = line_end + 1;

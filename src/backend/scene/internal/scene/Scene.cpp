@@ -145,6 +145,7 @@ void CollectLayerEffectNodes(const Scene& scene, int32_t layer_id, std::vector<S
             // scene tree, so they will not be reached by normal parent/child propagation. Treat
             // them as layer-owned runtime nodes here to keep layer visibility authoritative while
             // preserving effect-local visibility on the internal shader nodes.
+            effect_layer->FinalNode().SetLocalVisible(effect_layer->ShouldRunFinalComposite());
             nodes.push_back(&effect_layer->FinalNode());
         }
 
