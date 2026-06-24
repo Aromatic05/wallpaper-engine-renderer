@@ -6259,6 +6259,28 @@ JSValue NativeSetLayerProperty(JSContext* context, JSValueConst, int argc, JSVal
         return JS_TRUE;
     }
 
+    if (opaque != nullptr && opaque->scene != nullptr) {
+        const int32_t layer_id = FindNodeId(opaque, node);
+        const bool is_cam_prop = property_name == "visible" || property_name == "origin" ||
+                                 property_name == "angles" || property_name == "zoom" ||
+                                 property_name == "fov";
+        if (layer_id != 0 && opaque->scene->cameraLayers.count(layer_id) != 0 && is_cam_prop) {
+            // Camera layer properties must route through ApplyCameraLayerPropertyValue so
+            // origin changes add the ortho/2 offset. The generic ApplyLayerPropertyValue calls
+            // SetTranslate directly, which bypasses ResolveCameraLayerNodeTranslation and
+            // snaps the camera node to the raw script value instead of the ortho/2 offset.
+            WPSceneScriptRegistration cam_reg;
+            cam_reg.object_id     = layer_id;
+            cam_reg.property_name = std::string(property_name);
+            cam_reg.node          = node;
+            cam_reg.target_kind   = WPSceneScriptTargetKind::Camera;
+            cam_reg.target_index  = 0;
+            cam_reg.value_type    = hint.type;
+            return JS_NewBool(context,
+                              ApplyCameraLayerPropertyValue(opaque, cam_reg, runtime_value));
+        }
+    }
+
     return JS_NewBool(context, ApplyLayerPropertyValue(opaque, node, property_name, runtime_value));
 }
 
