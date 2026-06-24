@@ -4710,8 +4710,10 @@ bool UpdateQuadMeshSize(SceneMesh* mesh, const std::array<float, 2>& size) {
 
     const float      left     = -(size[0] * 0.5f);
     const float      right    = size[0] * 0.5f;
-    const float      bottom   = -(size[1] * 0.5f);
-    const float      top      = size[1] * 0.5f;
+    // Y-down world: screen top is at world Y=-h/2, screen bottom is at world Y=+h/2. Build the
+    // quad with the screen-bottom vertex at +size/2 and the screen-top vertex at -size/2.
+    const float      bottom   = size[1] * 0.5f;
+    const float      top      = -(size[1] * 0.5f);
     const std::array position = {
         left, bottom, 0.0f, left, top, 0.0f, right, bottom, 0.0f, right, top, 0.0f,
     };

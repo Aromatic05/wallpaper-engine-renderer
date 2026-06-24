@@ -467,8 +467,10 @@ Eigen::Vector3d ParticleSystem::MouseScenePosition() const {
     }
 
     if (camera == nullptr) {
+        // World is Y-down (see SceneCamera.cpp ortho). Mouse at screen top (y=0) is at world
+        // Y=0, mouse at screen bottom (y=1) is at world Y=ortho_h. No (1-y)*h flip needed.
         return Eigen::Vector3d { m_mouse_pos[0] * scene.ortho[0],
-                                 (1.0f - m_mouse_pos[1]) * scene.ortho[1],
+                                 m_mouse_pos[1] * scene.ortho[1],
                                  0.0 };
     }
 

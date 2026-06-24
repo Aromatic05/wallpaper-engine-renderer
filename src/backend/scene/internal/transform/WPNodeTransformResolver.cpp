@@ -126,8 +126,9 @@ Vector3f WPNodeTransformResolver::ComputeParallaxOffset(SceneNode* node,
         Vector2f depth(node_data.parallaxDepth[0], node_data.parallaxDepth[1]);
 
         Vector2f ortho { (float)m_scene.ortho[0], (float)m_scene.ortho[1] };
-        Vector2f mouse_vec =
-            Scaling(1.0f, -1.0f) * (Vector2f { 0.5f, 0.5f } - Vector2f(&m_mouse_pos[0]));
+        // World is now Y-down (see SceneCamera.cpp ortho), so the mouse Y screen-to-world
+        // conversion is a direct subtraction with no per-axis flip.
+        Vector2f mouse_vec = Vector2f { 0.5f, 0.5f } - Vector2f(&m_mouse_pos[0]);
         mouse_vec = mouse_vec.cwiseProduct(ortho) * m_parallax.mouseinfluence;
 
         Vector3f cam_pos = camera->GetPosition().cast<float>();

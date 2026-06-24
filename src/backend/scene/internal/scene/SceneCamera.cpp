@@ -69,8 +69,14 @@ void SceneCamera::CalculateViewProjectionMatrix() {
 	} else {
 		double left = -m_width/2.0f;
 		double right = m_width/2.0f;
-		double bottom = -m_height/2.0f;
-		double up = m_height/2.0f;
+		// Wallpaper Engine scenes are authored in screen-Y-down space (the D3D11 host agrees).
+		// Every authored origin.y in scene.json (e.g. spectrum 332 at value.y=1140, below the
+		// ortho center 1080) expects "below" to mean "screen bottom" not "screen top". Build the
+		// ortho with bottom/top swapped relative to a naive Y-up OpenGL call so world Y=+h/2
+		// maps to the screen bottom and world Y=-h/2 maps to the screen top, matching the
+		// scene author intent without per-layer or per-script Y compensation.
+		double bottom = m_height/2.0f;
+		double up = -m_height/2.0f;
 		m_viewProjectionMat = Ortho(left, right, bottom, up, m_nearClip, m_farClip) * m_viewMat;
 	}
 }
