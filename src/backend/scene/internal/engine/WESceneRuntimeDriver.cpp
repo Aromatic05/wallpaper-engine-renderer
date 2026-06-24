@@ -31,6 +31,7 @@
 #include <atomic>
 #include <charconv>
 #include <cmath>
+#include <iterator>
 #include <optional>
 
 using namespace wallpaper;
@@ -46,6 +47,79 @@ using namespace wallpaper;
 
 namespace
 {
+std::optional<UserProperty> ParseProjectUserProperty(const nlohmann::json& prop) {
+    if (! prop.is_object()) return std::nullopt;
+
+    UserProperty user_prop;
+    user_prop.condition  = prop.value("condition", "");
+    user_prop.is_boolean = prop.value("type", "") == "bool";
+
+    const auto value_it = prop.find("value");
+    if (value_it == prop.end() || value_it->is_null()) return std::nullopt;
+
+    const auto& value = *value_it;
+    if (value.is_boolean()) {
+        user_prop.value = ShaderValue(value.get<bool>() ? 1.0f : 0.0f);
+        return user_prop;
+    }
+    if (value.is_number()) {
+        user_prop.value = ShaderValue(static_cast<float>(value.get<double>()));
+        return user_prop;
+    }
+    if (value.is_array()) {
+        std::vector<float> vector_value;
+        vector_value.reserve(value.size());
+        for (const auto& item : value) {
+            if (! item.is_number()) return std::nullopt;
+            vector_value.push_back(static_cast<float>(item.get<double>()));
+        }
+        if (vector_value.empty()) return std::nullopt;
+        user_prop.value = ShaderValue(vector_value);
+        return user_prop;
+    }
+    if (value.is_string()) {
+        user_prop.value = value.get<std::string>();
+        return user_prop;
+    }
+
+    return std::nullopt;
+}
+
+UserPropertyMap LoadProjectUserPropertyDefaults(const std::filesystem::path& project_json_path) {
+    UserPropertyMap defaults;
+    if (! std::filesystem::exists(project_json_path)) return defaults;
+
+    std::ifstream pf(project_json_path, std::ios::binary);
+    if (! pf) return defaults;
+
+    std::string project_src((std::istreambuf_iterator<char>(pf)),
+                            std::istreambuf_iterator<char>());
+    nlohmann::json project_json;
+    if (! PARSE_JSON(project_src, project_json)) return defaults;
+
+    const auto general = project_json.value("general", nlohmann::json::object());
+    const auto props   = general.value("properties", nlohmann::json::object());
+    if (! props.is_object()) return defaults;
+
+    for (auto it = props.begin(); it != props.end(); ++it) {
+        if (const auto parsed = ParseProjectUserProperty(it.value()); parsed.has_value()) {
+            defaults.emplace(it.key(), *parsed);
+        }
+    }
+    return defaults;
+}
+
+UserPropertyMap MergeUserPropertiesWithDefaults(const UserPropertyMap& defaults,
+                                                const UserPropertyMap& current) {
+    if (defaults.empty()) return current;
+
+    UserPropertyMap merged = defaults;
+    for (const auto& [name, property] : current) {
+        merged[name] = property;
+    }
+    return merged;
+}
+
 template<typename T>
 void AddMsgCmd(looper::Message& msg, T cmd) {
     msg.setInt32("cmd", (int32_t)cmd);
@@ -242,6 +316,7 @@ private:
     WPSceneParser                        m_scene_parser;
     std::unique_ptr<audio::SoundManager> m_sound_manager;
     FirstFrameCallback                   m_first_frame_callback;
+    UserPropertyMap                      m_default_user_properties;
     UserPropertyMap                      m_user_properties;
     std::shared_ptr<std::vector<float>>  m_audio_samples;
     int32_t                              m_capture_frame_number { 1 };
@@ -421,6 +496,9 @@ private:
                 m_scene->scriptHost->RegisterPropertyScript(registration);
             }
             m_scene->scriptHost->Initialize();
+            if (m_render_width > 0 && m_render_height > 0) {
+                m_scene->scriptHost->ResizeScreen(m_render_width, m_render_height);
+            }
             if (main_handler.audioSamples()) {
                 m_scene->scriptHost->ApplyAudioSamples(*main_handler.audioSamples());
             }
@@ -480,6 +558,8 @@ private:
         std::shared_ptr<RenderInitInfo> info;
         if (msg->findObject("info", &info)) {
             m_render_scale = std::max(1.0, info->render_scale);
+            m_render_width = static_cast<int32_t>(info->width);
+            m_render_height = static_cast<int32_t>(info->height);
             m_render->init(*info);
 
             // inited, callback to laod scene
@@ -496,6 +576,8 @@ private:
     std::shared_ptr<Scene> m_scene { nullptr };
     float                  m_speed { 1.0f };
     double                 m_render_scale { 1.0 };
+    int32_t                m_render_width { 0 };
+    int32_t                m_render_height { 0 };
 
     std::unique_ptr<vulkan::VulkanRender> m_render;
     std::unique_ptr<rg::RenderGraph>      m_rg { nullptr };
@@ -633,17 +715,19 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
         } else if (property == PROPERTY_LOAD_USER_PROPERTIES) {
             std::shared_ptr<UserPropertyMap> user_properties;
             if (msg->findObject("value", &user_properties) && user_properties) {
-                m_user_properties = *user_properties;
+                m_user_properties =
+                    MergeUserPropertiesWithDefaults(m_default_user_properties, *user_properties);
             } else {
-                m_user_properties.clear();
+                m_user_properties = m_default_user_properties;
             }
             LOG_INFO("staged load user-properties count=%zu", m_user_properties.size());
         } else if (property == PROPERTY_USER_PROPERTIES) {
             std::shared_ptr<UserPropertyMap> user_properties;
             if (msg->findObject("value", &user_properties) && user_properties) {
-                m_user_properties = *user_properties;
+                m_user_properties =
+                    MergeUserPropertiesWithDefaults(m_default_user_properties, *user_properties);
             } else {
-                m_user_properties.clear();
+                m_user_properties = m_default_user_properties;
             }
             LOG_INFO("live user-properties count=%zu", m_user_properties.size());
             auto nmsg =
@@ -741,45 +825,17 @@ void MainHandler::loadScene() {
     std::string pkgDir   = pkgPath_fs.parent_path().native();
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
 
-    // Wallpaper Engine scene packages ship a project.json beside the scene pkg. Its
-    // general.properties block defines every user-facing property with default values and
-    // optional visibility conditions. When the host application did not supply user properties
-    // before load, seed them from those defaults so scene scripts that read g_zoom, av_count,
-    // color_av, etc. do not run against an empty property map.
-    if (m_user_properties.empty()) {
-        std::filesystem::path projectJsonPath = pkgPath_fs.parent_path() / "project.json";
-        if (std::filesystem::exists(projectJsonPath)) {
-            std::ifstream pf(projectJsonPath, std::ios::binary);
-            if (pf) {
-                std::string project_src((std::istreambuf_iterator<char>(pf)),
-                                        std::istreambuf_iterator<char>());
-                nlohmann::json project_json;
-                if (PARSE_JSON(project_src, project_json)) {
-                    auto general = project_json.value("general", nlohmann::json::object());
-                    auto props   = general.value("properties", nlohmann::json::object());
-                    UserPropertyMap defaults;
-                    for (auto it = props.begin(); it != props.end(); ++it) {
-                        const auto& prop = it.value();
-                        UserProperty user_prop;
-                        user_prop.condition = prop.value("condition", "");
-                        user_prop.is_boolean = prop.value("type", "") == "bool";
-                        const auto& value = prop.value("value", nlohmann::json());
-                        if (value.is_boolean()) {
-                            user_prop.value = ShaderValue(value.get<bool>() ? 1.0f : 0.0f);
-                        } else if (value.is_number()) {
-                            user_prop.value = ShaderValue(static_cast<float>(value.get<double>()));
-                        } else if (value.is_string()) {
-                            user_prop.value = value.get<std::string>();
-                        } else {
-                            continue;
-                        }
-                        defaults.emplace(it.key(), std::move(user_prop));
-                    }
-                    m_user_properties = std::move(defaults);
-                    LOG_INFO("seed user-properties from project.json: count=%zu", m_user_properties.size());
-                }
-            }
-        }
+    // Wallpaper Engine keeps a default user-property snapshot from project.json and overlays the
+    // current runtime/user-selected values on top of it. Do the same here so partial property
+    // payloads still inherit untouched defaults such as g_zoom, colors, and combo selectors.
+    const std::filesystem::path projectJsonPath = pkgPath_fs.parent_path() / "project.json";
+    m_default_user_properties                   = LoadProjectUserPropertyDefaults(projectJsonPath);
+    if (! m_default_user_properties.empty()) {
+        m_user_properties =
+            MergeUserPropertiesWithDefaults(m_default_user_properties, m_user_properties);
+        LOG_INFO("seed user-properties from project.json: defaults=%zu merged=%zu",
+                 m_default_user_properties.size(),
+                 m_user_properties.size());
     }
 
     // load pkgfile

@@ -4710,10 +4710,8 @@ bool UpdateQuadMeshSize(SceneMesh* mesh, const std::array<float, 2>& size) {
 
     const float      left     = -(size[0] * 0.5f);
     const float      right    = size[0] * 0.5f;
-    // Y-down world: screen top is at world Y=-h/2, screen bottom is at world Y=+h/2. Build the
-    // quad with the screen-bottom vertex at +size/2 and the screen-top vertex at -size/2.
-    const float      bottom   = size[1] * 0.5f;
-    const float      top      = -(size[1] * 0.5f);
+    const float      bottom   = -(size[1] * 0.5f);
+    const float      top      = size[1] * 0.5f;
     const std::array position = {
         left, bottom, 0.0f, left, top, 0.0f, right, bottom, 0.0f, right, top, 0.0f,
     };
@@ -9604,13 +9602,9 @@ void WPSceneScriptHost::ResizeScreen(int32_t width, int32_t height) {
 
     JSContext* context = m_impl->runtime.context;
     JSValue    screen  = JS_GetPropertyStr(context, m_impl->engine_base, "screenResolution");
-    JSValue    canvas  = JS_GetPropertyStr(context, m_impl->engine_base, "canvasSize");
     JS_SetPropertyStr(context, screen, "x", JS_NewFloat64(context, width));
     JS_SetPropertyStr(context, screen, "y", JS_NewFloat64(context, height));
-    JS_SetPropertyStr(context, canvas, "x", JS_NewFloat64(context, width));
-    JS_SetPropertyStr(context, canvas, "y", JS_NewFloat64(context, height));
     JS_FreeValue(context, screen);
-    JS_FreeValue(context, canvas);
 
     for (const auto& instance_ptr : m_impl->instances) {
         auto& instance = *instance_ptr;
