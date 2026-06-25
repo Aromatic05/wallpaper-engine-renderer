@@ -77,7 +77,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBits
     return VK_FALSE; // suppress; we don't print noise
 }
 
-bool createInstance(VkState& vk, const std::vector<const char*>& enabled) {
+VkResult createInstance(VkState& vk, const std::vector<const char*>& enabled) {
     VkApplicationInfo app {};
     app.sType            = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app.pApplicationName = "sceneviewer";
@@ -90,7 +90,7 @@ bool createInstance(VkState& vk, const std::vector<const char*>& enabled) {
     info.enabledExtensionCount   = static_cast<uint32_t>(enabled.size());
     info.ppEnabledExtensionNames = enabled.data();
 
-    return vkCreateInstance(&info, nullptr, &vk.instance) == VK_SUCCESS;
+    return vkCreateInstance(&info, nullptr, &vk.instance);
 }
 
 bool pickPhysicalDevice(VkState& vk) {
@@ -100,8 +100,11 @@ bool pickPhysicalDevice(VkState& vk) {
     std::vector<VkPhysicalDevice> devs(count);
     vkEnumeratePhysicalDevices(vk.instance, &count, devs.data());
 
-    // Pick first device that has graphics + present queue and supports
-    // importing external memory fds (the renderer outputs dmabuf).
+    // Pick first device that has a queue family with both graphics and
+    // present. external_memory_fd is not pre-checked; the lib already
+    // proved support by outputting dmabuf, and the system's pNext chain
+    // for VkPhysicalDeviceFeatures2 differs across header versions, so
+    // a check here would risk a false negative.
     for (auto d : devs) {
         uint32_t qfc = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(d, &qfc, nullptr);
@@ -116,14 +119,6 @@ bool pickPhysicalDevice(VkState& vk) {
             if (gq >= 0 && pq >= 0) break;
         }
         if (gq < 0 || pq < 0 || gq != pq) continue;
-
-        VkPhysicalDeviceExternalMemoryFeatures ext {};
-        ext.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_FEATURES;
-        VkPhysicalDeviceFeatures2 feat2 {};
-        feat2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        feat2.pNext = &ext;
-        vkGetPhysicalDeviceFeatures2(d, &feat2);
-        if (! ext.externalMemoryFD) continue;
 
         vk.phys        = d;
         vk.queue_family = static_cast<uint32_t>(gq);
@@ -148,7 +143,10 @@ bool createDevice(VkState& vk) {
     // We need a blit-capable queue; samplerable images for the dmabuf.
     features.samplerAnisotropy = VK_FALSE;
 
-    const char* exts[] = { VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME };
+    const char* exts[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+    };
 
     VkDeviceCreateInfo info {};
     info.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -280,16 +278,15 @@ bool initVulkan(GLFWwindow* window, VkState& vk) {
     uint32_t glfw_ext_count = 0;
     auto exts = glfwGetRequiredInstanceExtensions(&glfw_ext_count);
     std::vector<const char*> instance_exts(exts, exts + glfw_ext_count);
-    if (! createInstance(vk, instance_exts)) return false;
-
+    if (exts == nullptr || glfw_ext_count == 0) return false;
+    if (createInstance(vk, instance_exts) != VK_SUCCESS)        return false;
     if (glfwCreateWindowSurface(vk.instance, window, nullptr, &vk.surface) != VK_SUCCESS) return false;
-
-    if (! pickPhysicalDevice(vk))   return false;
-    if (! createDevice(vk))         return false;
+    if (! pickPhysicalDevice(vk))                                 return false;
+    if (! createDevice(vk))                                       return false;
     int w, h;
     glfwGetFramebufferSize(window, &w, &h);
-    if (! createSwapchain(vk, w, h)) return false;
-    if (! createCommandPool(vk))    return false;
+    if (! createSwapchain(vk, w, h))                             return false;
+    if (! createCommandPool(vk))                                  return false;
     return true;
 }
 
@@ -542,16 +539,18 @@ int main(int argc, char** argv) {
     }
 
     if (! glfwInit()) {
-        std::cerr << "glfwInit failed\n"; return 1;
+        std::fprintf(stderr, "sceneviewer: glfwInit failed\n");
+        return 1;
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     GLFWwindow* window = glfwCreateWindow(args.width, args.height, "sceneviewer", nullptr, nullptr);
     if (! window) {
-        std::cerr << "glfwCreateWindow failed\n";
+        std::fprintf(stderr, "sceneviewer: glfwCreateWindow failed\n");
         glfwTerminate();
         return 1;
     }
+    glfwShowWindow(window);
 
     VkState vk;
     if (! initVulkan(window, vk)) {
@@ -614,7 +613,10 @@ int main(int argc, char** argv) {
     glfwSetMouseButtonCallback(window, onMouseButton);
     glfwSetCursorPosCallback(window, onCursorPos);
 
-    bool presented_any = false;
+    uint64_t iters = 0;
+    uint64_t acquired = 0;
+    uint64_t presented = 0;
+    uint64_t last_log = 0;
     while (! glfwWindowShouldClose(window)) {
         glfwPollEvents();
         we_session_tick(session);
@@ -622,15 +624,24 @@ int main(int argc, char** argv) {
         we_frame_v1 frame {};
         frame.size    = sizeof(frame);
         frame.version = 1;
-        if (we_session_acquire_frame(session, &frame) == 0) {
+        int32_t r = we_session_acquire_frame(session, &frame);
+        if (r == 0) {
+            ++acquired;
             if (frame.kind == WE_FRAME_KIND_DMABUF && frame.n_planes > 0) {
-                if (presentFrame(vk, frame)) presented_any = true;
+                if (presentFrame(vk, frame)) {
+                    ++presented;
+                }
             }
             we_frame_release(&frame);
         }
 
-        if (! presented_any) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        if (++iters - last_log >= 60) {
+            last_log = iters;
+            std::fprintf(stderr,
+                "sceneviewer: iters=%lu acquired=%lu presented=%lu last_err=%d\n",
+                (unsigned long)iters, (unsigned long)acquired,
+                (unsigned long)presented, r);
+            std::fflush(stderr);
         }
     }
 
@@ -639,6 +650,6 @@ int main(int argc, char** argv) {
     cleanupVulkan(vk);
     glfwDestroyWindow(window);
     glfwTerminate();
-    std::cout << "sceneviewer: presented " << (presented_any ? "frames" : "no frames") << "\n";
+    std::cout << "sceneviewer: presented " << presented << " frame(s) of " << acquired << " acquired\n";
     return 0;
 }
