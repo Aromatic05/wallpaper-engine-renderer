@@ -27,7 +27,7 @@ A migration item is complete only when all of the following are true:
   tests for every small migration edit when an existing build or runtime validation already
   exercises the path.
 - `cmake --build build-check -j2`, `ctest --test-dir build-check --output-on-failure`,
-  `cmake --build build-standalone -j2 --target sceneviewer`, and `git diff --check`
+  `cmake --build build-check -j2 --target sceneviewer`, and `git diff --check`
   pass after the item.
 - A code comparison against `../wallpaper-scene-renderer-new` shows no remaining
   untracked parity gap for the item.
@@ -62,8 +62,7 @@ Baseline verification commands:
 cmake -S . -B build-check -DBUILD_TESTING=ON
 cmake --build build-check -j2
 ctest --test-dir build-check --output-on-failure
-cmake -S standalone_view -B build-standalone
-cmake --build build-standalone -j2 --target sceneviewer
+cmake --build build-check -j2 --target sceneviewer
 ```
 
 Baseline verification results:
@@ -71,8 +70,7 @@ Baseline verification results:
 - `build-check` configure: passed
 - `build-check` build: passed
 - `ctest --test-dir build-check --output-on-failure`: 9/9 tests passed
-- `build-standalone` configure: passed
-- `sceneviewer` build: passed
+- `sceneviewer` build: passed (built as part of the unified top-level build)
 
 Planned commit:
 

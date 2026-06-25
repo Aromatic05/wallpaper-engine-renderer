@@ -227,8 +227,7 @@ Validated commands:
 cmake -S . -B build-check -DBUILD_TESTING=ON
 cmake --build build-check -j2
 ctest --test-dir build-check --output-on-failure
-cmake -S standalone_view -B build-standalone
-cmake --build build-standalone -j2 --target sceneviewer
+cmake --build build-check -j2 --target sceneviewer
 ```
 
 Current verified results:
