@@ -637,10 +637,9 @@ int main(int argc, char** argv) {
     glfwSetMouseButtonCallback(window, onMouseButton);
     glfwSetCursorPosCallback(window, onCursorPos);
 
-    uint64_t iters = 0;
     uint64_t acquired = 0;
     uint64_t presented = 0;
-    uint64_t last_log = 0;
+    auto last_log = std::chrono::steady_clock::now();
     while (! glfwWindowShouldClose(window)) {
         glfwPollEvents();
         we_session_tick(session);
@@ -659,13 +658,12 @@ int main(int argc, char** argv) {
             we_frame_release(&frame);
         }
 
-        if (++iters - last_log >= 60) {
-            last_log = iters;
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_log >= std::chrono::seconds(5)) {
+            last_log = now;
             std::fprintf(stderr,
-                "sceneviewer: iters=%lu acquired=%lu presented=%lu last_err=%d\n",
-                (unsigned long)iters, (unsigned long)acquired,
-                (unsigned long)presented, r);
-            std::fflush(stderr);
+                "sceneviewer: acquired=%lu presented=%lu last_acquire_err=%d\n",
+                (unsigned long)acquired, (unsigned long)presented, r);
         }
     }
 
