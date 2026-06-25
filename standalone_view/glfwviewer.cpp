@@ -310,14 +310,38 @@ struct DmaImage {
     VkDeviceMemory memory{ VK_NULL_HANDLE };
 };
 
+// Map a DRM fourcc (the value the lib reports in we_frame_v1::drm_fourcc)
+// to a real Vulkan format. Just casting the fourcc to VkFormat gives a
+// random enum value that drivers accept but interpret as the wrong
+// channel order, which is what makes the window come out solid red.
+VkFormat drmFourccToVkFormat(uint32_t fourcc) {
+    switch (fourcc) {
+    // [31:0] A:R:G:B little endian -> bytes B,G,R,A -> VK_B8G8R8A8
+    case 0x34325241 /* DRM_FORMAT_ARGB8888 */: return VK_FORMAT_B8G8R8A8_UNORM;
+    // [31:0] A:B:G:R little endian -> bytes R,G,B,A -> VK_R8G8B8A8
+    case 0x34324241 /* DRM_FORMAT_ABGR8888 */: return VK_FORMAT_R8G8B8A8_UNORM;
+    // [31:0] X:R:G:B little endian -> bytes B,G,R,X -> VK_B8G8R8A8 (X in MSB ignored)
+    case 0x34325258 /* DRM_FORMAT_XRGB8888 */: return VK_FORMAT_B8G8R8A8_UNORM;
+    // [31:0] X:B:G:R little endian -> bytes R,G,B,X -> VK_R8G8B8A8
+    case 0x34324258 /* DRM_FORMAT_XBGR8888 */: return VK_FORMAT_R8G8B8A8_UNORM;
+    default: return VK_FORMAT_UNDEFINED;
+    }
+}
+
 bool importDmabuf(VkState& vk, const we_frame_v1& frame, DmaImage& out) {
     // Pick primary plane's fd
     if (frame.n_planes == 0 || frame.planes[0].fd < 0) return false;
 
+    VkFormat src_fmt = drmFourccToVkFormat(frame.drm_fourcc);
+    if (src_fmt == VK_FORMAT_UNDEFINED) {
+        std::fprintf(stderr, "importDmabuf: unsupported drm_fourcc 0x%x\n", frame.drm_fourcc);
+        return false;
+    }
+
     VkImageCreateInfo ic {};
     ic.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ic.imageType     = VK_IMAGE_TYPE_2D;
-    ic.format        = static_cast<VkFormat>(frame.drm_fourcc);
+    ic.format        = src_fmt;
     ic.extent        = { frame.width, frame.height, 1 };
     ic.mipLevels     = 1;
     ic.arrayLayers   = 1;
