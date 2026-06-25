@@ -3337,8 +3337,7 @@ bool ApplyTextLayerPropertyValue(WPSceneScriptHost::Opaque* opaque, int32_t laye
     if (property_name == "size") {
         std::array<float, 2> display_size {};
         if (! value.tryGet(&display_size)) return false;
-        if (! wallpaper::ApplyTextLayerDisplaySize(
-                *state, display_size, opaque->scene->textRenderScale)) {
+        if (! wallpaper::ApplyTextLayerDisplaySize(*state, display_size)) {
             return false;
         }
     } else if (! wallpaper::ApplyTextLayerPropertyValue(*state, property_name, value)) {

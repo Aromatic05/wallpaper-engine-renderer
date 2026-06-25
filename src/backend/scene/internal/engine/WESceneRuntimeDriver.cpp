@@ -473,16 +473,11 @@ private:
     }
     MHANDLER_CMD(SET_SCENE) {
         if (msg->findObject("scene", &m_scene)) {
-            const double requested_text_render_scale = textRenderScale();
-            const double parsed_text_render_scale    = m_scene->textRenderScale;
-            m_scene->textRenderScale                 = requested_text_render_scale;
-            const bool requires_initial_text_rerender =
-                std::abs(parsed_text_render_scale - requested_text_render_scale) > 0.001;
-            for (const auto& [layer_id, _] : m_scene->textLayers) {
-                if (m_scene->deferredRuntimeTextLayerIds.count(layer_id) != 0) continue;
-                if (! requires_initial_text_rerender) continue;
-                RebuildTextLayerSceneLayout(*m_scene, layer_id);
-            }
+            // Scene text arrives with authoring geometry already resolved by WPSceneParser. The
+            // render thread records the active density for future runtime rerasterization, but it
+            // must not rebuild parsed text just because the desktop scale changed: render scale
+            // controls atlas sharpness, while textAuthoringScale controls visible geometry.
+            m_scene->textRenderScale = std::max(1.0, m_render_scale);
 
 #if WP_ENABLE_SCENESCRIPT_RUNTIME
             m_scene->scriptHost = std::make_shared<WPSceneScriptHost>(m_scene.get());

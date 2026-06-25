@@ -38,26 +38,6 @@ std::size_t EstimateParsedImageBytes(const std::shared_ptr<Image>& image) {
     return total;
 }
 
-std::string FindDinoRunScoreLayerName(const Scene& scene, int32_t layer_id) {
-    if (scene.scene_id.find("dino_run") == std::string::npos) return {};
-
-    if (auto it = scene.textLayers.find(layer_id); it != scene.textLayers.end()) {
-        if (it->second.object.name == "label_coins" || it->second.object.name == "label_top") {
-            return it->second.object.name;
-        }
-    }
-
-    if (auto it = scene.layerNodes.find(layer_id); it != scene.layerNodes.end() && it->second != nullptr) {
-        const auto& name = it->second->Name();
-        if (name == "label_coins" || name == "label_top") return name;
-    }
-
-    for (const auto& [name, id] : scene.layerNameToId) {
-        if (id == layer_id && (name == "label_coins" || name == "label_top")) return name;
-    }
-    return {};
-}
-
 bool IsLayerVisibleImpl(const Scene& scene, int32_t layer_id, std::unordered_set<int32_t>& visiting) {
     if (layer_id == 0) return true;
     if (!visiting.insert(layer_id).second) return true;
@@ -163,7 +143,6 @@ void ApplyLayerVisibilityRecursive(Scene& scene, int32_t layer_id, std::unordere
 
     std::unordered_set<int32_t> visiting;
     const bool effective_visible = IsLayerVisibleImpl(scene, layer_id, visiting);
-    const auto trace_name = FindDinoRunScoreLayerName(scene, layer_id);
 
     if (auto runtime_nodes_it = scene.objectRuntimeNodes.find(layer_id);
         runtime_nodes_it != scene.objectRuntimeNodes.end()) {
@@ -186,13 +165,6 @@ void ApplyLayerVisibilityRecursive(Scene& scene, int32_t layer_id, std::unordere
             // preserve any explicit local visibility decisions that the effect pipeline may make.
             node->SetLayerVisible(effective_visible);
         }
-    }
-
-    if (!trace_name.empty()) {
-        const auto binding = scene.GetLayerParentBinding(layer_id);
-        const auto runtime_nodes_it = scene.objectRuntimeNodes.find(layer_id);
-        const size_t runtime_node_count =
-            runtime_nodes_it == scene.objectRuntimeNodes.end() ? 0 : runtime_nodes_it->second.size();
     }
 
     for (const auto& [child_id, binding] : scene.layerParentBindings) {
