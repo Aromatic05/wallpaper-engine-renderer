@@ -111,6 +111,12 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     state->renderInitInfo.export_mode        = config->prefer_dmabuf
                                                     ? wallpaper::ExternalFrameExportMode::DMA_BUF
                                                     : wallpaper::ExternalFrameExportMode::OPAQUE_FD;
+    // DMA_BUF export requires the offscreen image to use LINEAR tiling
+    // (TextureCache.cpp:307); pick it automatically when the consumer
+    // asked for dmabuf so we don't leak that internal constraint.
+    state->renderInitInfo.offscreen_tiling   = config->prefer_dmabuf
+                                                    ? wallpaper::TexTiling::LINEAR
+                                                    : wallpaper::TexTiling::OPTIMAL;
     state->renderInitInfo.width              = static_cast<uint16_t>(config->width);
     state->renderInitInfo.height             = static_cast<uint16_t>(config->height);
     state->renderInitInfo.render_scale       = 1.0;
