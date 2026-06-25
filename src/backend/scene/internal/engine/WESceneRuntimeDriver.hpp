@@ -15,6 +15,7 @@
 
 namespace wallpaper
 {
+class WESceneOutputBinding;
 
 constexpr std::string_view PROPERTY_SOURCE               = WE_SCENE_PROPERTY_SOURCE;
 constexpr std::string_view PROPERTY_ASSETS               = WE_SCENE_PROPERTY_ASSETS;
@@ -45,6 +46,12 @@ public:
     bool inited() const;
 
     void initVulkan(const RenderInitInfo&);
+
+    // Stash a binding that should receive the ex_swapchain once Vulkan
+    // init completes. The init path is async (CMD_INIT_VULKAN is posted
+    // to the render looper), so the swapchain pointer is null at the
+    // time bindOutput() is called; this defers the attach to after init.
+    void deferBindingAttach(std::weak_ptr<WESceneOutputBinding> binding);
 
     void play();
     void pause();

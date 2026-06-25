@@ -34,7 +34,12 @@ public:
         }
 
         m_runtimeDriver.initVulkan(binding->renderInitInfo());
-        binding->attachSwapchain(m_runtimeDriver.exSwapchain());
+        // attachSwapchain is deferred: initVulkan is async (posts
+        // CMD_INIT_VULKAN to the render looper), and the ex_swapchain
+        // is created only when that message is processed. The render
+        // handler will call binding->attachSwapchain once m_render->init
+        // returns and the swapchain actually exists.
+        m_runtimeDriver.deferBindingAttach(binding);
         return Result<void>::success();
     }
 

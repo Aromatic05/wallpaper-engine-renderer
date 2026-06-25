@@ -28,6 +28,8 @@
 
 #include "vulkanrender/SceneToRenderGraph.hpp"
 #include "render/vulkanrender/VulkanRender.hpp"
+
+#include "api/scene/WESceneOutput.hpp"
 #include <atomic>
 #include <charconv>
 #include <cmath>
@@ -384,6 +386,10 @@ public:
 
     bool renderInited() const { return m_render->inited(); }
 
+    void setPendingBinding(std::weak_ptr<WESceneOutputBinding> binding) {
+        m_pending_binding = std::move(binding);
+    }
+
     double textRenderScale() const { return std::max(1.0, m_render_scale); }
 
     void setMousePos(double x, double y) { m_mouse_pos.store(std::array { (float)x, (float)y }); }
@@ -557,6 +563,15 @@ private:
             m_render_height = static_cast<int32_t>(info->height);
             m_render->init(*info);
 
+            // m_ex_swapchain is created inside m_render->init above; the
+            // synchronous attach at bindOutput() time was always null.
+            // Hand it off to the binding now that it actually exists.
+            if (auto binding = m_pending_binding.lock()) {
+                if (auto* sc = m_render->exSwapchain()) {
+                    binding->attachSwapchain(sc);
+                }
+            }
+
             // inited, callback to laod scene
             main_handler.sendCmdLoadScene();
         }
@@ -576,6 +591,8 @@ private:
 
     std::unique_ptr<vulkan::VulkanRender> m_render;
     std::unique_ptr<rg::RenderGraph>      m_rg { nullptr };
+
+    std::weak_ptr<WESceneOutputBinding>    m_pending_binding;
 
     FillMode m_fillmode { FillMode::ASPECTCROP };
 
@@ -613,6 +630,10 @@ void WESceneRuntimeDriver::initVulkan(const RenderInitInfo& info) {
         CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_INIT_VULKAN);
     msg->setObject("info", sp_info);
     msg->post();
+}
+
+void WESceneRuntimeDriver::deferBindingAttach(std::weak_ptr<WESceneOutputBinding> binding) {
+    m_main_handler->renderHandler()->setPendingBinding(std::move(binding));
 }
 
 void WESceneRuntimeDriver::play() {
