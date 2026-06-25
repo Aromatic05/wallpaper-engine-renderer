@@ -2285,8 +2285,8 @@ std::array<float, 3> ResolveScreenAnchoredTextOrigin(const ScreenAnchorFrame& fr
     const std::string_view anchor = object.anchor;
     // Wallpaper Engine's text `anchor` is a screen-anchor contract, not just a local glyph-box
     // alignment hint. When fill mode narrows or widens the active orthographic camera, authored
-    // edge coordinates such as dino_run's x=341.43 must follow the visible camera edge; otherwise
-    // right/top anchored UI text can be clipped even though the scene.json coordinates are valid.
+    // edge coordinates must follow the visible camera edge; otherwise right/top anchored UI text
+    // can be clipped even though the scene.json coordinates are valid.
     if (TextAnchorContains(anchor, "left")) {
         origin[0] += static_cast<float>(frame.view_left - frame.scene_left);
     } else if (TextAnchorContains(anchor, "right")) {
@@ -2447,10 +2447,9 @@ bool ResolveTopScreenAnchoredTextStack(std::vector<ScreenAnchoredTextPlacement>&
             if (! ScreenAnchoredTextOverlapsHorizontally(current.bounds, previous.bounds)) continue;
 
             // Multiple top-anchored Wallpaper Engine labels can deliberately share the same screen
-            // corner, as dino_run does with `label_coins` and `label_top`. Linux/Pango text bounds
-            // can be taller than the authored Windows raster, so use the actual visible rectangles
-            // and keep the lower label below the previous one instead of trusting the raw origin
-            // delta to be enough for every font backend.
+            // corner. Linux/Pango text bounds can be taller than the authored Windows raster, so
+            // use the actual visible rectangles and keep the lower label below the previous one
+            // instead of trusting the raw origin delta to be enough for every font backend.
             const float target_top = previous.bounds.bottom - kScreenAnchoredTextStackGap;
             if (current.bounds.top > target_top) {
                 required_down_shift = std::max(required_down_shift, current.bounds.top - target_top);

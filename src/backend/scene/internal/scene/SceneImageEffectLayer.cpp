@@ -426,11 +426,10 @@ void SceneImageEffectLayer::ResolveVisibleFinalOutput(
     auto& mesh               = *(final_output_node.sceneNode->Mesh());
     auto& material           = *mesh.Material();
     if (m_fullscreen) {
-        // Fullscreen postprocess final passes, including dino_run's godrays_combine shader,
-        // already draw the unit effect mesh and may still multiply by
-        // g_ModelViewProjectionMatrix. Keep that final pass on the effect camera so the 2x2
-        // utility quad remains a full-frame clip-space composite instead of becoming a tiny
-        // active-camera world quad that leaves the rays effectively invisible.
+        // Fullscreen postprocess final passes already draw the unit effect mesh and may still
+        // multiply by g_ModelViewProjectionMatrix. Keep that final pass on the effect camera so
+        // the 2x2 utility quad remains a full-frame clip-space composite instead of becoming a
+        // tiny active-camera world quad that leaves the effect effectively invisible.
         m_resolved_output_follows_world = false;
         m_resolved_output_mesh_follows_final_mesh = false;
         material.blenmode = BlendMode::Normal;

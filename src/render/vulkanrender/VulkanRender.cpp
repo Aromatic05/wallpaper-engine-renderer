@@ -1242,8 +1242,8 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
 
     // Text layers with Wallpaper Engine's screen-anchor property are authored against the project
     // canvas edge, but the active orthographic camera edge moves when aspect crop/fit changes the
-    // visible frame. Re-apply those anchor transforms after camera framing so HUD-style text such
-    // as dino_run's score remains inside the actual output instead of the uncropped project bounds.
+    // visible frame. Re-apply those anchor transforms after camera framing so HUD-style text
+    // remains inside the actual output instead of the uncropped project bounds.
     ApplyTextLayerScreenAnchorTransforms(scene);
 }
 
