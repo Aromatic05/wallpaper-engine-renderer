@@ -1,99 +1,83 @@
-#include <regex>
-#include <tuple>
-#include <utility>
-#include <argparse/argparse.hpp>
+#pragma once
+
+#include <cstdint>
+#include <cstdlib>
+#include <string>
 #include <string_view>
 
-constexpr std::string_view ARG_ASSETS      = "<assets>";
-constexpr std::string_view ARG_SCENE       = "<scene>";
-constexpr std::string_view OPT_VALID_LAYER = "--valid-layer";
-constexpr std::string_view OPT_GRAPHVIZ    = "--graphviz";
-constexpr std::string_view OPT_FPS         = "--fps";
-constexpr std::string_view OPT_RESOLUTION  = "--resolution";
-constexpr std::string_view OPT_CACHE_PATH  = "--cache-path";
-constexpr std::string_view OPT_DUMP_FRAME  = "--dump-frame";
-constexpr std::string_view OPT_DUMP_FRAME_NUMBER = "--dump-frame-number";
-constexpr std::string_view OPT_AUDIO_PATTERN = "--audio-pattern";
+constexpr std::string_view ARG_ASSETS = "<assets>";
+constexpr std::string_view ARG_SCENE  = "<scene>";
 
-struct Resolution {
-	uint w;
-	uint h;
+struct Args {
+    std::string assets;
+    std::string scene;
+    std::string cache_path;
+    int32_t     fps    { 15 };
+    int32_t     width  { 1280 };
+    int32_t     height { 720 };
 };
-std::ostream& operator<<(std::ostream& os, const Resolution& res) {
-    return os << res.w << 'x' << res.h;
+
+inline void printUsage(const char* prog) {
+    // printed by parseArgs when needed
+    (void)prog;
 }
 
-void setAndParseArg(argparse::ArgumentParser& arg, int argc, char** argv) {
-    arg.add_argument(ARG_ASSETS).help("assets folder").nargs(1);
-    arg.add_argument(ARG_SCENE).help("scene file").nargs(1);
-
-    arg.add_argument("-f", OPT_FPS)
-        .help("fps")
-        .default_value<int32_t>(15)
-        .nargs(1)
-        .scan<'i', int32_t>();
-
-    arg.add_argument("-V", OPT_VALID_LAYER)
-        .help("enable vulkan valid layer")
-        .default_value(false)
-        .implicit_value(true)
-        .nargs(0)
-        .append();
-
-    arg.add_argument("-G", OPT_GRAPHVIZ)
-        .help("generate graphviz of render graph, output to 'graph.dot'")
-        .default_value(false)
-        .implicit_value(true)
-        .nargs(0)
-        .append();
-
-    arg.add_argument("-C", OPT_CACHE_PATH)
-        .help("generate graphviz of render graph, output to 'graph.dot'")
-        .default_value(std::string())
-        .nargs(1)
-        .append();
-
-    arg.add_argument("-D", OPT_DUMP_FRAME)
-        .help("render offscreen and dump the next frame to a PNG path")
-        .default_value(std::string())
-        .nargs(1)
-        .append();
-
-    arg.add_argument("-N", OPT_DUMP_FRAME_NUMBER)
-        .help("dump the specified offscreen frame number (1-based)")
-        .default_value<int32_t>(1)
-        .nargs(1)
-        .scan<'i', int32_t>();
-
-    arg.add_argument("-A", OPT_AUDIO_PATTERN)
-        .help("inject a built-in audio spectrum pattern: off|bars|sweep|pulse")
-        .default_value(std::string("off"))
-        .nargs(1)
-        .append();
-
-    arg.add_argument("-R", OPT_RESOLUTION)
-        .help("Set the resolution, eg. 1920x1080")
-        .default_value(Resolution{1280, 720})
-        .implicit_value(true)
-        .nargs(1)
-        .append()
-		.action([](const std::string& value) {
-			const std::regex re_res(R"(([0-9]+)x([0-9]+))");
-			std::smatch match;
-			uint width = 1280, height = 720;
-			if(std::regex_match(value, match, re_res)) {
-				const std::string w_str = match[1].str(), h_str = match[2].str();
-				std::from_chars(w_str.c_str(), w_str.c_str() + w_str.length(), width);
-				std::from_chars(h_str.c_str(), h_str.c_str() + h_str.length(), height);
-			}
-			return Resolution{width, height};
-		});
-
-    try {
-        arg.parse_args(argc, argv);
-    } catch (const std::runtime_error& err) {
-        std::cerr << err.what() << std::endl;
-        std::cerr << arg;
-        std::exit(1);
+// Minimal hand-rolled parser. Avoids the third_party/argparse header
+// since the C ABI demo only takes a handful of flags.
+inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
+    auto needValue = [&](int& i, std::string& out) -> bool {
+        if (i + 1 >= argc) {
+            err = std::string(argv[i]) + " requires a value";
+            return false;
+        }
+        out = argv[++i];
+        return true;
+    };
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "-h" || a == "--help") {
+            return false;
+        } else if (a == "--cache-path") {
+            if (! needValue(i, args.cache_path)) return false;
+        } else if (a == "--fps") {
+            std::string v;
+            if (! needValue(i, v)) return false;
+            args.fps = std::atoi(v.c_str());
+            if (args.fps <= 0) args.fps = 15;
+        } else if (a == "--resolution") {
+            std::string v;
+            if (! needValue(i, v)) return false;
+            auto x = v.find('x');
+            if (x == std::string::npos) {
+                err = "--resolution expects WxH";
+                return false;
+            }
+            args.width  = std::atoi(v.substr(0, x).c_str());
+            args.height = std::atoi(v.substr(x + 1).c_str());
+        } else if (a.empty() || a[0] == '-') {
+            err = "unknown option: " + a;
+            return false;
+        } else if (args.assets.empty()) {
+            args.assets = a;
+        } else if (args.scene.empty()) {
+            args.scene = a;
+        } else {
+            err = "unexpected positional: " + a;
+            return false;
+        }
     }
+    if (args.assets.empty() || args.scene.empty()) {
+        return false;
+    }
+    return true;
+}
+
+inline void printHelp(const char* prog) {
+    std::fprintf(stderr,
+                 "Usage: %s [options] <assets> <scene>\n"
+                 "  --cache-path PATH    cache directory\n"
+                 "  --fps N              scene fps (default 15)\n"
+                 "  --resolution WxH     output size (default 1280x720)\n"
+                 "  -h, --help           show this help\n",
+                 prog);
 }

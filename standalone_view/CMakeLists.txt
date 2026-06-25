@@ -25,12 +25,14 @@ add_link_options(
 )
 
 pkg_check_modules(GLFW REQUIRED glfw3)
+find_package(Vulkan REQUIRED)
 add_executable(${PROJECT_NAME}
     glfwviewer.cpp
 )
 target_link_libraries(${PROJECT_NAME}
-    PUBLIC 
+    PUBLIC
         ${GLFW_LIBRARIES}
+        Vulkan::Vulkan
         wallpaper-engine-renderer
 )
 
