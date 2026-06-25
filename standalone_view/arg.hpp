@@ -13,6 +13,7 @@ constexpr std::string_view OPT_RESOLUTION  = "--resolution";
 constexpr std::string_view OPT_CACHE_PATH  = "--cache-path";
 constexpr std::string_view OPT_DUMP_FRAME  = "--dump-frame";
 constexpr std::string_view OPT_DUMP_FRAME_NUMBER = "--dump-frame-number";
+constexpr std::string_view OPT_AUDIO_PATTERN = "--audio-pattern";
 
 struct Resolution {
 	uint w;
@@ -63,6 +64,12 @@ void setAndParseArg(argparse::ArgumentParser& arg, int argc, char** argv) {
         .default_value<int32_t>(1)
         .nargs(1)
         .scan<'i', int32_t>();
+
+    arg.add_argument("-A", OPT_AUDIO_PATTERN)
+        .help("inject a built-in audio spectrum pattern: off|bars|sweep|pulse")
+        .default_value(std::string("off"))
+        .nargs(1)
+        .append();
 
     arg.add_argument("-R", OPT_RESOLUTION)
         .help("Set the resolution, eg. 1920x1080")

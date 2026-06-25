@@ -191,6 +191,7 @@ bool WPTextObject::FromJson(const nlohmann::json& json, wallpaper::fs::VFS& vfs)
     ReadLiteralOrDynamicValue(json, "limitrows", &limitrows);
     ReadLiteralOrDynamicValue(json, "limituseellipsis", &limituseellipsis);
     ReadLiteralOrDynamicValue(json, "limitwidth", &limitwidth);
+    GET_JSON_NAME_VALUE_NOWARN(json, "copybackground", copybackground);
     ReadLiteralOrDynamicValue(json, "horizontalalign", &horizontalalign);
     ReadLiteralOrDynamicValue(json, "verticalalign", &verticalalign);
     ReadLiteralOrDynamicValue(json, "anchor", &anchor);

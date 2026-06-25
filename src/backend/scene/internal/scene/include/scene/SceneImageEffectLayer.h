@@ -138,9 +138,13 @@ public:
     bool        FinalCompositeSamplesPremultipliedSource() const {
         return m_final_composite.samples_premultiplied_source;
     }
+    bool        ClearSourceBeforeOwnerDraw() const { return m_clear_source_before_owner_draw; }
     void        SetFinalCompositeSource(std::string source);
     void        SetFullscreen(bool fullscreen) { m_fullscreen = fullscreen; }
     void        SetSourceContributionPolicy(SourcePolicy policy) { m_source_policy = policy; }
+    void        SetClearSourceBeforeOwnerDraw(bool clear_source_before_owner_draw) {
+        m_clear_source_before_owner_draw = clear_source_before_owner_draw;
+    }
     void        SetHiddenFinalCompositePolicy(HiddenFinalCompositePolicy policy) {
         // Hidden final effects have two valid source contracts. Ordinary images/text preserve the
         // pre-effect source when an effect is disabled. Source-less passthrough/compose helpers must
@@ -215,6 +219,7 @@ private:
     // camera's local fullscreen space or `_rt_imageLayerComposite_<id>` samples a shifted source.
     bool                       m_resolved_output_follows_world { true };
     bool                       m_resolved_output_mesh_follows_final_mesh { true };
+    bool                       m_clear_source_before_owner_draw { false };
     FinalCompositeState        m_final_composite;
     BlendMode                  m_final_blend;
 

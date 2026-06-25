@@ -1702,6 +1702,33 @@ std::string_view ImageEffectSourcePolicyName(SceneImageEffectLayer::SourcePolicy
     return "unknown";
 }
 
+bool ShouldUseCopyBackgroundSourceHelper(bool has_effect, bool is_compose_layer,
+                                         bool is_solid_layer,
+                                         const wpscene::WPImageObject& image) {
+    // Reverse-engineered WE treats copybackground solid helpers as framebuffer-fed effect sources,
+    // not as authored-color cards. Using the flat `solidlayer` material as the first source makes
+    // downstream generator effects sample the helper tint (`layer 332` is bright blue) instead of
+    // the already-rendered scene, which is exactly the large cyan block we see in practice.
+    return has_effect && ! is_compose_layer && is_solid_layer && image.copybackground;
+}
+
+bool LoadCopyBackgroundSourceHelperMaterial(fs::VFS& vfs, wpscene::WPMaterial& material) {
+    nlohmann::json helper_json;
+    // Reverse helper path `FUN_14020d0f0` materializes `composelayer_clearalpha` for the
+    // copybackground-style source route. The shader samples the current framebuffer through the
+    // layer projection and clears alpha, which removes the solidlayer tint-card coverage that
+    // otherwise blooms into the large cyan strip across layer 332.
+    if (! PARSE_JSON(fs::GetFileContent(vfs, "/assets/materials/util/composelayer_clearalpha.json"),
+                     helper_json) ||
+        ! material.FromJson(helper_json)) {
+        return false;
+    }
+
+    if (material.textures.empty()) material.textures.resize(1);
+    material.textures[0] = std::string("_rt_FullFrameBuffer");
+    return true;
+}
+
 struct ImageEffectCameraClipRange {
     float near_clip { -1.0f };
     float far_clip { 1.0f };
@@ -4118,6 +4145,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     bool       isCompose         = (wpimgobj.image == "models/util/composelayer.json");
     const bool isProjectLayer =
         wpimgobj.projectlayer || wpimgobj.image == "models/util/projectlayer.json";
+    const bool isSolidLayer =
+        wpimgobj.solidlayer || wpimgobj.image == "models/util/solidlayer.json";
     const bool is_offscreen_dependency_source =
         context.scene != nullptr &&
         context.scene->offscreenDependencyLayerIds.count(wpimgobj.id) != 0;
@@ -4136,7 +4165,15 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     const bool uses_routed_parent = LayerUsesRoutedParent(wpimgobj.parent, wpimgobj.attachment);
     bool use_detached_effect_world_node = hasEffect && ! isCompose;
     const bool effect_source_screen_bound =
+        // `solidlayer` is a content marker, not a blanket "bind this effect source to the live
+        // screen size" contract. Promoting every solidlayer effect target to `bind.screen=true`
+        // rewrites authored source RT sizes such as layer 332's 3072x576 strip into the current
+        // swapchain extent during VulkanRender::setRenderTargetSize(), which distorts the source
+        // domain before any effect shader runs. Keep screen-bound behavior opt-in through the
+        // authored flags that actually describe framebuffer-sized helper paths.
         wpimgobj.fullscreen || wpimgobj.effectSourceScreenBound;
+    const bool use_copybackground_source_helper =
+        ShouldUseCopyBackgroundSourceHelper(hasEffect, isCompose, isSolidLayer, wpimgobj);
     const std::array<float, 2> effect_source_size =
         wpimgobj.effectSourceSize[0] > 0.0f && wpimgobj.effectSourceSize[1] > 0.0f
             ? wpimgobj.effectSourceSize
@@ -4155,7 +4192,6 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
         RegisterLogicalImageLayer(context, wpimgobj, false);
         return;
     }
-
     std::unique_ptr<WPMdl> puppet;
     if (hasAuthoredPuppet) {
         puppet = std::make_unique<WPMdl>();
@@ -4210,19 +4246,72 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
         shaderInfo.baseConstSvs = baseConstSvs;
 
-        if (! LoadMaterial(vfs,
-                           wpimgobj.material,
-                           context.scene.get(),
-                           spImgNode.get(),
-                           &material,
-                           &svData,
-                           context.user_properties,
-                           &shaderInfo)) {
-            LOG_ERROR("load imageobj '%s' material faild", wpimgobj.name.c_str());
-            return;
-        };
-        LoadConstvalue(material, wpimgobj.material, shaderInfo);
-        LoadUserShaderValue(material, wpimgobj.material, shaderInfo, context.user_properties);
+        if (! use_copybackground_source_helper) {
+            if (! LoadMaterial(vfs,
+                               wpimgobj.material,
+                               context.scene.get(),
+                               spImgNode.get(),
+                               &material,
+                               &svData,
+                               context.user_properties,
+                               &shaderInfo)) {
+                LOG_ERROR("load imageobj '%s' material faild", wpimgobj.name.c_str());
+                return;
+            };
+            LoadConstvalue(material, wpimgobj.material, shaderInfo);
+            LoadUserShaderValue(material, wpimgobj.material, shaderInfo, context.user_properties);
+        } else {
+            // Preserve the authored final blend contract from the original helper material, but use
+            // a neutral framebuffer-fed source so generator effects sample the already rendered
+            // scene instead of the solidlayer tint card.
+            SceneMaterial     authored_material;
+            WPShaderValueData authored_sv_data;
+            if (! LoadMaterial(vfs,
+                               wpimgobj.material,
+                               context.scene.get(),
+                               spImgNode.get(),
+                               &authored_material,
+                               &authored_sv_data,
+                               context.user_properties,
+                               &shaderInfo)) {
+                LOG_ERROR("load imageobj '%s' authored material faild", wpimgobj.name.c_str());
+                return;
+            }
+            LoadConstvalue(authored_material, wpimgobj.material, shaderInfo);
+            LoadUserShaderValue(
+                authored_material, wpimgobj.material, shaderInfo, context.user_properties);
+
+            wpscene::WPMaterial source_material;
+            if (! LoadCopyBackgroundSourceHelperMaterial(vfs, source_material)) {
+                LOG_ERROR("load imageobj '%s' copybackground source helper material faild",
+                          wpimgobj.name.c_str());
+                return;
+            }
+
+            WPShaderInfo source_shader_info;
+            source_shader_info.baseConstSvs = context.global_base_uniforms;
+            source_shader_info.baseConstSvs["g_Color4"] =
+                std::array<float, 4> { 1.0f, 1.0f, 1.0f, 1.0f };
+            source_shader_info.baseConstSvs["g_Color"] =
+                std::array<float, 3> { 1.0f, 1.0f, 1.0f };
+            source_shader_info.baseConstSvs["g_Alpha"]      = 1.0f;
+            source_shader_info.baseConstSvs["g_UserAlpha"]  = 1.0f;
+            source_shader_info.baseConstSvs["g_Brightness"] = 1.0f;
+            if (! LoadMaterial(vfs,
+                               source_material,
+                               context.scene.get(),
+                               spImgNode.get(),
+                               &material,
+                               &svData,
+                               context.user_properties,
+                               &source_shader_info)) {
+                LOG_ERROR("load imageobj '%s' copybackground source material faild",
+                          wpimgobj.name.c_str());
+                return;
+            }
+
+            material.blenmode = authored_material.blenmode;
+        }
     }
 
     // mesh
@@ -4397,6 +4486,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             // active scene camera.
             imgEffectLayer->SetFullscreen(wpimgobj.fullscreen);
             imgEffectLayer->SetFinalBlend(imgBlendMode);
+            imgEffectLayer->SetClearSourceBeforeOwnerDraw(use_copybackground_source_helper);
             const auto source_policy = ResolveImageEffectSourcePolicy(isCompose, wpimgobj);
             imgEffectLayer->SetSourceContributionPolicy(source_policy);
             if (isCompose) {
@@ -4604,6 +4694,14 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                             matOutRT = fboMap.at(wppass.target);
                         }
                     }
+                }
+                if (wpimgobj.copybackground) {
+                    // Stock combine shaders such as shine/godrays expect Wallpaper Engine to
+                    // synthesize COPYBG from the owning layer contract instead of from the authored
+                    // pass json. Without it, the combine pass keeps treating the incoming source as
+                    // a self-contained opaque strip and never mixes the live framebuffer back under
+                    // the glow based on the current alpha mask.
+                    wpmat.combos["COPYBG"] = 1;
                 }
                 if (wpmat.textures.size() == 0) wpmat.textures.resize(1);
                 if (wpmat.textures.at(0).empty()) {
@@ -4815,12 +4913,54 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             -1.0f,
             1.0f);
         scene.cameras.at(camera_name)->AttatchNode(context.effect_camera_node);
+        std::optional<WPShaderValueData> copybackground_helper_node_data;
+
+        if (text_obj.copybackground) {
+            wpscene::WPMaterial source_material;
+            if (! LoadCopyBackgroundSourceHelperMaterial(*context.vfs, source_material)) {
+                LOG_ERROR("load textobj '%s' copybackground source helper material faild",
+                          text_obj.name.c_str());
+                return;
+            }
+
+            WPShaderInfo helper_shader_info;
+            helper_shader_info.baseConstSvs = context.global_base_uniforms;
+            helper_shader_info.baseConstSvs["g_Color4"] =
+                std::array<float, 4> { 1.0f, 1.0f, 1.0f, 1.0f };
+            helper_shader_info.baseConstSvs["g_Color"] =
+                std::array<float, 3> { 1.0f, 1.0f, 1.0f };
+            helper_shader_info.baseConstSvs["g_Alpha"]      = 1.0f;
+            helper_shader_info.baseConstSvs["g_UserAlpha"]  = 1.0f;
+            helper_shader_info.baseConstSvs["g_Brightness"] = 1.0f;
+
+            SceneMaterial     helper_material;
+            WPShaderValueData helper_node_data;
+            if (! LoadMaterial(*context.vfs,
+                               source_material,
+                               context.scene.get(),
+                               spTextNode.get(),
+                               &helper_material,
+                               &helper_node_data,
+                               context.user_properties,
+                               &helper_shader_info)) {
+                LOG_ERROR("load textobj '%s' copybackground source material faild",
+                          text_obj.name.c_str());
+                return;
+            }
+
+            auto helper_mesh = std::make_shared<SceneMesh>(true);
+            RebuildTextPrimitiveVisibleMesh(helper_mesh.get(), *primitive);
+            helper_mesh->AddMaterial(std::move(helper_material));
+            spTextNode->AddMesh(helper_mesh);
+            copybackground_helper_node_data = std::move(helper_node_data);
+        }
         // Effect-backed text draws the canonical glyph primitive into an isolated source target
         // before authored image effects sample it. Keep that source node on an explicit identity
         // shader-data contract instead of relying on the visible world node's parallax/attachment
         // data: the world node is only the final composited output transform, while this node must
         // fill the bridge camera exactly in local text space.
-        WPShaderValueData text_source_node_data;
+        WPShaderValueData text_source_node_data =
+            copybackground_helper_node_data.value_or(WPShaderValueData {});
         context.shader_updater->SetNodeData(spTextNode.get(), text_source_node_data);
         scene.objectRuntimeCameraNames[text_obj.id].push_back(camera_name);
         spTextNode->SetCamera(camera_name);
@@ -4831,6 +4971,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                                                                       primitive->bridge.pingpong_a,
                                                                       primitive->bridge.pingpong_b);
         imgEffectLayer->SetFinalBlend(BlendMode::Translucent);
+        imgEffectLayer->SetClearSourceBeforeOwnerDraw(text_obj.copybackground);
         imgEffectLayer->FinalMesh().ChangeMeshDataFrom(effect_final_mesh);
         imgEffectLayer->FinalNode().CopyTrans(*spWorldNode);
         scene.cameras.at(camera_name)->AttatchImgEffect(imgEffectLayer);
@@ -4957,6 +5098,14 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                     if (! wp_pass.target.empty() && fbo_map.count(wp_pass.target) != 0) {
                         material_output = fbo_map.at(wp_pass.target);
                     }
+                }
+                if (text_obj.copybackground) {
+                    // Effect-backed text layers such as clocks use the same copybackground combine
+                    // contract as image layers: authored workshop passes omit COPYBG and rely on
+                    // Wallpaper Engine to synthesize it from the owning layer. Without this combo
+                    // the glow/pulse chain only sees the isolated glyph bridge target and diverges
+                    // from the stock text/background composite path.
+                    material_source.combos["COPYBG"] = 1;
                 }
                 if (material_source.textures.empty()) material_source.textures.resize(1);
                 if (material_source.textures[0].empty()) material_source.textures[0] = in_rt;

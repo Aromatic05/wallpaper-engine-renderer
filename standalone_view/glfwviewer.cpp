@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <cmath>
+#include <vector>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -10,6 +12,7 @@
 #include "arg.hpp"
 #include "wallpaper/WallpaperRuntime.hpp"
 #include "wallpaper/scene/WEScene.hpp"
+#include "wallpaper/scene/WESceneContract.hpp"
 
 using namespace std;
 
@@ -24,6 +27,8 @@ struct UserData {
 
 namespace
 {
+constexpr float kPi = 3.14159265358979323846f;
+
 void glfw_error_callback(int code, const char* description) {
     std::cerr << "GLFW error [" << code << "]: "
               << (description == nullptr ? "unknown" : description) << std::endl;
@@ -70,6 +75,47 @@ void cursor_position_callback(GLFWwindow* win, double xpos, double ypos) {
     auto event = makePointerEvent(*data, wallpaper::InputEventType::PointerMove, xpos, ypos);
     data->session->sendInput(event);
 }
+
+std::shared_ptr<std::vector<float>> makeAudioPatternSamples(const std::string& pattern_name) {
+    constexpr size_t kChannelSize = 64;
+
+    auto samples = std::make_shared<std::vector<float>>();
+    if (pattern_name == "off") return samples;
+
+    samples->assign(kChannelSize * 2, 0.0f);
+    auto* left  = samples->data();
+    auto* right = samples->data() + kChannelSize;
+
+    if (pattern_name == "bars") {
+        for (size_t i = 0; i < kChannelSize; i++) {
+            const float normalized = 1.0f - static_cast<float>(i) / static_cast<float>(kChannelSize - 1);
+            left[i]  = std::max(0.0f, normalized);
+            right[i] = std::max(0.0f, normalized * 0.85f);
+        }
+        return samples;
+    }
+
+    if (pattern_name == "sweep") {
+        for (size_t i = 0; i < kChannelSize; i++) {
+            const float position = static_cast<float>(i) / static_cast<float>(kChannelSize - 1);
+            left[i]  = std::exp(-48.0f * std::pow(position - 0.25f, 2.0f));
+            right[i] = std::exp(-48.0f * std::pow(position - 0.72f, 2.0f));
+        }
+        return samples;
+    }
+
+    if (pattern_name == "pulse") {
+        for (size_t i = 0; i < kChannelSize; i++) {
+            const float phase = static_cast<float>(i) / static_cast<float>(kChannelSize - 1);
+            const float wave  = 0.5f + 0.5f * std::sin(phase * 6.0f * kPi);
+            left[i]           = 0.15f + 0.85f * wave;
+            right[i]          = 0.15f + 0.85f * (1.0f - wave);
+        }
+        return samples;
+    }
+
+    return nullptr;
+}
 }
 
 void updateCallback() {
@@ -84,6 +130,7 @@ int main(int argc, char** argv) {
     const std::string dump_frame_path = program.get<std::string>(OPT_DUMP_FRAME);
     const bool dump_frame = !dump_frame_path.empty();
     const int32_t dump_frame_number = std::max<int32_t>(1, program.get<int32_t>(OPT_DUMP_FRAME_NUMBER));
+    const std::string audio_pattern = program.get<std::string>(OPT_AUDIO_PATTERN);
 
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -138,6 +185,7 @@ int main(int argc, char** argv) {
     sourceConfig.assets   = program.get<std::string>(ARG_ASSETS);
     sourceConfig.graphviz = program.get<bool>(OPT_GRAPHVIZ);
     sourceConfig.fps      = program.get<int32_t>(OPT_FPS);
+    const int32_t capture_fps = std::max<int32_t>(1, sourceConfig.fps);
 
     if (auto result = wallpaper::LoadWEScene(*session, sourceConfig); ! result) {
         std::cerr << "LoadWEScene failed: " << result.error().message << std::endl;
@@ -151,6 +199,18 @@ int main(int argc, char** argv) {
     if (auto result = session->play(); ! result) {
         std::cerr << "session->play failed: " << result.error().message << std::endl;
         return -1;
+    }
+
+    if (auto audio_samples = makeAudioPatternSamples(audio_pattern); audio_samples == nullptr) {
+        std::cerr << "unknown audio pattern: " << audio_pattern << std::endl;
+        return -1;
+    } else if (!audio_samples->empty()) {
+        if (auto result = session->setProperty(wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES,
+                                               audio_samples);
+            !result) {
+            std::cerr << "failed to set audio samples: " << result.error().message << std::endl;
+            return -1;
+        }
     }
 
     if (dump_frame) {
@@ -174,7 +234,16 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        const auto expected_capture_time =
+            std::chrono::milliseconds((1000ll * dump_frame_number) / capture_fps);
+        const auto capture_timeout =
+            std::max(std::chrono::milliseconds(20000),
+                     std::chrono::milliseconds(12000) + expected_capture_time * 2);
+        // Offscreen capture waits for scene load plus the requested rendered frame count. A fixed
+        // 20s budget is too tight for heavier workshop scenes when validating later frames such as
+        // frame 120, so scale the wait window with the authored fps while still keeping a healthy
+        // startup slack for asset upload and script warmup.
+        const auto deadline = std::chrono::steady_clock::now() + capture_timeout;
         while (std::chrono::steady_clock::now() < deadline) {
             if (auto tickResult = runtime.tick(*session); !tickResult) {
                 std::cerr << "runtime.tick failed: " << tickResult.error().message << std::endl;

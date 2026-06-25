@@ -89,6 +89,7 @@ bool WPImageObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
     }
     GET_JSON_NAME_VALUE_NOWARN(jImage, "fullscreen", fullscreen);
     GET_JSON_NAME_VALUE_NOWARN(jImage, "autosize", autosize);
+    GET_JSON_NAME_VALUE_NOWARN(jImage, "solidlayer", solidlayer);
     // Project-layer is authored in the utility model JSON. Reading it here keeps the later parser
     // decision tied to the resolved asset metadata instead of relying only on a hard-coded path.
     GET_JSON_NAME_VALUE_NOWARN(jImage, "projectlayer", projectlayer);

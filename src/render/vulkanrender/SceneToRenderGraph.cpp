@@ -386,6 +386,13 @@ static NodePassOptions BuildOwnerSourcePassOptions(
     const EffectSourceRoutingDecision& source_route) {
     const bool clear_private_effect_source =
         route.compose_source && imgeff != nullptr && output != inherited_output;
+    const bool clear_solid_layer_effect_source =
+        // Framebuffer-fed copybackground helper seeds need one clean private source target before
+        // their owner draw. Clearing only this first pass keeps the generated spectrum chain from
+        // inheriting stale alpha outside the authored bar mask without broadening the behavior to
+        // unrelated solidlayer effects.
+        !route.compose_source && imgeff != nullptr && output != inherited_output &&
+        imgeff->ClearSourceBeforeOwnerDraw();
 
     // Owner-source emission is the one place where source routing affects actual pass state. Keep
     // these side effects grouped so future route types can extend the pass contract without adding
@@ -400,7 +407,7 @@ static NodePassOptions BuildOwnerSourcePassOptions(
     //   effect passes would erase intermediate waterwaves/foliagesway/opacity results.
     return NodePassOptions {
         .force_alpha_write = route.compose_source,
-        .clear_before_draw = clear_private_effect_source,
+        .clear_before_draw = clear_private_effect_source || clear_solid_layer_effect_source,
         .camera_override = source_route.use_compose_camera_override
             ? source_route.active_compose_source_camera
             : std::string(),

@@ -45,6 +45,7 @@ struct WPTextObject {
     bool                       limitrows { false };
     bool                       limituseellipsis { false };
     bool                       limitwidth { false };
+    bool                       copybackground { false };
     int32_t                    maxrows { 1 };
     int32_t                    padding { 0 };
     std::array<int32_t, 4>     padding_edges { 0, 0, 0, 0 }; // top, right, bottom, left

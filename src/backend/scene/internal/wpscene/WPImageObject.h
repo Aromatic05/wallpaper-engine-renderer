@@ -45,6 +45,11 @@ public:
     float                      brightness { 1.0f };
     bool                       fullscreen { false };
     bool                       autosize { false };
+    // Wallpaper Engine's `models/util/solidlayer.json` carries this marker in the model asset.
+    // Reverse-engineered traces show that solid layers enter the same special effect-source setup
+    // bucket as fullscreen/passthrough helper sources instead of behaving like arbitrary textured
+    // image cards, so keep the resolved asset bit on the parsed object.
+    bool                       solidlayer { false };
     // Wallpaper Engine's `models/util/projectlayer.json` stores this marker in the model asset,
     // not on the scene object itself. Keeping it on the parsed image object lets the scene parser
     // distinguish logical framebuffer helper layers from normal drawable image layers.

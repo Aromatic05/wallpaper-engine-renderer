@@ -60,6 +60,101 @@ struct SceneRegistrationRange {
 namespace
 {
 
+std::string FormatVec2ForLog(const std::array<float, 2>& value) {
+    std::ostringstream oss;
+    oss << "[" << std::fixed << std::setprecision(3) << value[0] << ", " << value[1] << "]";
+    return oss.str();
+}
+
+std::string FormatVec3ForLog(const std::array<float, 3>& value) {
+    std::ostringstream oss;
+    oss << "[" << std::fixed << std::setprecision(3) << value[0] << ", " << value[1] << ", "
+        << value[2] << "]";
+    return oss.str();
+}
+
+std::string FormatEigenVec3ForLog(const Eigen::Vector3f& value) {
+    std::ostringstream oss;
+    oss << "[" << std::fixed << std::setprecision(3) << value.x() << ", " << value.y() << ", "
+        << value.z() << "]";
+    return oss.str();
+}
+
+std::string FormatStringListForLog(const std::vector<std::string>& values) {
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) oss << ", ";
+        oss << values[index];
+    }
+    oss << "]";
+    return oss.str();
+}
+
+void LogSceneLayer332State(const Scene& scene) {
+    constexpr int32_t layer_id = 332;
+    const auto node_it = scene.layerNodes.find(layer_id);
+    const auto state_it = scene.imageLayers.find(layer_id);
+    const auto runtime_targets_it = scene.objectRuntimeRenderTargets.find(layer_id);
+    const auto runtime_cameras_it = scene.objectRuntimeCameraNames.find(layer_id);
+    if (node_it == scene.layerNodes.end() || state_it == scene.imageLayers.end()) return;
+
+    const SceneNode* node = node_it->second;
+    LOG_INFO("DebugLayer332Runtime: node-translate=%s node-scale=%s node-align=%s image-size=%s "
+             "image-alignment='%s' cameras=%s targets=%s",
+             node != nullptr ? FormatEigenVec3ForLog(node->Translate()).c_str() : "null",
+             node != nullptr ? FormatEigenVec3ForLog(node->Scale()).c_str() : "null",
+             node != nullptr ? FormatEigenVec3ForLog(node->AlignmentOffset()).c_str() : "null",
+             FormatVec2ForLog(state_it->second.size).c_str(),
+             state_it->second.alignment.c_str(),
+             runtime_cameras_it != scene.objectRuntimeCameraNames.end()
+                 ? FormatStringListForLog(runtime_cameras_it->second).c_str()
+                 : "[]",
+             runtime_targets_it != scene.objectRuntimeRenderTargets.end()
+                 ? FormatStringListForLog(runtime_targets_it->second).c_str()
+                 : "[]");
+}
+
+void LogSceneTextLayerState(const Scene& scene, int32_t layer_id, const char* label) {
+    const auto text_it = scene.textLayers.find(layer_id);
+    const auto node_it = scene.layerNodes.find(layer_id);
+    if (text_it == scene.textLayers.end() || node_it == scene.layerNodes.end()) return;
+
+    const auto&     state = text_it->second;
+    const SceneNode* node = node_it->second;
+    const auto runtime_targets_it = scene.objectRuntimeRenderTargets.find(layer_id);
+    const auto runtime_cameras_it = scene.objectRuntimeCameraNames.find(layer_id);
+    const auto visible_display_size =
+        state.primitive != nullptr ? state.primitive->VisibleDisplaySize() : std::array<float, 2> {};
+    const auto visible_source_size =
+        state.primitive != nullptr ? state.primitive->VisibleSourceSize() : std::array<float, 2> {};
+    const auto visible_display_offset = state.primitive != nullptr
+        ? state.primitive->VisibleDisplayOffset()
+        : std::array<float, 2> {};
+
+    LOG_INFO("Debug%sRuntime: object-origin=%s object-scale=%s object-angles=%s anchor='%s' "
+             "copybackground=%s node-translate=%s node-scale=%s node-align=%s "
+             "visible-display=%s visible-source=%s visible-offset=%s cameras=%s targets=%s",
+             label,
+             FormatVec3ForLog(state.object.origin).c_str(),
+             FormatVec3ForLog(state.object.scale).c_str(),
+             FormatVec3ForLog(state.object.angles).c_str(),
+             state.object.anchor.c_str(),
+             state.object.copybackground ? "true" : "false",
+             node != nullptr ? FormatEigenVec3ForLog(node->Translate()).c_str() : "null",
+             node != nullptr ? FormatEigenVec3ForLog(node->Scale()).c_str() : "null",
+             node != nullptr ? FormatEigenVec3ForLog(node->AlignmentOffset()).c_str() : "null",
+             FormatVec2ForLog(visible_display_size).c_str(),
+             FormatVec2ForLog(visible_source_size).c_str(),
+             FormatVec2ForLog(visible_display_offset).c_str(),
+             runtime_cameras_it != scene.objectRuntimeCameraNames.end()
+                 ? FormatStringListForLog(runtime_cameras_it->second).c_str()
+                 : "[]",
+             runtime_targets_it != scene.objectRuntimeRenderTargets.end()
+                 ? FormatStringListForLog(runtime_targets_it->second).c_str()
+                 : "[]");
+}
+
 struct TextureAnimationState {
     SpriteAnimation base_animation;
     SpriteAnimation animation;
@@ -9383,6 +9478,12 @@ void WPSceneScriptHost::ApplyUserProperties(const UserPropertyMap& user_properti
     }
     m_impl->dispatched_user_properties = user_properties;
     JS_FreeValue(context, changed);
+
+    if (initial_dispatch && m_scene != nullptr) {
+        LogSceneTextLayerState(*m_scene, 258, "Text258");
+        LogSceneTextLayerState(*m_scene, 282, "Text282");
+        LogSceneLayer332State(*m_scene);
+    }
 
     m_impl->applying_user_properties = was_applying_user_properties;
     if (! m_impl->applying_user_properties) {
