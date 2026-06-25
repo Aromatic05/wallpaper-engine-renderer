@@ -26,6 +26,12 @@ typedef enum we_frame_kind_v1 {
     WE_FRAME_KIND_SHM    = 2,
 } we_frame_kind_v1;
 
+typedef enum we_pointer_event_v1 {
+    WE_POINTER_DOWN = 0,
+    WE_POINTER_UP   = 1,
+    WE_POINTER_MOVE = 2,
+} we_pointer_event_v1;
+
 typedef struct we_dmabuf_plane_v1 {
     int32_t  fd;
     uint32_t offset;
@@ -85,6 +91,11 @@ WE_RENDERER_API int32_t we_session_tick(we_session_t* session);
 
 WE_RENDERER_API int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame);
 WE_RENDERER_API void    we_frame_release(we_frame_v1* frame);
+
+WE_RENDERER_API int32_t we_session_send_pointer_event(we_session_t* session,
+                                                      uint32_t type,
+                                                      float    x,
+                                                      float    y);
 
 #ifdef __cplusplus
 }

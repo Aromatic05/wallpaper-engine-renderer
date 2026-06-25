@@ -1,9 +1,11 @@
 #include "wallpaper/abi/WeRenderer.h"
 
 #include "wallpaper/WallpaperSession.hpp"
+#include "wallpaper/InputEvent.hpp"
 #include "backend/BuiltinSessionFactory.hpp"
 #include "wallpaper/WallpaperRuntime.hpp"
 #include "wallpaper/scene/WEScene.hpp"
+#include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/Web.hpp"
 
 #include <algorithm>
@@ -86,7 +88,18 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     auto* state = as_state(session);
     if (!state || !state->session) return -1;
     auto result = state->session->load(make_source(source));
-    return to_error(result);
+    if (! result) return to_error(result);
+    if (source && source->assets_uri && *source->assets_uri) {
+        auto assets_result = state->session->setProperty(
+            wallpaper::WE_SCENE_PROPERTY_ASSETS, std::string(source->assets_uri));
+        if (! assets_result) return to_error(assets_result);
+    }
+    if (source && source->fps > 0) {
+        auto fps_result = state->session->setProperty(
+            wallpaper::WE_SCENE_PROPERTY_FPS, source->fps);
+        if (! fps_result) return to_error(fps_result);
+    }
+    return 0;
 }
 
 int32_t we_session_set_render_config(we_session_t* session, const we_render_config_v1* config) {
@@ -171,5 +184,22 @@ void we_frame_release(we_frame_v1* frame) {
             frame->planes[i].fd = -1;
         }
     }
+}
+
+int32_t we_session_send_pointer_event(we_session_t* session, uint32_t type, float x, float y) {
+    auto* state = as_state(session);
+    if (!state || !state->session) return -1;
+    wallpaper::InputEventType event_type;
+    switch (type) {
+    case WE_POINTER_DOWN: event_type = wallpaper::InputEventType::PointerDown; break;
+    case WE_POINTER_UP:   event_type = wallpaper::InputEventType::PointerUp;   break;
+    case WE_POINTER_MOVE: event_type = wallpaper::InputEventType::PointerMove; break;
+    default: return -1;
+    }
+    wallpaper::InputEvent event;
+    event.type     = event_type;
+    event.pointerX = x;
+    event.pointerY = y;
+    return to_error(state->session->sendInput(event));
 }
 } // extern "C"
