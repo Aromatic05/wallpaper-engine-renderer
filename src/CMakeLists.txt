@@ -28,7 +28,8 @@ add_subdirectory(backend/web)
 add_subdirectory(render)
 
 add_library(
-  ${PROJECT_NAME} STATIC
+  ${PROJECT_NAME} SHARED
+  abi/WeRenderer.cpp
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
   backend/BuiltinSessionFactory.cpp
@@ -55,4 +56,13 @@ target_include_directories(
   ${PROJECT_NAME}
   PUBLIC ../include common/utils/include
   PRIVATE . common)
+target_compile_options(
+  ${PROJECT_NAME}
+  PRIVATE
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden)
+target_link_options(
+  ${PROJECT_NAME}
+  PRIVATE
+    -Wl,--exclude-libs=ALL)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
