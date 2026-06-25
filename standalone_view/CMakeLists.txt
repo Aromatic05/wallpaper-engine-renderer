@@ -24,9 +24,6 @@ add_link_options(
     $<$<CONFIG:Debug>:-fsanitize=address>
 )
 
-include_directories(../third_party)
-add_subdirectory(.. scenebackend)
-
 pkg_check_modules(GLFW REQUIRED glfw3)
 add_executable(${PROJECT_NAME}
     glfwviewer.cpp
