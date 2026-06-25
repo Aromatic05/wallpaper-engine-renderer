@@ -433,7 +433,7 @@ int main() {
     text_state.object.size_explicit = true;
     std::string text_error;
     assert(wallpaper::BuildSceneTextPrimitive(
-        *scene.vfs, text_state.object, 1, 1.0, &text_state.primitive, &text_error));
+        *scene.vfs, text_state.object, 1, 1.0, 1.0, &text_state.primitive, &text_error));
     assert(text_state.primitive != nullptr);
     assert(!text_state.primitive->layout.glyph_pages.empty());
     text_state.primitive->bridge.enabled = true;
@@ -481,9 +481,9 @@ int main() {
     std::string baseline_error;
     std::string scaled_error;
     assert(wallpaper::BuildSceneTextPrimitive(
-        *scene.vfs, baseline_text, 1, 1.0, 768.0f, &baseline_primitive, &baseline_error));
+        *scene.vfs, baseline_text, 1, 1.0, 1.0, &baseline_primitive, &baseline_error));
     assert(wallpaper::BuildSceneTextPrimitive(
-        *scene.vfs, scaled_text, 1, 1.0, 2160.0f, &scaled_primitive, &scaled_error));
+        *scene.vfs, scaled_text, 1, 1.0, 2.0, &scaled_primitive, &scaled_error));
     assert(baseline_primitive != nullptr);
     assert(scaled_primitive != nullptr);
     assert(scaled_primitive->layout.glyph_display_size[0] >

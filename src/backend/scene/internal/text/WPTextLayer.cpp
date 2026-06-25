@@ -41,6 +41,13 @@ using namespace wallpaper;
 namespace
 {
 
+double ResolveBaseTextGeometryScale(double authoring_scale);
+double ResolveMeasuredTextGeometryScale(const wpscene::WPTextObject& object,
+                                        double                       base_geometry_scale,
+                                        int                          measured_width,
+                                        int                          measured_height);
+bool HasDirectionalTextScreenAnchor(const wpscene::WPTextObject& object);
+
 constexpr std::string_view kFontCacheDir { "/tmp/hanabi-scene-font-cache" };
 constexpr double kBaseTextResolutionDpi { 96.0 };
 constexpr float  kMinTextVisualScaleFactor { 0.0625f };
@@ -48,7 +55,6 @@ constexpr int    kTextGlyphAtlasMaxExtent { 1024 };
 constexpr int    kTextGlyphAtlasPadding { 1 };
 constexpr float  kScreenAnchoredTextStackGap { 1.0f };
 constexpr float  kTextPlacementEpsilon { 0.000001f };
-constexpr float  kWallpaperEngineTextSceneHeightBaseline { 768.0f };
 
 uint16_t ResolveTextMeshExtent(float value) {
     return static_cast<uint16_t>(std::max(1, static_cast<int>(std::lround(value))));
@@ -1784,7 +1790,7 @@ std::optional<TextGlyphAtlasBuildResult> BuildTextGlyphAtlas(
 
 bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
                              const std::string& texture_key, double render_scale,
-                             float scene_height,
+                             double authoring_scale,
                              TextRasterLayoutResult* out_image, std::string* out_error) {
     if (out_image == nullptr) return false;
 
@@ -1792,20 +1798,29 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
     const bool   input_size_explicit = object.size_explicit;
     const auto   font_family      = ResolveFontFamily(vfs, object.font).value_or("Sans");
     const auto   authored_padding = ResolveTextLayoutPadding(object);
-    const double scene_scale    = std::max(1.0, render_scale);
     const float  raster_density = ResolveTextRasterDensityFactor(object);
-    // Text layout has two deliberately different scale contracts. Glyphs are still shaped at the
-    // authored `pointsize` and then rasterized into a denser backing atlas, because that preserves
-    // the Wallpaper Engine font size that users see. The authored text box (`size`, `maxwidth`,
-    // and `padding`) is different: it is a display-space rectangle, so it must be converted down to
-    // the Pango layout coordinate space before wrapping is computed. Keeping these paths separate
-    // fixes HiDPI/effect text wrapping without shrinking the glyph quads themselves.
-    const double raster_scale =
-        std::max(static_cast<double>(kMinTextVisualScaleFactor),
-                 scene_scale * scene_scale * static_cast<double>(raster_density));
-    const double display_scale =
-        1.0 / static_cast<double>(std::max(raster_density, kMinTextVisualScaleFactor));
-    const double display_units_per_layout_unit = raster_scale * display_scale;
+    // Text has two scale contracts. `scene_geometry_scale` is the Wallpaper Engine scene-space
+    // conversion for glyph geometry; it is derived from authored scene data and is therefore stable
+    // when the desktop logical scale changes. `render_scale` only raises backing atlas density above
+    // that scene contract, so HiDPI output can get sharper text without resizing glyph quads, effect
+    // bridge targets, or script-visible text boxes. Keeping `display_units_per_layout_unit` equal to
+    // `scene_geometry_scale` preserves authored results without tying those results to the
+    // compositor's scale value.
+    double scene_geometry_scale = ResolveBaseTextGeometryScale(authoring_scale);
+    double backing_scale        = 1.0;
+    double raster_scale         = 1.0;
+    double display_scale        = 1.0;
+    double display_units_per_layout_unit = 1.0;
+    auto refresh_text_scales = [&]() {
+        backing_scale = std::max(std::max(1.0, render_scale), scene_geometry_scale);
+        raster_scale  = std::max(static_cast<double>(kMinTextVisualScaleFactor),
+                                 backing_scale * static_cast<double>(raster_density));
+        display_scale = scene_geometry_scale /
+                        std::max(raster_scale,
+                                 static_cast<double>(kMinTextVisualScaleFactor));
+        display_units_per_layout_unit = raster_scale * display_scale;
+    };
+    refresh_text_scales();
     auto scale_display_metric_to_layout_pixels = [&](double value, int minimum) {
         if (value <= 0.0) return minimum;
         return std::max(minimum,
@@ -1823,8 +1838,8 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
         scale_display_metric_to_layout_pixels(static_cast<double>(authored_padding[3]),
                                               authored_padding[3] > 0 ? 1 : 0),
     };
-    const int padding_horizontal = TextPaddingHorizontal(padding);
-    const int padding_vertical   = TextPaddingVertical(padding);
+    int padding_horizontal = TextPaddingHorizontal(padding);
+    int padding_vertical   = TextPaddingVertical(padding);
 
     auto* measure_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 4, 4);
     auto* measure_cr      = cairo_create(measure_surface);
@@ -1835,12 +1850,7 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
 
     pango_font_description_set_family(desc, font_family.c_str());
     const double authored_point_size = std::max(1.0, static_cast<double>(object.pointsize));
-    const double scene_point_scale =
-        std::max(1.0, static_cast<double>(scene_height)) /
-        static_cast<double>(kWallpaperEngineTextSceneHeightBaseline);
-    const double effective_point_size =
-        authored_point_size * scene_point_scale;
-    ApplyWallpaperEngineTextSize(desc, effective_point_size);
+    ApplyWallpaperEngineTextSize(desc, authored_point_size);
     pango_layout_set_font_description(measure_layout, desc);
 
     const int requested_max_width =
@@ -1861,6 +1871,25 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
     const int ink_overhang_bottom = std::max((ink_rect.y + ink_rect.height) - layout_height, 0);
     const int bounds_width  = std::max(layout_width + ink_overhang_left + ink_overhang_right, 1);
     const int bounds_height = std::max(layout_height + ink_overhang_top + ink_overhang_bottom, 1);
+
+    const double measured_geometry_scale =
+        ResolveMeasuredTextGeometryScale(object, scene_geometry_scale, bounds_width, bounds_height);
+    if (std::abs(measured_geometry_scale - scene_geometry_scale) > 0.000001) {
+        scene_geometry_scale = measured_geometry_scale;
+        refresh_text_scales();
+        padding = {
+            scale_display_metric_to_layout_pixels(static_cast<double>(authored_padding[0]),
+                                                  authored_padding[0] > 0 ? 1 : 0),
+            scale_display_metric_to_layout_pixels(static_cast<double>(authored_padding[1]),
+                                                  authored_padding[1] > 0 ? 1 : 0),
+            scale_display_metric_to_layout_pixels(static_cast<double>(authored_padding[2]),
+                                                  authored_padding[2] > 0 ? 1 : 0),
+            scale_display_metric_to_layout_pixels(static_cast<double>(authored_padding[3]),
+                                                  authored_padding[3] > 0 ? 1 : 0),
+        };
+        padding_horizontal = TextPaddingHorizontal(padding);
+        padding_vertical   = TextPaddingVertical(padding);
+    }
 
     int resolved_width =
         scale_display_metric_to_layout_pixels(static_cast<double>(object.size[0]), 1);
@@ -1909,7 +1938,7 @@ bool GenerateTextLayoutImage(fs::VFS& vfs, wpscene::WPTextObject& object,
     ApplyTextFontRenderOptions(cr, layout);
     ApplyTextResolution(layout);
     pango_font_description_set_family(draw_desc, font_family.c_str());
-    ApplyWallpaperEngineTextSize(draw_desc, effective_point_size);
+    ApplyWallpaperEngineTextSize(draw_desc, authored_point_size);
     pango_layout_set_font_description(layout, draw_desc);
 
     const int content_width      = std::max(width - padding_horizontal, 1);
@@ -2173,6 +2202,34 @@ bool HasDirectionalTextScreenAnchor(const wpscene::WPTextObject& object) {
     if (! HasExplicitTextScreenAnchor(object)) return false;
     return TextAnchorContains(object.anchor, "left") || TextAnchorContains(object.anchor, "right") ||
            TextAnchorContains(object.anchor, "top") || TextAnchorContains(object.anchor, "bottom");
+}
+
+double ResolveBaseTextGeometryScale(double authoring_scale) {
+    const double scene_authoring_scale =
+        std::max(static_cast<double>(kMinTextVisualScaleFactor), authoring_scale);
+    return std::max(static_cast<double>(kMinTextVisualScaleFactor),
+                    scene_authoring_scale * scene_authoring_scale);
+}
+
+double ResolveMeasuredTextGeometryScale(const wpscene::WPTextObject& object,
+                                        double                       base_geometry_scale,
+                                        int                          measured_width,
+                                        int                          measured_height) {
+    if (!HasDirectionalTextScreenAnchor(object) || object.limitwidth ||
+        !object.size_explicit || object.size[0] <= 0.0f || object.size[1] <= 0.0f) {
+        return base_geometry_scale;
+    }
+    if (measured_height > 0) {
+        return std::max(base_geometry_scale,
+                        static_cast<double>(object.size[1]) /
+                            static_cast<double>(measured_height));
+    }
+    if (measured_width > 0) {
+        return std::max(base_geometry_scale,
+                        static_cast<double>(object.size[0]) /
+                            static_cast<double>(measured_width));
+    }
+    return base_geometry_scale;
 }
 
 std::string ResolveTextContentAlignment(const wpscene::WPTextObject& object) {
@@ -2633,7 +2690,7 @@ std::optional<WPDynamicValue> wallpaper::ReadTextLayerProperty(const TextLayerRu
 }
 
 bool wallpaper::ApplyTextLayerDisplaySize(TextLayerRuntimeState& state,
-                                          std::array<float, 2> display_size, double render_scale) {
+                                          std::array<float, 2> display_size) {
     display_size[0] = std::max(display_size[0], 1.0f);
     display_size[1] = std::max(display_size[1], 1.0f);
 
@@ -2642,7 +2699,6 @@ bool wallpaper::ApplyTextLayerDisplaySize(TextLayerRuntimeState& state,
     // geometry until the caller chooses one of the explicit runtime actions. The rasterizer owns
     // the display-space to Pango-layout conversion, so runtime scripts can round-trip
     // `thisLayer.size` without receiving or storing hidden HiDPI layout units.
-    (void)render_scale;
     state.object.size_explicit = true;
     return true;
 }
@@ -3075,7 +3131,7 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
                                         wpscene::WPTextObject&           object,
                                         uint32_t                         texture_version,
                                         double                           render_scale,
-                                        float                            scene_height,
+                                        double                           authoring_scale,
                                         std::shared_ptr<SceneTextPrimitive>* out_primitive,
                                         std::string*                     out_error) {
     if (out_primitive == nullptr) return false;
@@ -3085,7 +3141,7 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
                                       object,
                                       MakeTextLayerTextureKey(object.id),
                                       render_scale,
-                                      scene_height,
+                                      authoring_scale,
                                       &generated,
                                       out_error)) {
         return false;
@@ -3114,17 +3170,6 @@ bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
     return true;
 }
 
-bool wallpaper::BuildSceneTextPrimitive(fs::VFS&                         vfs,
-                                        wpscene::WPTextObject&           object,
-                                        uint32_t                         texture_version,
-                                        double                           render_scale,
-                                        std::shared_ptr<SceneTextPrimitive>* out_primitive,
-                                        std::string*                     out_error) {
-    return BuildSceneTextPrimitive(
-        vfs, object, texture_version, render_scale, kWallpaperEngineTextSceneHeightBaseline,
-        out_primitive, out_error);
-}
-
 bool wallpaper::SyncTextLayerSceneMaterials(Scene& scene, int32_t layer_id) {
     auto state_it = scene.textLayers.find(layer_id);
     if (state_it == scene.textLayers.end()) return false;
@@ -3145,24 +3190,13 @@ bool wallpaper::RasterizeTextPrimitiveLayout(fs::VFS& vfs,
                                              wpscene::WPTextObject& object,
                                              const std::string& texture_key,
                                              double render_scale,
-                                             float scene_height,
+                                             double authoring_scale,
                                              TextRasterLayoutResult* out_image,
                                              std::string* out_error) {
     // Production text rasterization is deliberately silent; failures travel through `out_error`
     // so callers can decide how to surface hard rasterization errors.
     return GenerateTextLayoutImage(
-        vfs, object, texture_key, render_scale, scene_height, out_image, out_error);
-}
-
-bool wallpaper::RasterizeTextPrimitiveLayout(fs::VFS& vfs,
-                                             wpscene::WPTextObject& object,
-                                             const std::string& texture_key,
-                                             double render_scale,
-                                             TextRasterLayoutResult* out_image,
-                                             std::string* out_error) {
-    return RasterizeTextPrimitiveLayout(
-        vfs, object, texture_key, render_scale, kWallpaperEngineTextSceneHeightBaseline,
-        out_image, out_error);
+        vfs, object, texture_key, render_scale, authoring_scale, out_image, out_error);
 }
 
 bool wallpaper::UpdateTextLayerSceneTransform(Scene& scene, int32_t layer_id) {
@@ -3336,7 +3370,7 @@ bool wallpaper::RebuildTextLayerSceneLayout(Scene& scene, int32_t layer_id) {
                                  state.object,
                                  next_texture_version,
                                  scene.textRenderScale,
-                                 static_cast<float>(std::max(scene.ortho[1], 1)),
+                                 scene.textAuthoringScale,
                                  &rebuilt_primitive,
                                  &error)) {
         return false;

@@ -59,6 +59,22 @@ using namespace Eigen;
 
 std::string getAddr(void* p) { return std::to_string(reinterpret_cast<intptr_t>(p)); }
 
+double ResolveSceneTextAuthoringScale(i32 ortho_w, i32 ortho_h) {
+    const wpscene::WPSceneGeneral default_general;
+    const double default_width =
+        static_cast<double>(std::max(1, default_general.orthogonalprojection.width));
+    const double default_height =
+        static_cast<double>(std::max(1, default_general.orthogonalprojection.height));
+    const double scene_width  = static_cast<double>(std::max(1, ortho_w));
+    const double scene_height = static_cast<double>(std::max(1, ortho_h));
+
+    // Wallpaper Engine text point sizes are authored in the editor's logical text-pixel contract,
+    // while scene coordinates can be larger than the editor's default canvas. Keep this conversion
+    // in the parser, next to the scene projection data, so WPTextLayer only consumes a semantic
+    // authoring scale and never has to know about scene.json projection defaults or desktop scale.
+    return std::max(1.0, std::min(scene_width / default_width, scene_height / default_height));
+}
+
 uint32_t HashParticleFrameFloat(uint32_t seed, float value) {
     uint32_t bits { 0 };
     std::memcpy(&bits, &value, sizeof(bits));
@@ -4856,7 +4872,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             text_obj,
             0,
             context.scene->textRenderScale,
-            static_cast<float>(std::max(context.ortho_h, 1)),
+            context.scene->textAuthoringScale,
             &primitive,
             &error)) {
         LOG_ERROR("build text primitive '%s' failed: %s", text_obj.name.c_str(), error.c_str());
@@ -7743,6 +7759,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     // This removes the guaranteed scene-load rerender that used to happen later on the
     // render thread just to rebuild the same text at a different device scale.
     context.scene->textRenderScale             = std::max(1.0, text_render_scale);
+    context.scene->textAuthoringScale          =
+        ResolveSceneTextAuthoringScale(context.ortho_w, context.ortho_h);
     context.scene->offscreenDependencyLayerIds = dependency_source_ids;
     if (user_properties) {
         context.scene->userProperties = *user_properties;

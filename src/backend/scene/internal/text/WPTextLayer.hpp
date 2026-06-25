@@ -94,8 +94,7 @@ bool        HasTextLayerProperty(std::string_view property_name);
 std::optional<WPDynamicValue> ReadTextLayerProperty(const TextLayerRuntimeState& state,
                                                     std::string_view             property_name);
 bool ApplyTextLayerDisplaySize(TextLayerRuntimeState& state,
-                               std::array<float, 2>   display_size,
-                               double                 render_scale);
+                               std::array<float, 2>   display_size);
 bool ApplyTextLayerPropertyValue(TextLayerRuntimeState& state,
                                  std::string_view       property_name,
                                  const WPDynamicValue&  value);
@@ -104,26 +103,14 @@ bool RasterizeTextPrimitiveLayout(fs::VFS&                 vfs,
                                   wpscene::WPTextObject&   object,
                                   const std::string&       texture_key,
                                   double                   render_scale,
-                                  float                    scene_height,
-                                  TextRasterLayoutResult*  out_image,
-                                  std::string*             out_error = nullptr);
-bool RasterizeTextPrimitiveLayout(fs::VFS&                 vfs,
-                                  wpscene::WPTextObject&   object,
-                                  const std::string&       texture_key,
-                                  double                   render_scale,
+                                  double                   authoring_scale,
                                   TextRasterLayoutResult*  out_image,
                                   std::string*             out_error = nullptr);
 bool BuildSceneTextPrimitive(fs::VFS&                         vfs,
                              wpscene::WPTextObject&           object,
                              uint32_t                         texture_version,
                              double                           render_scale,
-                             float                            scene_height,
-                             std::shared_ptr<SceneTextPrimitive>* out_primitive,
-                             std::string*                     out_error = nullptr);
-bool BuildSceneTextPrimitive(fs::VFS&                         vfs,
-                             wpscene::WPTextObject&           object,
-                             uint32_t                         texture_version,
-                             double                           render_scale,
+                             double                           authoring_scale,
                              std::shared_ptr<SceneTextPrimitive>* out_primitive,
                              std::string*                     out_error = nullptr);
 void RebuildTextPrimitiveVisibleMesh(SceneMesh* mesh, const SceneTextPrimitive& primitive);

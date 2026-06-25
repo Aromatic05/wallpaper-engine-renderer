@@ -18,7 +18,7 @@ int main() {
 
     wallpaper::fs::VFS vfs;
     std::string error;
-    assert(wallpaper::BuildSceneTextPrimitive(vfs, state.object, 1, 1.0, &state.primitive, &error));
+    assert(wallpaper::BuildSceneTextPrimitive(vfs, state.object, 1, 1.0, 1.0, &state.primitive, &error));
     assert(state.primitive != nullptr);
     assert(!state.primitive->layout.glyph_pages.empty());
     assert(!state.primitive->layout.glyph_runs.empty());
@@ -39,7 +39,7 @@ int main() {
     assert(state.object.text == "after");
     assert(state.primitive->object.text == "before");
 
-    assert(wallpaper::ApplyTextLayerDisplaySize(state, { 200.0f, 50.0f }, 1.0));
+    assert(wallpaper::ApplyTextLayerDisplaySize(state, { 200.0f, 50.0f }));
     assert(state.object.size[0] == 200.0f);
     assert(state.object.size_explicit);
     assert(state.primitive->layout.visible_display_size[1] != 50.0f);
