@@ -21,6 +21,7 @@ if(BUILD_WEWEB)
     set(CEF_LIB_NAME wpWebBrowserHost)
     add_library(${CEF_LIB_NAME} STATIC
         internal/cef/AppHandler.cpp
+        internal/cef/BrowserHost.cpp
         internal/cef/ClientHandler.cpp
         internal/cef/OsrRenderHandler.cpp
         internal/cef/UserProperties.cpp)
