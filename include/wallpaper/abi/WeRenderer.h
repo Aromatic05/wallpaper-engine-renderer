@@ -26,6 +26,32 @@ typedef enum we_pointer_event_v1 {
     WE_POINTER_MOVE = 2,
 } we_pointer_event_v1;
 
+typedef enum we_input_event_type_v2 {
+    WE_INPUT_POINTER_MOVE = 0,
+    WE_INPUT_POINTER_DOWN = 1,
+    WE_INPUT_POINTER_UP   = 2,
+    WE_INPUT_POINTER_WHEEL = 3,
+    WE_INPUT_KEY_DOWN     = 4,
+    WE_INPUT_KEY_UP       = 5,
+    WE_INPUT_FOCUS        = 6,
+} we_input_event_type_v2;
+
+typedef struct we_input_event_v2 {
+    uint32_t size;
+    uint32_t version;
+    uint32_t type;
+    float pointer_x;
+    float pointer_y;
+    int32_t button;
+    int32_t wheel_delta_x;
+    int32_t wheel_delta_y;
+    int32_t key_code;
+    int32_t native_key_code;
+    int32_t modifiers;
+    uint32_t unicode_char;
+    bool focused;
+} we_input_event_v2;
+
 typedef struct we_dmabuf_plane_v1 {
     int32_t  fd;
     uint32_t offset;
@@ -94,6 +120,8 @@ WE_RENDERER_API int32_t we_session_send_pointer_event(we_session_t* session,
                                                       uint32_t type,
                                                       float    x,
                                                       float    y);
+WE_RENDERER_API int32_t we_session_send_input_event(we_session_t* session,
+                                                    const we_input_event_v2* event);
 
 #ifdef __cplusplus
 }

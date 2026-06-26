@@ -410,4 +410,50 @@ int32_t we_session_send_pointer_event(we_session_t* session, uint32_t type, floa
     event.pointerY = y;
     return to_error(state->session->sendInput(event));
 }
+
+int32_t we_session_send_input_event(we_session_t* session, const we_input_event_v2* event) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! event) return -1;
+    if (event->version != 2) return -1;
+    if (event->size < sizeof(we_input_event_v2)) return -1;
+
+    wallpaper::InputEvent input;
+    switch (event->type) {
+    case WE_INPUT_POINTER_MOVE:
+        input.type = wallpaper::InputEventType::PointerMove;
+        break;
+    case WE_INPUT_POINTER_DOWN:
+        input.type = wallpaper::InputEventType::PointerDown;
+        break;
+    case WE_INPUT_POINTER_UP:
+        input.type = wallpaper::InputEventType::PointerUp;
+        break;
+    case WE_INPUT_POINTER_WHEEL:
+        input.type = wallpaper::InputEventType::PointerWheel;
+        break;
+    case WE_INPUT_KEY_DOWN:
+        input.type = wallpaper::InputEventType::KeyDown;
+        break;
+    case WE_INPUT_KEY_UP:
+        input.type = wallpaper::InputEventType::KeyUp;
+        break;
+    case WE_INPUT_FOCUS:
+        input.type = event->focused ? wallpaper::InputEventType::FocusGained
+                                    : wallpaper::InputEventType::FocusLost;
+        break;
+    default:
+        return -1;
+    }
+
+    input.pointerX = event->pointer_x;
+    input.pointerY = event->pointer_y;
+    input.button = event->button;
+    input.wheelDeltaX = event->wheel_delta_x;
+    input.wheelDeltaY = event->wheel_delta_y;
+    input.keyCode = event->key_code;
+    input.nativeKeyCode = event->native_key_code;
+    input.modifiers = event->modifiers;
+    input.unicodeChar = event->unicode_char;
+    return to_error(state->session->sendInput(input));
+}
 } // extern "C"

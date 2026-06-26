@@ -168,8 +168,11 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
         m_runtimeDriver.mouseInput(event.pointerX, event.pointerY);
         m_runtimeDriver.mouseButton(false);
         return Result<void>::success();
+    case InputEventType::PointerWheel:
     case InputEventType::KeyDown:
     case InputEventType::KeyUp:
+    case InputEventType::FocusGained:
+    case InputEventType::FocusLost:
     case InputEventType::Custom:
         return Result<void>::failure(ResultCode::NotSupported,
                                      "scene backend currently supports pointer input only");

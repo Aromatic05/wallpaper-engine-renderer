@@ -291,17 +291,46 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
         return Result<void>::success();
     case InputEventType::PointerDown:
         m_browserHost->OnMouseMove(px, py, /*left_down=*/true);
-        m_browserHost->OnMouseButton(px, py, /*cef_button=*/0, /*down=*/true, /*click_count=*/1);
+        m_browserHost->OnMouseButton(px,
+                                     py,
+                                     std::clamp(event.button, 0, 2),
+                                     /*down=*/true,
+                                     /*click_count=*/1);
         return Result<void>::success();
     case InputEventType::PointerUp:
         m_browserHost->OnMouseMove(px, py, /*left_down=*/false);
-        m_browserHost->OnMouseButton(px, py, /*cef_button=*/0, /*down=*/false, /*click_count=*/1);
+        m_browserHost->OnMouseButton(px,
+                                     py,
+                                     std::clamp(event.button, 0, 2),
+                                     /*down=*/false,
+                                     /*click_count=*/1);
+        return Result<void>::success();
+    case InputEventType::PointerWheel:
+        m_browserHost->OnMouseWheel(px, py, event.wheelDeltaX, event.wheelDeltaY);
         return Result<void>::success();
     case InputEventType::KeyDown:
+        m_browserHost->OnKey(/*cef_key_event_type=*/0,
+                             event.nativeKeyCode != 0 ? event.nativeKeyCode : event.keyCode,
+                             event.keyCode,
+                             event.modifiers,
+                             event.unicodeChar);
+        return Result<void>::success();
     case InputEventType::KeyUp:
+        m_browserHost->OnKey(/*cef_key_event_type=*/2,
+                             event.nativeKeyCode != 0 ? event.nativeKeyCode : event.keyCode,
+                             event.keyCode,
+                             event.modifiers,
+                             event.unicodeChar);
+        return Result<void>::success();
+    case InputEventType::FocusGained:
+        m_browserHost->OnFocus(true);
+        return Result<void>::success();
+    case InputEventType::FocusLost:
+        m_browserHost->OnFocus(false);
+        return Result<void>::success();
     case InputEventType::Custom:
         return Result<void>::failure(ResultCode::NotSupported,
-                                     "web backend currently supports pointer input only");
+                                     "web backend does not support custom input payloads");
     }
     return Result<void>::failure(ResultCode::NotSupported, "unknown input event type");
 }

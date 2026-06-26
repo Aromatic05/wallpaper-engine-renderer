@@ -168,10 +168,42 @@ int main() {
     down.type = wallpaper::InputEventType::PointerDown;
     down.pointerX = 100.0;
     down.pointerY = 200.0;
+    down.button = 2;
     assert(backend->sendInput(down));
     assert(mock->mouse_button_x == 100);
     assert(mock->mouse_button_y == 200);
+    assert(mock->mouse_button_cef == 2);
     assert(mock->mouse_button_down);
+
+    wallpaper::InputEvent wheel;
+    wheel.type = wallpaper::InputEventType::PointerWheel;
+    wheel.pointerX = 12.0;
+    wheel.pointerY = 34.0;
+    wheel.wheelDeltaX = -5;
+    wheel.wheelDeltaY = 120;
+    assert(backend->sendInput(wheel));
+    assert(mock->wheel_x == 12);
+    assert(mock->wheel_y == 34);
+    assert(mock->wheel_delta_x == -5);
+    assert(mock->wheel_delta_y == 120);
+
+    wallpaper::InputEvent keyDown;
+    keyDown.type = wallpaper::InputEventType::KeyDown;
+    keyDown.keyCode = 65;
+    keyDown.nativeKeyCode = 38;
+    keyDown.modifiers = 4;
+    keyDown.unicodeChar = 'A';
+    assert(backend->sendInput(keyDown));
+    assert(mock->last_key_type == 0);
+    assert(mock->last_native_key_code == 38);
+    assert(mock->last_windows_key_code == 65);
+    assert(mock->last_key_modifiers == 4);
+    assert(mock->last_unicode_char == 'A');
+
+    wallpaper::InputEvent focusLost;
+    focusLost.type = wallpaper::InputEventType::FocusLost;
+    assert(backend->sendInput(focusLost));
+    assert(mock->hasCall("OnFocus"));
 
     // Pause / resume forward to SetPaused.
     assert(session->pause());

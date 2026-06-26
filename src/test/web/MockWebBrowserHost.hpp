@@ -49,6 +49,15 @@ public:
     int                                   mouse_button_cef { 0 };
     bool                                  mouse_button_down { false };
     int                                   mouse_button_clicks { 0 };
+    int                                   wheel_x { 0 };
+    int                                   wheel_y { 0 };
+    int                                   wheel_delta_x { 0 };
+    int                                   wheel_delta_y { 0 };
+    int                                   last_key_type { -1 };
+    int                                   last_native_key_code { 0 };
+    int                                   last_windows_key_code { 0 };
+    int                                   last_key_modifiers { 0 };
+    unsigned int                          last_unicode_char { 0 };
     float                                 last_volume { 0.0f };
     int                                   last_fps { 0 };
     bool                                  last_paused { false };
@@ -110,12 +119,21 @@ public:
         mouse_button_clicks  = click_count;
     }
 
-    void OnMouseWheel(int /*x*/, int /*y*/, int /*dx*/, int /*dy*/) override {
+    void OnMouseWheel(int x, int y, int dx, int dy) override {
         calls.push_back({"OnMouseWheel"});
+        wheel_x = x;
+        wheel_y = y;
+        wheel_delta_x = dx;
+        wheel_delta_y = dy;
     }
 
-    void OnKey(int /*type*/, int /*native*/, int /*vk*/, int /*mod*/, unsigned int /*u*/) override {
+    void OnKey(int type, int native, int vk, int mod, unsigned int u) override {
         calls.push_back({"OnKey"});
+        last_key_type = type;
+        last_native_key_code = native;
+        last_windows_key_code = vk;
+        last_key_modifiers = mod;
+        last_unicode_char = u;
     }
 
     void OnFocus(bool gained) override {

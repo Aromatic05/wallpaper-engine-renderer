@@ -59,6 +59,17 @@ if(BUILD_WEWEB)
     target_compile_options(web-user-properties-test PRIVATE ${warn_opts})
 
     add_test(NAME web-user-properties-test COMMAND web-user-properties-test)
+
+    add_executable(
+      we-renderer-input-event-test
+      we_renderer_input_event_test.cpp
+      ../abi/WeRenderer.cpp)
+
+    target_link_libraries(we-renderer-input-event-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(we-renderer-input-event-test PRIVATE .. web)
+    target_compile_options(we-renderer-input-event-test PRIVATE ${warn_opts})
+
+    add_test(NAME we-renderer-input-event-test COMMAND we-renderer-input-event-test)
 endif()
 
 # Optional real-CEF smoke test. Off by default because the host
