@@ -17,9 +17,13 @@ public:
         switch (type) {
         case BackendType::WEScene:
             return CreateWESceneBackend(context);
-#if BUILD_WEWEB
         case BackendType::Web:
+#if BUILD_WEWEB
             return CreateWebBackend(context);
+#else
+            return Result<std::unique_ptr<ContentBackend>>::failure(
+                ResultCode::NotSupported,
+                "web backend is not built in this configuration (rebuild with -DBUILD_WEWEB=ON)");
 #endif
         case BackendType::Image:
         case BackendType::Video:
@@ -27,16 +31,6 @@ public:
                 ResultCode::NotSupported,
                 "requested backend is not registered in builtin backend factory");
         }
-
-        // Web backend is the only case that needs a non-fallthrough
-        // default when BUILD_WEWEB=OFF.
-#if !BUILD_WEWEB
-        if (type == BackendType::Web) {
-            return Result<std::unique_ptr<ContentBackend>>::failure(
-                ResultCode::NotSupported,
-                "web backend is not built in this configuration (rebuild with -DBUILD_WEWEB=ON)");
-        }
-#endif
 
         return Result<std::unique_ptr<ContentBackend>>::failure(ResultCode::NotSupported,
                                                                 "unknown backend type");
