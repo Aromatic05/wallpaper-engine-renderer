@@ -301,3 +301,4 @@ if(BUILD_TESTING)
 endif()
 
 add_subdirectory(standalone_view)
+add_subdirectory(standalone_layer_view)
