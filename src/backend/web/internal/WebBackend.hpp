@@ -18,6 +18,7 @@ namespace wallpaper
 class WebBrowserHost;
 class WebOutputBinding;
 class WebOutputSource;
+class WebFrameSwapchain;
 struct WebManifestData;
 
 class WebBackend final : public ContentBackend {
@@ -75,6 +76,7 @@ private:
     std::shared_ptr<SharedState>         m_sharedState;
     std::unique_ptr<WebOutputSource>     m_outputSource;
     std::shared_ptr<WebOutputBinding>    m_renderBinding;
+    std::unique_ptr<WebFrameSwapchain>   m_frameSwapchain;
     DiagnosticsSnapshot                  m_diagnostics;
 };
 } // namespace wallpaper

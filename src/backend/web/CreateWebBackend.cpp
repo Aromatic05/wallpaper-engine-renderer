@@ -53,6 +53,7 @@ std::filesystem::path resolveDefaultCefHelperPath() {
     candidates.push_back(std::filesystem::current_path() / "we-cef-helper");
     candidates.push_back(std::filesystem::current_path() / "build" / "src" / "backend" / "web" / "we-cef-helper");
     candidates.push_back(std::filesystem::current_path() / "build-check" / "src" / "backend" / "web" / "we-cef-helper");
+    candidates.push_back(std::filesystem::current_path() / "build-web-check" / "src" / "backend" / "web" / "we-cef-helper");
     return firstExistingRegularFile(candidates);
 }
 

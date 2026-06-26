@@ -1,8 +1,8 @@
 #include "api/WallpaperRuntime.hpp"
 #include "api/web/Web.hpp"
-#include "backend/BuiltinSessionFactory.hpp"
 #include "backend/web/CreateWebBackend.hpp"
 #include "backend/web/internal/WebBackend.hpp"
+#include "runtime/backend/BackendFactory.hpp"
 #include "wallpaper/VulkanOutputInit.hpp"
 #include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/WebOutputBinding.hpp"
@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <unistd.h>
+#include <drm/drm_fourcc.h>
 
 namespace
 {
@@ -41,20 +42,40 @@ struct WorkshopFixture {
         std::filesystem::remove_all(dir, ec);
     }
 };
+
+class SingleBackendFactory final : public wallpaper::BackendFactory {
+public:
+    explicit SingleBackendFactory(std::unique_ptr<wallpaper::ContentBackend> backend)
+        : backend_(std::move(backend)) {}
+
+    wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>> create(
+        wallpaper::BackendType, const wallpaper::BackendContext&) override {
+        if (! backend_) {
+            return wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>>::failure(
+                wallpaper::ResultCode::InvalidState, "test backend was already consumed");
+        }
+        return wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>>::success(
+            std::move(backend_));
+    }
+
+private:
+    std::unique_ptr<wallpaper::ContentBackend> backend_;
+};
+
+void require(bool condition) {
+    if (! condition) {
+        std::fprintf(stderr, "web_backend_contract_test: requirement failed\n");
+        std::abort();
+    }
+}
 } // namespace
 
 int main() {
     WorkshopFixture workshop;
 
     wallpaper::WallpaperRuntime runtime;
-    auto                        session = wallpaper::CreateBuiltinSession(runtime, {});
-    assert(session);
-
-    // The BuiltinBackendFactory's Web case requires a real WebBackend
-    // to be available (i.e. -DBUILD_WEWEB=ON). The CMake gate on the
-    // test target guarantees this.
     auto rawBackend = wallpaper::CreateWebBackend(wallpaper::BackendContext {});
-    assert(rawBackend);
+    require(static_cast<bool>(rawBackend));
     auto* backend = static_cast<wallpaper::WebBackend*>(rawBackend.value().get());
 
     // Replace the BrowserHost with a recording fake so the test
@@ -63,11 +84,17 @@ int main() {
     auto mock = std::make_shared<wallpaper::test::MockWebBrowserHost>();
     backend->testSetBrowserHost(mock);
 
+    wallpaper::SessionConfig sessionConfig {};
+    sessionConfig.backendFactory =
+        std::make_shared<SingleBackendFactory>(std::move(rawBackend.value()));
+    auto session = runtime.createSession(sessionConfig);
+    require(static_cast<bool>(session));
+
     // Load: parses the workshop project.json and stores the manifest.
-    wallpaper::WebSourceConfig config;
-    config.uri = workshop.dir.string();
-    auto loadResult = session->load(wallpaper::MakeWebWallpaperSource(config));
-    assert(loadResult);
+    wallpaper::WebSourceConfig sourceConfig;
+    sourceConfig.uri = workshop.dir.string();
+    auto loadResult = session->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
+    require(static_cast<bool>(loadResult));
 
     // Render config + bind: required before start().
     wallpaper::RenderInitInfo info {};
@@ -83,16 +110,18 @@ int main() {
     target.width = 640;
     target.height = 480;
     auto bindResult = session->bindOutput(target);
-    assert(bindResult);
+    require(static_cast<bool>(bindResult));
 
     // Start: begin the CEF lifecycle (Init, OpenWallpaper) — the mock records every call without
     // touching CEF.
     auto playResult = session->play();
-    assert(playResult);
+    require(static_cast<bool>(playResult));
 
     // Init runs before OpenWallpaper.
-    assert(mock->hasCall("Init"));
-    assert(mock->hasCall("OpenWallpaper"));
+    require(mock->hasCall("Init"));
+    require(mock->hasCall("SetAcceleratedPaintCallback"));
+    require(mock->hasCall("OpenWallpaper"));
+    require(mock->has_accelerated_paint_callback);
 
     // The manifest was forwarded verbatim: entry_html is "index.html",
     // the user_props_json round-trips the {color: {type, value}} object.
@@ -147,6 +176,37 @@ int main() {
     // Update -> Pump.
     assert(session->update());
     assert(mock->callCount("Pump") >= 1);
+    assert(mock->callCount("Invalidate") >= 1);
+
+    // Accelerated paint callback drives real frame availability into the
+    // attached WebOutputBinding swapchain.
+    const int frame_fd = ::dup(STDOUT_FILENO);
+    assert(frame_fd >= 0);
+    wallpaper::DmaBufFrame frame {};
+    frame.plane_count = 1;
+    frame.planes[0].fd = frame_fd;
+    frame.planes[0].stride = 640 * 4;
+    frame.planes[0].offset = 0;
+    frame.modifier = static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR);
+    frame.format = wallpaper::DmaBufFormat::RGBA8_UNORM;
+    frame.coded_width = 640;
+    frame.coded_height = 480;
+    frame.visible_width = 640;
+    frame.visible_height = 480;
+    mock->accelerated_paint_callback(frame);
+
+    auto lifecycle = backend->tick();
+    assert(lifecycle);
+    assert(lifecycle.value().frameRequested);
+    assert(binding->swapchain() != nullptr);
+    auto* ex_frame = binding->swapchain()->eatFrame();
+    assert(ex_frame != nullptr);
+    assert(ex_frame->isDmabuf());
+    assert(ex_frame->width == 640);
+    assert(ex_frame->height == 480);
+    assert(ex_frame->drm_fourcc == DRM_FORMAT_ABGR8888);
+    assert(ex_frame->planes[0].fd >= 0);
+    ::close(frame_fd);
 
     // Stop -> Shutdown.
     assert(session->stop());

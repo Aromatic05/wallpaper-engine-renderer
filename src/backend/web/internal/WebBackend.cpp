@@ -1,6 +1,7 @@
 #include "backend/web/internal/WebBackend.hpp"
 
 #include "backend/web/internal/Manifest.hpp"
+#include "backend/web/internal/WebFrameSwapchain.hpp"
 #include "backend/web/internal/WebRenderPlan.hpp"
 
 #include "wallpaper/scene/WESceneContract.hpp"
@@ -49,6 +50,9 @@ WebBackend::WebBackend(const BackendContext&              context,
                                          "web render plan requires a WebOutputBinding");
         }
         m_renderBinding = std::move(binding);
+        const auto& renderInfo = m_renderBinding->renderInitInfo();
+        m_frameSwapchain = std::make_unique<WebFrameSwapchain>(renderInfo.width, renderInfo.height);
+        m_renderBinding->attachSwapchain(m_frameSwapchain.get());
         shared->outputBound.store(true);
         shared->outputStateChanged.store(true);
         if (shared->readyState.load() == BackendReadyState::Loaded) {
@@ -190,6 +194,15 @@ Result<void> WebBackend::start() {
         width  = m_renderBinding->renderInitInfo().width;
         height = m_renderBinding->renderInitInfo().height;
     }
+    m_browserHost->SetAcceleratedPaintCallback([this](const DmaBufFrame& frame) {
+        if (! m_frameSwapchain) return;
+        if (! m_frameSwapchain->publishFrame(frame)) {
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "web backend failed to publish accelerated paint frame");
+            return;
+        }
+        m_sharedState->frameRequested.store(true);
+    });
     if (! m_browserHost->OpenWallpaper(*m_manifest, m_workshopDir, width, height)) {
         return Result<void>::failure(ResultCode::InternalError, "CEF CreateBrowser failed");
     }
@@ -213,6 +226,8 @@ Result<void> WebBackend::resume() {
 Result<void> WebBackend::stop() {
     if (m_browserHost) m_browserHost->Shutdown();
     m_browserHost.reset();
+    if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
+    m_frameSwapchain.reset();
     m_sharedState->readyState.store(BackendReadyState::Idle);
     m_sharedState->outputBound.store(false);
     return Result<void>::success();
@@ -284,18 +299,15 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
 }
 
 Result<void> WebBackend::update() {
-    if (m_browserHost) m_browserHost->Pump();
+    if (m_browserHost) {
+        m_browserHost->Invalidate();
+        m_browserHost->Pump();
+    }
     return Result<void>::success();
 }
 
 Result<bool> WebBackend::produceFrame() {
-    // Frame delivery through BrowserHost's accelerated-paint sink into
-    // the WebOutputBinding's ExSwapchain is the next stage; until
-    // that lands, the backend reports "no frame" so the C ABI's
-    // we_session_acquire_frame returns 1 (none available) rather
-    // than surfacing fake data.
-    const bool requested = m_sharedState->frameRequested.exchange(false);
-    return Result<bool>::success(requested);
+    return Result<bool>::success(m_sharedState->frameRequested.exchange(false));
 }
 
 Result<OutputSource*> WebBackend::acquireOutput() {
