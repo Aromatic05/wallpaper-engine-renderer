@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -20,9 +21,10 @@
 #include <utility>
 #include <vector>
 
+#include "fractional-scale-v1-client-protocol.h"
 #include "linux-dmabuf-v1-client-protocol.h"
+#include "viewporter-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
-#include "xdg-shell-client-protocol.h"
 
 namespace {
 
@@ -31,6 +33,7 @@ constexpr std::uint32_t kLayerSurfaceAnchors =
     ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
     ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
     ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+constexpr std::uint32_t kFractionalScaleDenominator = 120;
 
 struct WaylandBuffer {
     wl_buffer* buffer { nullptr };
@@ -44,14 +47,24 @@ struct WaylandState {
     wl_compositor*          compositor { nullptr };
     wl_surface*             surface { nullptr };
     wl_output*              output { nullptr };
+    wp_viewporter*          viewporter { nullptr };
+    wp_viewport*            viewport { nullptr };
     zwlr_layer_shell_v1*    layer_shell { nullptr };
     zwlr_layer_surface_v1*  layer_surface { nullptr };
     zwp_linux_dmabuf_v1*    dmabuf { nullptr };
+    wp_fractional_scale_manager_v1* fractional_scale_manager { nullptr };
+    wp_fractional_scale_v1* fractional_scale { nullptr };
     std::uint32_t           dmabuf_version { 0 };
     std::uint32_t           compositor_version { 0 };
     std::uint32_t           output_count { 0 };
-    std::uint32_t           surface_width { 0 };
-    std::uint32_t           surface_height { 0 };
+    std::uint32_t           output_scale { 1 };
+    std::uint32_t           preferred_fractional_scale { 0 };
+    std::uint32_t           output_mode_width { 0 };
+    std::uint32_t           output_mode_height { 0 };
+    std::uint32_t           logical_width { 0 };
+    std::uint32_t           logical_height { 0 };
+    std::uint32_t           render_width { 0 };
+    std::uint32_t           render_height { 0 };
     std::uint32_t           fallback_width { 0 };
     std::uint32_t           fallback_height { 0 };
     bool                    running { true };
@@ -109,6 +122,36 @@ void collectReleasedBuffers(WaylandState& state) {
     }
 }
 
+double renderScaleFactor(const WaylandState& state) {
+    if (state.preferred_fractional_scale >= kFractionalScaleDenominator) {
+        return static_cast<double>(state.preferred_fractional_scale) /
+               static_cast<double>(kFractionalScaleDenominator);
+    }
+    return static_cast<double>(std::max(state.output_scale, 1u));
+}
+
+std::uint32_t scaledExtent(std::uint32_t logical_extent, double scale_factor) {
+    return static_cast<std::uint32_t>(
+        std::max(1.0, std::round(static_cast<double>(logical_extent) * scale_factor)));
+}
+
+void updateRenderExtent(WaylandState& state) {
+    const std::uint32_t logical_width =
+        state.logical_width > 0 ? state.logical_width : state.fallback_width;
+    const std::uint32_t logical_height =
+        state.logical_height > 0 ? state.logical_height : state.fallback_height;
+    const double scale_factor = renderScaleFactor(state);
+
+    state.render_width = scaledExtent(logical_width, scale_factor);
+    state.render_height = scaledExtent(logical_height, scale_factor);
+}
+
+void updateViewportDestination(WaylandState& state) {
+    if (! state.viewport || state.logical_width == 0 || state.logical_height == 0) return;
+    wp_viewport_set_destination(
+        state.viewport, static_cast<std::int32_t>(state.logical_width), static_cast<std::int32_t>(state.logical_height));
+}
+
 void updateSurfaceRegions(WaylandState& state) {
     if (! state.compositor || ! state.surface) return;
 
@@ -118,17 +161,30 @@ void updateSurfaceRegions(WaylandState& state) {
         wl_region_destroy(input_region);
     }
 
-    if (state.surface_width == 0 || state.surface_height == 0) return;
+    if (state.logical_width == 0 || state.logical_height == 0) return;
 
     wl_region* opaque_region = wl_compositor_create_region(state.compositor);
     if (! opaque_region) return;
     wl_region_add(opaque_region,
                   0,
                   0,
-                  static_cast<std::int32_t>(state.surface_width),
-                  static_cast<std::int32_t>(state.surface_height));
+                  static_cast<std::int32_t>(state.logical_width),
+                  static_cast<std::int32_t>(state.logical_height));
     wl_surface_set_opaque_region(state.surface, opaque_region);
     wl_region_destroy(opaque_region);
+}
+
+void logRenderGeometry(const WaylandState& state, const char* reason) {
+    std::fprintf(stderr,
+                 "sceneviewer-layer: %s logical=%ux%u render=%ux%u scale=%.3f output_mode=%ux%u\n",
+                 reason,
+                 state.logical_width,
+                 state.logical_height,
+                 state.render_width,
+                 state.render_height,
+                 renderScaleFactor(state),
+                 state.output_mode_width,
+                 state.output_mode_height);
 }
 
 void onLayerSurfaceConfigure(void* data,
@@ -141,9 +197,12 @@ void onLayerSurfaceConfigure(void* data,
 
     zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
     state->configured = true;
-    state->surface_width = width > 0 ? width : state->fallback_width;
-    state->surface_height = height > 0 ? height : state->fallback_height;
+    state->logical_width = width > 0 ? width : state->fallback_width;
+    state->logical_height = height > 0 ? height : state->fallback_height;
+    updateRenderExtent(*state);
+    updateViewportDestination(*state);
     updateSurfaceRegions(*state);
+    logRenderGeometry(*state, "configured wallpaper surface");
 }
 
 void onLayerSurfaceClosed(void* data, zwlr_layer_surface_v1* /*layer_surface*/) {
@@ -155,6 +214,62 @@ void onLayerSurfaceClosed(void* data, zwlr_layer_surface_v1* /*layer_surface*/) 
 constexpr zwlr_layer_surface_v1_listener kLayerSurfaceListener {
     .configure = onLayerSurfaceConfigure,
     .closed = onLayerSurfaceClosed,
+};
+
+void onOutputGeometry(void* /*data*/,
+                      wl_output* /*output*/,
+                      std::int32_t /*x*/,
+                      std::int32_t /*y*/,
+                      std::int32_t /*physical_width*/,
+                      std::int32_t /*physical_height*/,
+                      std::int32_t /*subpixel*/,
+                      const char* /*make*/,
+                      const char* /*model*/,
+                      std::int32_t /*transform*/) {}
+
+void onOutputMode(void* data,
+                  wl_output* /*output*/,
+                  std::uint32_t flags,
+                  std::int32_t width,
+                  std::int32_t height,
+                  std::int32_t /*refresh*/) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state || (flags & WL_OUTPUT_MODE_CURRENT) == 0) return;
+    state->output_mode_width = static_cast<std::uint32_t>(std::max(width, 0));
+    state->output_mode_height = static_cast<std::uint32_t>(std::max(height, 0));
+}
+
+void onOutputDone(void* /*data*/, wl_output* /*output*/) {}
+
+void onOutputScale(void* data, wl_output* /*output*/, std::int32_t factor) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+    state->output_scale = static_cast<std::uint32_t>(std::max(factor, 1));
+    if (state->logical_width == 0 || state->logical_height == 0) return;
+    updateRenderExtent(*state);
+    logRenderGeometry(*state, "updated output scale");
+}
+
+constexpr wl_output_listener kOutputListener {
+    .geometry = onOutputGeometry,
+    .mode = onOutputMode,
+    .done = onOutputDone,
+    .scale = onOutputScale,
+};
+
+void onFractionalScalePreferredScale(void* data,
+                                     wp_fractional_scale_v1* /*fractional_scale*/,
+                                     std::uint32_t scale) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+    state->preferred_fractional_scale = std::max(scale, kFractionalScaleDenominator);
+    if (state->logical_width == 0 || state->logical_height == 0) return;
+    updateRenderExtent(*state);
+    logRenderGeometry(*state, "updated fractional scale");
+}
+
+constexpr wp_fractional_scale_v1_listener kFractionalScaleListener {
+    .preferred_scale = onFractionalScalePreferredScale,
 };
 
 void onRegistryGlobal(void* data,
@@ -175,7 +290,11 @@ void onRegistryGlobal(void* data,
         if (! state->output) {
             state->output =
                 static_cast<wl_output*>(wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 3u)));
+            wl_output_add_listener(state->output, &kOutputListener, state);
         }
+    } else if (std::strcmp(interface, wp_viewporter_interface.name) == 0) {
+        state->viewporter =
+            static_cast<wp_viewporter*>(wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
     } else if (std::strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         state->layer_shell = static_cast<zwlr_layer_shell_v1*>(
             wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1));
@@ -183,6 +302,9 @@ void onRegistryGlobal(void* data,
         state->dmabuf_version = std::min(version, 4u);
         state->dmabuf = static_cast<zwp_linux_dmabuf_v1*>(
             wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface, state->dmabuf_version));
+    } else if (std::strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        state->fractional_scale_manager = static_cast<wp_fractional_scale_manager_v1*>(
+            wl_registry_bind(registry, name, &wp_fractional_scale_manager_v1_interface, 1));
     }
 }
 
@@ -234,6 +356,16 @@ bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_
         std::fprintf(stderr, "sceneviewer-layer: wl_compositor_create_surface failed\n");
         return false;
     }
+    wl_surface_set_buffer_scale(state.surface, 1);
+
+    if (state.viewporter) {
+        state.viewport = wp_viewporter_get_viewport(state.viewporter, state.surface);
+    }
+    if (state.fractional_scale_manager) {
+        state.fractional_scale =
+            wp_fractional_scale_manager_v1_get_fractional_scale(state.fractional_scale_manager, state.surface);
+        wp_fractional_scale_v1_add_listener(state.fractional_scale, &kFractionalScaleListener, &state);
+    }
 
     state.layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         state.layer_shell,
@@ -261,8 +393,10 @@ bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_
         }
     }
 
-    if (state.surface_width == 0) state.surface_width = state.fallback_width;
-    if (state.surface_height == 0) state.surface_height = state.fallback_height;
+    if (state.logical_width == 0) state.logical_width = state.fallback_width;
+    if (state.logical_height == 0) state.logical_height = state.fallback_height;
+    updateRenderExtent(state);
+    updateViewportDestination(state);
     updateSurfaceRegions(state);
 
     if (state.output_count > 1) {
@@ -270,10 +404,14 @@ bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_
                      "sceneviewer-layer: compositor exposed %u outputs, using the first one for this test client\n",
                      state.output_count);
     }
-    std::fprintf(stderr,
-                 "sceneviewer-layer: configured wallpaper surface %ux%u\n",
-                 state.surface_width,
-                 state.surface_height);
+    if (! state.viewporter) {
+        std::fprintf(stderr,
+                     "sceneviewer-layer: wp_viewporter unavailable, fractional high-DPI buffers will not map correctly\n");
+    }
+    if (! state.fractional_scale_manager) {
+        std::fprintf(stderr,
+                     "sceneviewer-layer: fractional-scale-v1 unavailable, falling back to wl_output integer scale\n");
+    }
     return true;
 }
 
@@ -336,12 +474,16 @@ bool presentFrame(WaylandState& state, const we_frame_v1& frame) {
     auto entry = createBufferForFrame(state, frame);
     if (! entry) return false;
 
-    if (frame.width != state.surface_width || frame.height != state.surface_height) {
-        state.surface_width = frame.width;
-        state.surface_height = frame.height;
-        updateSurfaceRegions(state);
+    if (frame.width != state.render_width || frame.height != state.render_height) {
+        std::fprintf(stderr,
+                     "sceneviewer-layer: frame extent %ux%u differs from configured render extent %ux%u\n",
+                     frame.width,
+                     frame.height,
+                     state.render_width,
+                     state.render_height);
     }
 
+    updateViewportDestination(state);
     wl_surface_attach(state.surface, entry->buffer, 0, 0);
     if (state.compositor_version >= 4) {
         wl_surface_damage_buffer(state.surface, 0, 0, INT32_MAX, INT32_MAX);
@@ -359,6 +501,14 @@ void destroyWayland(WaylandState& state) {
     }
     state.in_flight_buffers.clear();
 
+    if (state.fractional_scale) {
+        wp_fractional_scale_v1_destroy(state.fractional_scale);
+        state.fractional_scale = nullptr;
+    }
+    if (state.viewport) {
+        wp_viewport_destroy(state.viewport);
+        state.viewport = nullptr;
+    }
     if (state.layer_surface) {
         zwlr_layer_surface_v1_destroy(state.layer_surface);
         state.layer_surface = nullptr;
@@ -374,6 +524,14 @@ void destroyWayland(WaylandState& state) {
     if (state.dmabuf) {
         zwp_linux_dmabuf_v1_destroy(state.dmabuf);
         state.dmabuf = nullptr;
+    }
+    if (state.fractional_scale_manager) {
+        wp_fractional_scale_manager_v1_destroy(state.fractional_scale_manager);
+        state.fractional_scale_manager = nullptr;
+    }
+    if (state.viewporter) {
+        wp_viewporter_destroy(state.viewporter);
+        state.viewporter = nullptr;
     }
     if (state.layer_shell) {
         zwlr_layer_shell_v1_destroy(state.layer_shell);
@@ -431,8 +589,8 @@ int main(int argc, char** argv) {
     we_render_config_v1 config {};
     config.size = sizeof(config);
     config.version = 1;
-    config.width = wayland.surface_width;
-    config.height = wayland.surface_height;
+    config.width = wayland.render_width;
+    config.height = wayland.render_height;
     config.prefer_dmabuf = true;
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
         std::cerr << "we_session_set_render_config failed: " << r << "\n";

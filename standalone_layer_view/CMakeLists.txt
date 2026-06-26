@@ -31,6 +31,8 @@ file(MAKE_DIRECTORY ${WAYLAND_GEN_DIR})
 set(XDG_SHELL_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wayland/xdg-shell.xml)
 set(LINUX_DMABUF_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wayland/linux-dmabuf-v1.xml)
 set(LAYER_SHELL_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wayland/wlr-layer-shell-unstable-v1.xml)
+set(VIEWPORTER_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wayland/viewporter.xml)
+set(FRACTIONAL_SCALE_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wayland/fractional-scale-v1.xml)
 
 set(XDG_SHELL_HEADER ${WAYLAND_GEN_DIR}/xdg-shell-client-protocol.h)
 set(XDG_SHELL_CODE ${WAYLAND_GEN_DIR}/xdg-shell-protocol.c)
@@ -38,6 +40,10 @@ set(LINUX_DMABUF_HEADER ${WAYLAND_GEN_DIR}/linux-dmabuf-v1-client-protocol.h)
 set(LINUX_DMABUF_CODE ${WAYLAND_GEN_DIR}/linux-dmabuf-v1-protocol.c)
 set(LAYER_SHELL_HEADER ${WAYLAND_GEN_DIR}/wlr-layer-shell-unstable-v1-client-protocol.h)
 set(LAYER_SHELL_CODE ${WAYLAND_GEN_DIR}/wlr-layer-shell-unstable-v1-protocol.c)
+set(VIEWPORTER_HEADER ${WAYLAND_GEN_DIR}/viewporter-client-protocol.h)
+set(VIEWPORTER_CODE ${WAYLAND_GEN_DIR}/viewporter-protocol.c)
+set(FRACTIONAL_SCALE_HEADER ${WAYLAND_GEN_DIR}/fractional-scale-v1-client-protocol.h)
+set(FRACTIONAL_SCALE_CODE ${WAYLAND_GEN_DIR}/fractional-scale-v1-protocol.c)
 
 add_custom_command(
     OUTPUT ${XDG_SHELL_HEADER}
@@ -81,6 +87,34 @@ add_custom_command(
     VERBATIM
 )
 
+add_custom_command(
+    OUTPUT ${VIEWPORTER_HEADER}
+    COMMAND ${WAYLAND_SCANNER} client-header ${VIEWPORTER_XML} ${VIEWPORTER_HEADER}
+    DEPENDS ${VIEWPORTER_XML}
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${VIEWPORTER_CODE}
+    COMMAND ${WAYLAND_SCANNER} private-code ${VIEWPORTER_XML} ${VIEWPORTER_CODE}
+    DEPENDS ${VIEWPORTER_XML}
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${FRACTIONAL_SCALE_HEADER}
+    COMMAND ${WAYLAND_SCANNER} client-header ${FRACTIONAL_SCALE_XML} ${FRACTIONAL_SCALE_HEADER}
+    DEPENDS ${FRACTIONAL_SCALE_XML}
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${FRACTIONAL_SCALE_CODE}
+    COMMAND ${WAYLAND_SCANNER} private-code ${FRACTIONAL_SCALE_XML} ${FRACTIONAL_SCALE_CODE}
+    DEPENDS ${FRACTIONAL_SCALE_XML}
+    VERBATIM
+)
+
 set(WALLPAPER_LAYER_PROTOCOL_SOURCES
     ${XDG_SHELL_HEADER}
     ${XDG_SHELL_CODE}
@@ -88,6 +122,10 @@ set(WALLPAPER_LAYER_PROTOCOL_SOURCES
     ${LINUX_DMABUF_CODE}
     ${LAYER_SHELL_HEADER}
     ${LAYER_SHELL_CODE}
+    ${VIEWPORTER_HEADER}
+    ${VIEWPORTER_CODE}
+    ${FRACTIONAL_SCALE_HEADER}
+    ${FRACTIONAL_SCALE_CODE}
 )
 
 add_executable(${PROJECT_NAME}
