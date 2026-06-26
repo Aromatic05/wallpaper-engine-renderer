@@ -1,6 +1,7 @@
 #include "arg.hpp"
 #include "wallpaper/abi/WeRenderer.h"
 
+#include <linux/input-event-codes.h>
 #include <poll.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -47,6 +48,8 @@ struct WaylandState {
     wl_registry*            registry { nullptr };
     wl_compositor*          compositor { nullptr };
     wl_surface*             surface { nullptr };
+    wl_seat*                seat { nullptr };
+    wl_pointer*             pointer { nullptr };
     wl_output*              output { nullptr };
     wp_viewporter*          viewporter { nullptr };
     wp_viewport*            viewport { nullptr };
@@ -69,8 +72,11 @@ struct WaylandState {
     std::uint32_t           render_height { 0 };
     std::uint32_t           fallback_width { 0 };
     std::uint32_t           fallback_height { 0 };
+    double                  pointer_x { 0.0 };
+    double                  pointer_y { 0.0 };
     bool                    running { true };
     bool                    configured { false };
+    we_session_t*           session { nullptr };
     std::vector<std::unique_ptr<WaylandBuffer>> in_flight_buffers;
 };
 
@@ -159,6 +165,13 @@ void updateSurfaceRegions(WaylandState& state) {
 
     wl_region* input_region = wl_compositor_create_region(state.compositor);
     if (input_region) {
+        if (state.logical_width > 0 && state.logical_height > 0) {
+            wl_region_add(input_region,
+                          0,
+                          0,
+                          static_cast<std::int32_t>(state.logical_width),
+                          static_cast<std::int32_t>(state.logical_height));
+        }
         wl_surface_set_input_region(state.surface, input_region);
         wl_region_destroy(input_region);
     }
@@ -188,6 +201,124 @@ void logRenderGeometry(const WaylandState& state, const char* reason) {
                  state.output_mode_width,
                  state.output_mode_height);
 }
+
+void onPointerEnter(void* data,
+                    wl_pointer* /*pointer*/,
+                    std::uint32_t /*serial*/,
+                    wl_surface* /*surface*/,
+                    wl_fixed_t sx,
+                    wl_fixed_t sy) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+    state->pointer_x = wl_fixed_to_double(sx);
+    state->pointer_y = wl_fixed_to_double(sy);
+}
+
+void onPointerLeave(void* /*data*/,
+                    wl_pointer* /*pointer*/,
+                    std::uint32_t /*serial*/,
+                    wl_surface* /*surface*/) {}
+
+void onPointerMotion(void* data,
+                     wl_pointer* /*pointer*/,
+                     std::uint32_t /*time*/,
+                     wl_fixed_t sx,
+                     wl_fixed_t sy) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state || ! state->session || state->logical_width == 0 || state->logical_height == 0) {
+        return;
+    }
+
+    state->pointer_x = wl_fixed_to_double(sx);
+    state->pointer_y = wl_fixed_to_double(sy);
+
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = WE_INPUT_POINTER_MOVE;
+    event.pointer_x = static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
+    event.pointer_y = static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
+    we_session_send_input_event(state->session, &event);
+}
+
+void onPointerButton(void* data,
+                     wl_pointer* /*pointer*/,
+                     std::uint32_t /*serial*/,
+                     std::uint32_t /*time*/,
+                     std::uint32_t button,
+                     std::uint32_t button_state) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state || ! state->session || state->logical_width == 0 || state->logical_height == 0) {
+        return;
+    }
+    if (button != BTN_LEFT) return;
+
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = button_state == WL_POINTER_BUTTON_STATE_PRESSED
+        ? WE_INPUT_POINTER_DOWN
+        : WE_INPUT_POINTER_UP;
+    event.pointer_x = static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
+    event.pointer_y = static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
+    event.button = 0;
+    we_session_send_input_event(state->session, &event);
+}
+
+void onPointerAxis(void* /*data*/,
+                   wl_pointer* /*pointer*/,
+                   std::uint32_t /*time*/,
+                   std::uint32_t /*axis*/,
+                   wl_fixed_t /*value*/) {}
+
+void onPointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
+
+void onPointerAxisSource(void* /*data*/,
+                         wl_pointer* /*pointer*/,
+                         std::uint32_t /*axis_source*/) {}
+
+void onPointerAxisStop(void* /*data*/,
+                       wl_pointer* /*pointer*/,
+                       std::uint32_t /*time*/,
+                       std::uint32_t /*axis*/) {}
+
+void onPointerAxisDiscrete(void* /*data*/,
+                           wl_pointer* /*pointer*/,
+                           std::uint32_t /*axis*/,
+                           std::int32_t /*discrete*/) {}
+
+constexpr wl_pointer_listener kPointerListener {
+    .enter = onPointerEnter,
+    .leave = onPointerLeave,
+    .motion = onPointerMotion,
+    .button = onPointerButton,
+    .axis = onPointerAxis,
+    .frame = onPointerFrame,
+    .axis_source = onPointerAxisSource,
+    .axis_stop = onPointerAxisStop,
+    .axis_discrete = onPointerAxisDiscrete,
+};
+
+void onSeatCapabilities(void* data, wl_seat* seat, std::uint32_t capabilities) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+
+    const bool has_pointer = (capabilities & WL_SEAT_CAPABILITY_POINTER) != 0;
+    if (has_pointer && ! state->pointer) {
+        state->pointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(state->pointer, &kPointerListener, state);
+    } else if (! has_pointer && state->pointer) {
+        wl_pointer_destroy(state->pointer);
+        state->pointer = nullptr;
+    }
+}
+
+void onSeatName(void* /*data*/, wl_seat* /*seat*/, const char* /*name*/) {}
+
+constexpr wl_seat_listener kSeatListener {
+    .capabilities = onSeatCapabilities,
+    .name = onSeatName,
+};
 
 void onLayerSurfaceConfigure(void* data,
                              zwlr_layer_surface_v1* layer_surface,
@@ -294,6 +425,10 @@ void onRegistryGlobal(void* data,
                 static_cast<wl_output*>(wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 3u)));
             wl_output_add_listener(state->output, &kOutputListener, state);
         }
+    } else if (std::strcmp(interface, wl_seat_interface.name) == 0) {
+        state->seat =
+            static_cast<wl_seat*>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5u)));
+        wl_seat_add_listener(state->seat, &kSeatListener, state);
     } else if (std::strcmp(interface, wp_viewporter_interface.name) == 0) {
         state->viewporter =
             static_cast<wp_viewporter*>(wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
@@ -543,6 +678,14 @@ void destroyWayland(WaylandState& state) {
         wl_output_destroy(state.output);
         state.output = nullptr;
     }
+    if (state.pointer) {
+        wl_pointer_destroy(state.pointer);
+        state.pointer = nullptr;
+    }
+    if (state.seat) {
+        wl_seat_destroy(state.seat);
+        state.seat = nullptr;
+    }
     if (state.surface) {
         wl_surface_destroy(state.surface);
         state.surface = nullptr;
@@ -602,6 +745,7 @@ int main(int argc, char** argv) {
         destroyWayland(wayland);
         return 1;
     }
+    wayland.session = session;
 
     we_source_v1 source {};
     source.size = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
