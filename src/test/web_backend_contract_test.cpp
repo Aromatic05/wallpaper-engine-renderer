@@ -19,6 +19,8 @@
 
 namespace
 {
+constexpr int kMissingAcceleratedFrameWarningUpdates = 60;
+
 constexpr const char* kProjectJson = R"({
   "type": "web",
   "file": "index.html",
@@ -164,8 +166,7 @@ int main() {
     assert(startupLifecycle.value().contentStateChanged);
     assert(! startupLifecycle.value().frameRequested);
     auto diagnostics = backend->diagnostics();
-    assert(! diagnostics.entries.empty());
-    assert(diagnostics.entries.back().message.find("accelerated paint frames") != std::string::npos);
+    assert(diagnostics.entries.empty());
 
     // Audio volume 0.7 lands on ApplyVolume(0.7). ApplyVolume builds
     // the applyUserProperties({audio: {value: 0.7}}) snippet, so the
@@ -216,15 +217,26 @@ int main() {
 
     mock->software_paint_callback(320, 240);
     diagnostics = backend->diagnostics();
-    bool saw_software_fallback_warning = false;
+    std::size_t software_fallback_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
         if (entry.message.find("SHM/software fallback is not implemented") != std::string::npos) {
-            saw_software_fallback_warning = true;
-            break;
+            ++software_fallback_warnings;
         }
     }
-    assert(saw_software_fallback_warning);
-    assert(saw_software_fallback_warning);
+    require(software_fallback_warnings == 1);
+    auto no_frame_after_software_paint = backend->tick();
+    assert(no_frame_after_software_paint);
+    require(! no_frame_after_software_paint.value().frameRequested);
+
+    mock->software_paint_callback(320, 240);
+    diagnostics = backend->diagnostics();
+    software_fallback_warnings = 0;
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("SHM/software fallback is not implemented") != std::string::npos) {
+            ++software_fallback_warnings;
+        }
+    }
+    assert(software_fallback_warnings == 1);
 
     wallpaper::InputEvent keyDown;
     keyDown.type = wallpaper::InputEventType::KeyDown;
@@ -254,10 +266,29 @@ int main() {
     assert(session->play());
     assert(! mock->last_paused);
 
+    for (int i = 0; i < kMissingAcceleratedFrameWarningUpdates - 1; ++i) {
+        assert(session->update());
+    }
+    diagnostics = backend->diagnostics();
+    std::size_t missing_accelerated_warnings = 0;
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("accelerated paint frames after") != std::string::npos) {
+            ++missing_accelerated_warnings;
+        }
+    }
+    require(missing_accelerated_warnings == 0);
+
     // Update -> Invalidate + Pump while active.
     assert(session->update());
     assert(mock->callCount("Pump") >= 1);
     assert(mock->callCount("Invalidate") >= 1);
+    diagnostics = backend->diagnostics();
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("accelerated paint frames after") != std::string::npos) {
+            ++missing_accelerated_warnings;
+        }
+    }
+    require(missing_accelerated_warnings == 1);
 
     // Accelerated paint callback drives real frame availability into the
     // attached WebOutputBinding swapchain.

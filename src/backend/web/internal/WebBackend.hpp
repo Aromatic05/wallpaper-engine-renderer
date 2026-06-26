@@ -54,6 +54,8 @@ public:
     void testSetBrowserHost(std::shared_ptr<WebBrowserHost> host);
 
 private:
+    static constexpr int kMissingAcceleratedFrameWarningUpdates = 60;
+
     struct SharedState {
         std::atomic<BackendReadyState> readyState { BackendReadyState::Idle };
         std::atomic<bool>              outputBound { false };
@@ -82,5 +84,6 @@ private:
     bool                                 m_paused { false };
     bool                                 m_reportedSoftwareFallbackUnsupported { false };
     bool                                 m_reportedMissingAcceleratedFrames { false };
+    int                                  m_updatesWithoutAcceleratedFrame { 0 };
 };
 } // namespace wallpaper

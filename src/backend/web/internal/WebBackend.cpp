@@ -89,6 +89,7 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
     m_sharedState->acceleratedFrameSeen.store(false);
     m_reportedSoftwareFallbackUnsupported = false;
     m_reportedMissingAcceleratedFrames = false;
+    m_updatesWithoutAcceleratedFrame = 0;
 
     m_workshopDir = WorkshopDirFromSourceUri(source.uri);
     auto manifest = web::LoadWebManifest(m_workshopDir);
@@ -208,6 +209,7 @@ Result<void> WebBackend::start() {
             return;
         }
         m_sharedState->acceleratedFrameSeen.store(true);
+        m_updatesWithoutAcceleratedFrame = 0;
         m_sharedState->frameRequested.store(true);
     });
     m_browserHost->SetSoftwarePaintCallback([this](int width, int height) {
@@ -225,6 +227,7 @@ Result<void> WebBackend::start() {
     m_sharedState->readyState.store(BackendReadyState::OutputReady);
     m_sharedState->contentStateChanged.store(true);
     m_sharedState->frameRequested.store(false);
+    m_updatesWithoutAcceleratedFrame = 0;
     m_paused = false;
     return Result<void>::success();
 }
@@ -252,7 +255,11 @@ Result<void> WebBackend::stop() {
     m_sharedState->readyState.store(BackendReadyState::Idle);
     m_sharedState->outputBound.store(false);
     m_sharedState->frameRequested.store(false);
+    m_sharedState->acceleratedFrameSeen.store(false);
     m_paused = false;
+    m_reportedSoftwareFallbackUnsupported = false;
+    m_reportedMissingAcceleratedFrames = false;
+    m_updatesWithoutAcceleratedFrame = 0;
     return Result<void>::success();
 }
 
@@ -354,15 +361,21 @@ Result<void> WebBackend::update() {
     if (m_browserHost) {
         if (! m_paused) {
             m_browserHost->Invalidate();
+            if (! m_sharedState->acceleratedFrameSeen.load()
+                && ! m_reportedMissingAcceleratedFrames) {
+                ++m_updatesWithoutAcceleratedFrame;
+                if (m_updatesWithoutAcceleratedFrame
+                    >= kMissingAcceleratedFrameWarningUpdates) {
+                    m_reportedMissingAcceleratedFrames = true;
+                    appendDiagnostic(
+                        DiagnosticSeverity::Warning,
+                        "web backend has not received any accelerated paint frames after "
+                            + std::to_string(kMissingAcceleratedFrameWarningUpdates)
+                            + " update cycles; only dma-buf output is currently supported");
+                }
+            }
         }
         m_browserHost->Pump();
-        if (! m_paused && ! m_sharedState->acceleratedFrameSeen.load()
-            && ! m_reportedMissingAcceleratedFrames) {
-            m_reportedMissingAcceleratedFrames = true;
-            appendDiagnostic(DiagnosticSeverity::Warning,
-                             "web backend has not received any accelerated paint frames yet; "
-                             "only dma-buf output is currently supported");
-        }
     }
     return Result<void>::success();
 }
