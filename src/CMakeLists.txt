@@ -27,8 +27,7 @@ add_subdirectory(backend/scene)
 add_subdirectory(backend/web)
 add_subdirectory(render)
 
-add_library(
-  ${PROJECT_NAME} SHARED
+set(wallpaper_renderer_sources
   abi/WeRenderer.cpp
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp
@@ -47,6 +46,23 @@ set(InteralLib
     wpWebBackend
 )
 
+add_library(${PROJECT_NAME}_obj OBJECT ${wallpaper_renderer_sources})
+target_include_directories(
+  ${PROJECT_NAME}_obj
+  PUBLIC ../include common/utils/include
+  PRIVATE . common)
+target_link_libraries(
+  ${PROJECT_NAME}_obj
+  PUBLIC wpUtils
+  PRIVATE ${InteralLib})
+target_compile_options(
+  ${PROJECT_NAME}_obj
+  PRIVATE
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden)
+set_property(TARGET ${PROJECT_NAME}_obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+add_library(${PROJECT_NAME} SHARED $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC wpUtils
@@ -56,13 +72,22 @@ target_include_directories(
   ${PROJECT_NAME}
   PUBLIC ../include common/utils/include
   PRIVATE . common)
-target_compile_options(
-  ${PROJECT_NAME}
-  PRIVATE
-    -fvisibility=hidden
-    -fvisibility-inlines-hidden)
 target_link_options(
   ${PROJECT_NAME}
   PRIVATE
     -Wl,--exclude-libs=ALL)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+add_library(${PROJECT_NAME}-internal STATIC $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
+target_link_libraries(
+  ${PROJECT_NAME}-internal
+  PUBLIC wpUtils
+  PUBLIC ${InteralLib})
+target_include_directories(
+  ${PROJECT_NAME}-internal
+  PUBLIC
+    .
+    common
+    ../include
+    common/utils/include)
+set_property(TARGET ${PROJECT_NAME}-internal PROPERTY POSITION_INDEPENDENT_CODE ON)

@@ -167,7 +167,7 @@ if(BUILD_QML)
         Qt::Quick
         Qt::Gui
         glad
-        ${PROJECT_NAME}
+        wallpaper-engine-renderer-internal
     )
     target_include_directories(${PROJECT_NAME}-qml PUBLIC qml_helper third_party)
 

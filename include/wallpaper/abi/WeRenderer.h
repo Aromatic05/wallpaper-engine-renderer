@@ -60,6 +60,8 @@ typedef struct we_source_v1 {
     uint32_t version;
     we_source_kind_v1 kind;
     const char* uri;
+    // Optional tail fields are append-only. Consumers must set `size`
+    // so the library can safely detect which fields are present.
     const char* assets_uri;
     int32_t fps;
     float speed;

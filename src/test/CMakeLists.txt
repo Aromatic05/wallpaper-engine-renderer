@@ -2,7 +2,7 @@ add_executable(
   wallpaper-session-contract-test
   wallpaper_session_contract_test.cpp)
 
-target_link_libraries(wallpaper-session-contract-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(wallpaper-session-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(wallpaper-session-contract-test PRIVATE ..)
 target_compile_options(wallpaper-session-contract-test PRIVATE ${warn_opts})
 
@@ -12,7 +12,7 @@ add_executable(
   wallpaper-public-api-test
   wallpaper_public_api_test.cpp)
 
-target_link_libraries(wallpaper-public-api-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(wallpaper-public-api-test PRIVATE wallpaper-engine-renderer-internal)
 target_compile_options(wallpaper-public-api-test PRIVATE ${warn_opts})
 
 add_test(NAME wallpaper-public-api-test COMMAND wallpaper-public-api-test)
@@ -21,7 +21,7 @@ add_executable(
   output-controller-contract-test
   output_controller_contract_test.cpp)
 
-target_link_libraries(output-controller-contract-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(output-controller-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(output-controller-contract-test PRIVATE ..)
 target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
 
@@ -31,7 +31,7 @@ add_executable(
   web-backend-contract-test
   web_backend_contract_test.cpp)
 
-target_link_libraries(web-backend-contract-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(web-backend-contract-test PRIVATE ..)
 target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
 
@@ -41,7 +41,7 @@ add_executable(
   host-services-contract-test
   host_services_contract_test.cpp)
 
-target_link_libraries(host-services-contract-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(host-services-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(host-services-contract-test PRIVATE ..)
 target_compile_options(host-services-contract-test PRIVATE ${warn_opts})
 
@@ -51,7 +51,7 @@ add_executable(
   resource-correctness-test
   resource_correctness_test.cpp)
 
-target_link_libraries(resource-correctness-test PRIVATE ${PROJECT_NAME})
+target_link_libraries(resource-correctness-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(
   resource-correctness-test PRIVATE
   ..
@@ -74,7 +74,7 @@ add_executable(
   effect-rendergraph-correctness-test
   effect_rendergraph_correctness_test.cpp)
 
-target_link_libraries(effect-rendergraph-correctness-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
+target_link_libraries(effect-rendergraph-correctness-test PRIVATE wallpaper-engine-renderer-internal wpScene wpSceneBackend)
 target_include_directories(
   effect-rendergraph-correctness-test PRIVATE
   ..
@@ -97,7 +97,7 @@ add_executable(
   particle-regression-test
   particle_regression_test.cpp)
 
-target_link_libraries(particle-regression-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
+target_link_libraries(particle-regression-test PRIVATE wallpaper-engine-renderer-internal wpScene wpSceneBackend)
 target_include_directories(
   particle-regression-test PRIVATE
   ..

@@ -9,6 +9,7 @@
 #include "wallpaper/web/Web.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <new>
 #include <unistd.h>
@@ -38,6 +39,10 @@ int32_t to_error(const wallpaper::Result<void>& result) {
     return result ? 0 : static_cast<int32_t>(result.error().code) + 1;
 }
 
+bool source_has_field(const we_source_v1* source, std::size_t field_offset, std::size_t field_size) {
+    return source && source->size >= field_offset + field_size;
+}
+
 wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     wallpaper::WallpaperSource out;
     if (!source) return out;
@@ -47,7 +52,26 @@ wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     case WE_SOURCE_KIND_VIDEO: out.type = wallpaper::BackendType::Video; break;
     default: out.type = wallpaper::BackendType::WEScene; break;
     }
-    if (source->uri) out.uri = source->uri;
+    if (source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri)) && source->uri) {
+        out.uri = source->uri;
+    }
+    if (source_has_field(source, offsetof(we_source_v1, assets_uri), sizeof(source->assets_uri)) &&
+        source->assets_uri && *source->assets_uri) {
+        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_ASSETS)] = source->assets_uri;
+    }
+    if (source_has_field(source, offsetof(we_source_v1, fps), sizeof(source->fps)) &&
+        source->fps > 0) {
+        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_FPS)] = source->fps;
+    }
+    if (source_has_field(source, offsetof(we_source_v1, speed), sizeof(source->speed))) {
+        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_SPEED)] = source->speed;
+    }
+    if (source_has_field(source, offsetof(we_source_v1, volume), sizeof(source->volume))) {
+        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_VOLUME)] = source->volume;
+    }
+    if (source_has_field(source, offsetof(we_source_v1, muted), sizeof(source->muted))) {
+        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_MUTED)] = source->muted;
+    }
     return out;
 }
 
@@ -87,19 +111,10 @@ void we_session_destroy(we_session_t* session) {
 int32_t we_session_set_source(we_session_t* session, const we_source_v1* source) {
     auto* state = as_state(session);
     if (!state || !state->session) return -1;
+    if (!source || source->version != 1) return -1;
+    if (!source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri))) return -1;
     auto result = state->session->load(make_source(source));
-    if (! result) return to_error(result);
-    if (source && source->assets_uri && *source->assets_uri) {
-        auto assets_result = state->session->setProperty(
-            wallpaper::WE_SCENE_PROPERTY_ASSETS, std::string(source->assets_uri));
-        if (! assets_result) return to_error(assets_result);
-    }
-    if (source && source->fps > 0) {
-        auto fps_result = state->session->setProperty(
-            wallpaper::WE_SCENE_PROPERTY_FPS, source->fps);
-        if (! fps_result) return to_error(fps_result);
-    }
-    return 0;
+    return to_error(result);
 }
 
 int32_t we_session_set_render_config(we_session_t* session, const we_render_config_v1* config) {
