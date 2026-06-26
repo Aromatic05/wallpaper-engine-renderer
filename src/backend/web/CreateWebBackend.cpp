@@ -70,8 +70,13 @@ std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServices() {
     return CreateDefaultWebEngineServicesImpl();
 }
 
-Result<std::unique_ptr<ContentBackend>> CreateWebBackend(const BackendContext& context) {
-    std::unique_ptr<ContentBackend> backend = std::make_unique<WebBackend>(context);
+Result<std::unique_ptr<ContentBackend>> CreateWebBackend(const BackendContext&              context,
+                                                          std::shared_ptr<WebEngineServices> services) {
+    auto validation = validateWebEngineServices(services);
+    if (! validation) {
+        return Result<std::unique_ptr<ContentBackend>>(validation.error());
+    }
+    std::unique_ptr<ContentBackend> backend = std::make_unique<WebBackend>(context, std::move(services));
     return Result<std::unique_ptr<ContentBackend>>::success(std::move(backend));
 }
 } // namespace wallpaper

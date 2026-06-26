@@ -27,15 +27,17 @@ target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
 
 add_test(NAME output-controller-contract-test COMMAND output-controller-contract-test)
 
-add_executable(
-  web-backend-contract-test
-  web_backend_contract_test.cpp)
+if(BUILD_WEWEB)
+    add_executable(
+      web-backend-contract-test
+      web_backend_contract_test.cpp)
 
-target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
-target_include_directories(web-backend-contract-test PRIVATE ..)
-target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
+    target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(web-backend-contract-test PRIVATE ..)
+    target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
 
-add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
+    add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
+endif()
 
 add_executable(
   host-services-contract-test

@@ -43,10 +43,16 @@ set(wallpaper_renderer_sources
 
 set(InteralLib
     wpSceneBackendModule
-    wpWebBackend
 )
+if(TARGET wpWebBackend)
+    list(APPEND InteralLib wpWebBackend)
+endif()
 
 add_library(${PROJECT_NAME}_obj OBJECT ${wallpaper_renderer_sources})
+target_compile_definitions(
+  ${PROJECT_NAME}_obj
+  PRIVATE
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
 target_include_directories(
   ${PROJECT_NAME}_obj
   PUBLIC ../include common/utils/include
@@ -63,6 +69,10 @@ target_compile_options(
 set_property(TARGET ${PROJECT_NAME}_obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(${PROJECT_NAME} SHARED $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC wpUtils
@@ -79,6 +89,10 @@ target_link_options(
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(${PROJECT_NAME}-internal STATIC $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
+target_compile_definitions(
+  ${PROJECT_NAME}-internal
+  PRIVATE
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
 target_link_libraries(
   ${PROJECT_NAME}-internal
   PUBLIC wpUtils

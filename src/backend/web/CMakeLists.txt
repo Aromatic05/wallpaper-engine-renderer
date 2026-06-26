@@ -1,23 +1,23 @@
-set(LIB_NAME wpWebBackend)
-
-add_library(${LIB_NAME} STATIC
-    CreateWebBackend.cpp
-    internal/Manifest.cpp
-    internal/WebBackend.cpp)
-
-target_link_libraries(${LIB_NAME} PUBLIC wpUtils nlohmann_json::nlohmann_json)
-target_include_directories(${LIB_NAME} PRIVATE
-    ../..    # src/ — for runtime/, output/, common/, host/ includes
-    ../../../include)  # project include/ — for wallpaper/ public headers
-target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
-set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-
-# CEF handler bundle. Only built when BUILD_WEWEB=ON — these source
-# files include <cef_*.h> and link against libcef_dll_wrapper, so
-# neither is available in the default tree. The target is
-# intentionally not linked into the main library yet; commit 5 wires
-# it through once BrowserHost consumes these handlers.
+# Web backend is gated on BUILD_WEWEB=ON because WebBackend calls
+# into WebBrowserHost (libcef_dll + libcef.so). The default tree has
+# no CEF; the main library's BuiltinBackendFactory returns "not
+# built" for BackendType::Web in that configuration (see commit 9).
 if(BUILD_WEWEB)
+    set(LIB_NAME wpWebBackend)
+    add_library(${LIB_NAME} STATIC
+        CreateWebBackend.cpp
+        internal/Manifest.cpp
+        internal/WebBackend.cpp)
+    target_link_libraries(${LIB_NAME} PUBLIC
+        wpUtils
+        wpWebBrowserHost
+        nlohmann_json::nlohmann_json)
+    target_include_directories(${LIB_NAME} PRIVATE
+        ../..    # src/ — for runtime/, output/, common/, host/ includes
+        ../../../include)  # project include/ — for wallpaper/ public headers
+    target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
+    set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
     set(CEF_LIB_NAME wpWebBrowserHost)
     add_library(${CEF_LIB_NAME} STATIC
         internal/cef/AppHandler.cpp
