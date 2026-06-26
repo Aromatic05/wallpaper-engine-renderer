@@ -21,8 +21,6 @@ namespace wallpaper
 //
 // Lifecycle (matches the upstream WebViewer pattern):
 //
-//   int helper = host.RunOrExitIfHelper(argc, argv);
-//   if (helper >= 0) return helper;             // CEF subprocess: exit
 //   host.SetAcceleratedPaintCallback(cb);        // before Init
 //   host.Init(opts);
 //   host.OpenWallpaper(manifest, workshop_dir, w, h);
@@ -34,6 +32,7 @@ public:
         std::filesystem::path resources_dir; // CEF Resources/
         std::filesystem::path locales_dir;   // CEF Resources/locales/
         std::filesystem::path cache_dir;     // optional CEF disk cache
+        std::filesystem::path browser_subprocess_path; // helper executable
         bool                  enable_remote_debugging { false };
         int                   remote_debugging_port { 0 };
         // false ⇒ pass --mute-audio to Chromium so no output device opens.
@@ -46,14 +45,8 @@ public:
     WebBrowserHost(const WebBrowserHost&)            = delete;
     WebBrowserHost& operator=(const WebBrowserHost&) = delete;
 
-    // Returns >= 0 if this process is a CEF helper (renderer / utility /
-    // zygote) — caller MUST `return` that as the process exit code
-    // without doing anything else. Returns -1 if this is the main
-    // browser process and initialisation should continue.
-    virtual int RunOrExitIfHelper(int argc, char** argv);
-
     // Initialise CEF in the main browser process. Must be called exactly
-    // once after RunOrExitIfHelper returns -1.
+    // once.
     virtual bool Init(const InitOptions& opts);
 
     // Install an accelerated-paint sink. When set BEFORE OpenWallpaper

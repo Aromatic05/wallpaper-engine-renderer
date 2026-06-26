@@ -38,4 +38,15 @@ if(BUILD_WEWEB)
         # CEF's libcef_dll wrapper is built without exceptions.
         -fno-exceptions)
     set_property(TARGET ${CEF_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+    add_executable(we-cef-helper
+        internal/cef/helper/main.cpp
+        internal/cef/AppHandler.cpp)
+    target_link_libraries(we-cef-helper PRIVATE
+        WebCef::Core
+        libcef_dll_wrapper)
+    target_include_directories(we-cef-helper PRIVATE
+        ../..
+        ../../../include)
+    target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
 endif()

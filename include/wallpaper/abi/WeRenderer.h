@@ -75,17 +75,6 @@ typedef struct we_render_config_v1 {
     bool allow_shm_fallback;
 } we_render_config_v1;
 
-// CEF helper-process short-circuit. Must be called from the host's
-// main() before any other we_session_* entry point, with the real
-// main(int, char**) argv. CEF fork-execs the host binary for
-// renderer / zygote / utility processes; those helpers detect
-// themselves by reading --type=… from argv and exit early via
-// CefExecuteProcess. Passing a stub-built argv disables CEF's
-// multi-process model and degrades to single-process. argc <= 0
-// or argv == nullptr is a no-op; subsequent CEF Init will fail
-// for any non-trivial host.
-WE_RENDERER_API int32_t we_runtime_init(int argc, char** argv);
-
 WE_RENDERER_API we_session_t* we_session_create(void);
 WE_RENDERER_API void          we_session_destroy(we_session_t* session);
 

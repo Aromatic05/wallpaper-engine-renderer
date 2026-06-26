@@ -85,15 +85,12 @@ int main() {
     auto bindResult = session->bindOutput(target);
     assert(bindResult);
 
-    // Start: begin the CEF lifecycle (RunOrExitIfHelper, Init,
-    // OpenWallpaper) — but the mock records every call without
+    // Start: begin the CEF lifecycle (Init, OpenWallpaper) — the mock records every call without
     // touching CEF.
     auto playResult = session->play();
     assert(playResult);
 
-    // RunOrExitIfHelper was the first BrowserHost call (returns -1 so
-    // the main process continues). Init follows, then OpenWallpaper.
-    assert(mock->hasCall("RunOrExitIfHelper"));
+    // Init runs before OpenWallpaper.
     assert(mock->hasCall("Init"));
     assert(mock->hasCall("OpenWallpaper"));
 

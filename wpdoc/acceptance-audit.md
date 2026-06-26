@@ -132,9 +132,9 @@ Current evidence (post-port):
 - The web backend is gated on `-DBUILD_WEWEB=ON`; the C ABI's
   `BackendType::Web` returns a clear "not built" error in the
   default build.
-- `we_runtime_init(argc, argv)` is the new C ABI entry that
-  supplies the host's real argv so CEF's CefExecuteProcess can
-  detect helper processes.
+- The web backend now relies on a dedicated `we-cef-helper`
+  executable configured through CEF's `browser_subprocess_path`
+  instead of exposing helper argv plumbing in the public C ABI.
 
 Verification (post-port):
 

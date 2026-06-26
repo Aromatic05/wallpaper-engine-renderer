@@ -35,8 +35,6 @@ public:
 
     // Recorded values
     std::vector<RecordedCall>             calls;
-    int                                   init_argc { 0 };
-    char**                                init_argv { nullptr };
     WebBrowserHost::InitOptions           last_init_opts {};
     WebManifestData                       last_manifest;
     std::filesystem::path                 last_workshop_dir;
@@ -61,13 +59,6 @@ public:
     std::vector<float>                    last_audio;
     std::string                           last_user_key;
     std::string                           last_user_value_json;
-
-    int RunOrExitIfHelper(int argc, char** argv) override {
-        calls.push_back({"RunOrExitIfHelper"});
-        init_argc = argc;
-        init_argv = argv;
-        return -1; // stay in the main process
-    }
 
     bool Init(const InitOptions& opts) override {
         calls.push_back({"Init"});

@@ -43,6 +43,10 @@ struct WebEngineServices {
     // daemon case, but a host may want one for development.
     std::function<std::filesystem::path()> provideCefCacheDir;
 
+    // Path to the helper executable CEF should spawn for renderer /
+    // utility / zygote child processes.
+    std::function<std::filesystem::path()> provideCefSubprocessPath;
+
     // If true (default), the backend appends --mute-audio to the
     // Chromium command line so no PulseAudio / PipeWire output device
     // is opened. Set false when the host wants the wallpaper to drive
@@ -65,9 +69,9 @@ struct WebEngineServices {
 // Return a shared_ptr<WebEngineServices> populated with the host-portable
 // defaults: empty CEF resource / locale / cache paths (CEF will resolve
 // them from its own binary directory), audio muted, and a no-op audio
-// capture that always returns std::nullopt. Hosts that need different
-// behaviour should build their own services object and call
-// CreateWebBackend(context, services); the default factory is what
+    // capture that always returns std::nullopt. Hosts that need different
+    // behaviour should build their own services object and call
+    // CreateWebBackend(context, services); the default factory is what
 // `CreateWebBackend(context)` falls back to when no services object is
 // provided.
 std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServices();

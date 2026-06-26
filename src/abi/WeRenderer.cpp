@@ -10,8 +10,6 @@
 #include "wallpaper/OutputTargetBinding.hpp"
 #include "wallpaper/OutputTarget.hpp"
 
-#include "abi/WeRuntimeArgs.hpp"
-
 #include <algorithm>
 #include <cstddef>
 #include <cctype>
@@ -29,10 +27,6 @@
 
 namespace
 {
-int           g_runtime_argc { 0 };
-char**        g_runtime_argv { nullptr };
-bool          g_runtime_inited { false };
-
 // Owns the saved binding polymorphically; the concrete type
 // (WESceneOutputBinding or WebOutputBinding) is chosen in
 // we_session_set_render_config from state->sourceKind.
@@ -219,30 +213,7 @@ wallpaper::WebOutputBinding* asWebBinding(const std::shared_ptr<wallpaper::Outpu
 }
 } // namespace
 
-namespace wallpaper::abi
-{
-bool TryGetRuntimeArgs(int& argc, char**& argv) {
-    if (! g_runtime_inited || g_runtime_argc <= 0 || g_runtime_argv == nullptr) return false;
-    argc = g_runtime_argc;
-    argv = g_runtime_argv;
-    return true;
-}
-} // namespace wallpaper::abi
-
 extern "C" {
-int32_t we_runtime_init(int argc, char** argv) {
-    if (argc <= 0 || argv == nullptr) {
-        g_runtime_argc   = 0;
-        g_runtime_argv   = nullptr;
-        g_runtime_inited = false;
-        return 0;
-    }
-    g_runtime_argc   = argc;
-    g_runtime_argv   = argv;
-    g_runtime_inited = true;
-    return 0;
-}
-
 we_session_t* we_session_create(void) {
     auto* state = new (std::nothrow) WeSessionState();
     if (!state) return nullptr;

@@ -5,12 +5,57 @@
 
 #include "host/HostServices.hpp"
 
+#include <cstdlib>
+#include <vector>
+
 #include <utility>
 
 namespace wallpaper
 {
 namespace
 {
+std::filesystem::path helperPathFromEnv() {
+    if (const char* value = std::getenv("WE_CEF_HELPER_PATH")) {
+        if (*value) return value;
+    }
+    return {};
+}
+
+std::filesystem::path firstExistingRegularFile(const std::vector<std::filesystem::path>& candidates) {
+    std::error_code ec;
+    for (const auto& candidate : candidates) {
+        if (candidate.empty()) continue;
+        ec.clear();
+        if (std::filesystem::exists(candidate, ec) && ! ec &&
+            std::filesystem::is_regular_file(candidate, ec) && ! ec) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+std::filesystem::path resolveDefaultCefHelperPath() {
+    if (auto fromEnv = helperPathFromEnv(); ! fromEnv.empty()) {
+        return fromEnv;
+    }
+
+    std::vector<std::filesystem::path> candidates;
+    if (const char* cefRoot = std::getenv("CEF_ROOT")) {
+        if (*cefRoot) {
+            const std::filesystem::path root { cefRoot };
+            candidates.push_back(root / "Release" / "we-cef-helper");
+            candidates.push_back(root / "we-cef-helper");
+        }
+    }
+
+    candidates.push_back(std::filesystem::path("/usr/libexec/wallpaper-engine-renderer/we-cef-helper"));
+    candidates.push_back(std::filesystem::path("/usr/local/libexec/wallpaper-engine-renderer/we-cef-helper"));
+    candidates.push_back(std::filesystem::current_path() / "we-cef-helper");
+    candidates.push_back(std::filesystem::current_path() / "build" / "src" / "backend" / "web" / "we-cef-helper");
+    candidates.push_back(std::filesystem::current_path() / "build-check" / "src" / "backend" / "web" / "we-cef-helper");
+    return firstExistingRegularFile(candidates);
+}
+
 std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServicesImpl() {
     auto services = std::make_shared<WebEngineServices>();
     // Empty paths let CefSettings default-resource resolution run; this is
@@ -19,22 +64,13 @@ std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServicesImpl() {
     services->provideCefResourcesDir = []() -> std::filesystem::path { return {}; };
     services->provideCefLocalesDir   = []() -> std::filesystem::path { return {}; };
     services->provideCefCacheDir     = []() -> std::filesystem::path { return {}; };
+    services->provideCefSubprocessPath = []() -> std::filesystem::path {
+        return resolveDefaultCefHelperPath();
+    };
     services->audioMuted             = []() { return true; };
     services->captureAudioSamples    = [](std::chrono::milliseconds)
         -> std::optional<std::array<float, 128>> { return std::nullopt; };
     return services;
-}
-
-void mergeMissingWebEngineServices(const std::shared_ptr<WebEngineServices>& target,
-                                   const std::shared_ptr<WebEngineServices>& defaults) {
-    if (! target || ! defaults) {
-        return;
-    }
-    if (! target->provideCefResourcesDir) target->provideCefResourcesDir = defaults->provideCefResourcesDir;
-    if (! target->provideCefLocalesDir)   target->provideCefLocalesDir   = defaults->provideCefLocalesDir;
-    if (! target->provideCefCacheDir)     target->provideCefCacheDir     = defaults->provideCefCacheDir;
-    if (! target->audioMuted)             target->audioMuted             = defaults->audioMuted;
-    if (! target->captureAudioSamples)    target->captureAudioSamples    = defaults->captureAudioSamples;
 }
 
 Result<void> validateWebEngineServices(const std::shared_ptr<WebEngineServices>& services) {
@@ -53,6 +89,10 @@ Result<void> validateWebEngineServices(const std::shared_ptr<WebEngineServices>&
     if (! services->provideCefCacheDir) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "web backend requires provideCefCacheDir");
+    }
+    if (! services->provideCefSubprocessPath) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "web backend requires provideCefSubprocessPath");
     }
     if (! services->audioMuted) {
         return Result<void>::failure(ResultCode::InvalidArgument,

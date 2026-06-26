@@ -3,14 +3,14 @@
 #include "backend/web/internal/Manifest.hpp"
 #include "backend/web/internal/WebRenderPlan.hpp"
 
-#include "abi/WeRuntimeArgs.hpp"
-
 #include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/WebBrowserHost.hpp"
 #include "wallpaper/web/WebOutputBinding.hpp"
 #include "wallpaper/web/WebTypes.hpp"
 
 #include <cstdlib>
+#include <filesystem>
+#include <cmath>
 #include <utility>
 
 namespace wallpaper
@@ -112,6 +112,54 @@ bool WebBackend::ensureBrowserHostReady() {
     return m_browserHost != nullptr;
 }
 
+Result<void> WebBackend::validateSubprocessPath(const std::filesystem::path& path) {
+    if (path.empty()) {
+        appendDiagnostic(DiagnosticSeverity::Error,
+                         "CEF subprocess helper not found: empty path");
+        return Result<void>::failure(ResultCode::NotFound,
+                                     "CEF subprocess helper not found");
+    }
+
+    std::error_code ec;
+    if (! std::filesystem::exists(path, ec) || ec) {
+        appendDiagnostic(DiagnosticSeverity::Error,
+                         "CEF subprocess helper not found: " + path.string());
+        return Result<void>::failure(ResultCode::NotFound,
+                                     "CEF subprocess helper not found: " + path.string());
+    }
+
+    if (! std::filesystem::is_regular_file(path, ec) || ec) {
+        appendDiagnostic(DiagnosticSeverity::Error,
+                         "CEF subprocess helper is not a regular file: " + path.string());
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "CEF subprocess helper is not a regular file: " + path.string());
+    }
+
+    return Result<void>::success();
+}
+
+std::pair<int, int> WebBackend::resolveInputPixels(const InputEvent& event) const {
+    int width = 1;
+    int height = 1;
+    if (m_renderBinding) {
+        width = std::max(1, static_cast<int>(m_renderBinding->renderInitInfo().width));
+        height = std::max(1, static_cast<int>(m_renderBinding->renderInitInfo().height));
+    }
+
+    const auto scale_axis = [](double value, int extent) {
+        if (value >= 0.0 && value <= 1.0) {
+            return static_cast<int>(std::lround(value * static_cast<double>(extent)));
+        }
+        return static_cast<int>(std::lround(value));
+    };
+
+    int x = scale_axis(event.pointerX, width);
+    int y = scale_axis(event.pointerY, height);
+    x = std::clamp(x, 0, width > 0 ? width - 1 : 0);
+    y = std::clamp(y, 0, height > 0 ? height - 1 : 0);
+    return { x, y };
+}
+
 Result<void> WebBackend::start() {
     if (! m_manifest) {
         return Result<void>::failure(ResultCode::InvalidState,
@@ -122,36 +170,16 @@ Result<void> WebBackend::start() {
                                      "web backend BrowserHost allocation failed");
     }
 
-    // CEF multi-process short-circuit. The host's main() must call
-    // we_runtime_init(argc, argv) so the saved argv reaches us here.
-    // If the host did not, CefExecuteProcess cannot decide whether
-    // this is a helper process and CEF stays single-process —
-    // acceptable for tests that link against a non-multi-process CEF
-    // build, broken for production. Surface the missing-init case as
-    // a diagnostic rather than silently downgrading.
-    int  runtime_argc = 0;
-    char** runtime_argv = nullptr;
-    if (wallpaper::abi::TryGetRuntimeArgs(runtime_argc, runtime_argv)) {
-        const int helper_exit = m_browserHost->RunOrExitIfHelper(runtime_argc, runtime_argv);
-        if (helper_exit >= 0) {
-            // We are a CEF helper process; CefExecuteProcess has
-            // already invoked exit(). The line below is unreachable
-            // in a real multi-process build but kept as a safety
-            // net in case exit() is intercepted by an LD_PRELOAD
-            // shim.
-            std::_Exit(helper_exit);
-        }
-    } else {
-        appendDiagnostic(DiagnosticSeverity::Warning,
-                         "web backend start called before we_runtime_init; "
-                         "CEF will run single-process");
-    }
-
     WebBrowserHost::InitOptions opts {};
-    opts.resources_dir = m_services->provideCefResourcesDir();
-    opts.locales_dir   = m_services->provideCefLocalesDir();
-    opts.cache_dir     = m_services->provideCefCacheDir();
-    opts.enable_audio  = ! m_services->audioMuted();
+    opts.resources_dir         = m_services->provideCefResourcesDir();
+    opts.locales_dir           = m_services->provideCefLocalesDir();
+    opts.cache_dir             = m_services->provideCefCacheDir();
+    opts.browser_subprocess_path = m_services->provideCefSubprocessPath();
+    opts.enable_audio          = ! m_services->audioMuted();
+    auto helperPathResult = validateSubprocessPath(opts.browser_subprocess_path);
+    if (! helperPathResult) {
+        return helperPathResult;
+    }
     if (! m_browserHost->Init(opts)) {
         return Result<void>::failure(ResultCode::InternalError, "CefInitialize failed");
     }
@@ -233,22 +261,18 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
     if (! m_browserHost) {
         return Result<void>::failure(ResultCode::InvalidState, "web backend has no BrowserHost");
     }
+    const auto [px, py] = resolveInputPixels(event);
     switch (event.type) {
     case InputEventType::PointerMove:
-        m_browserHost->OnMouseMove(static_cast<int>(event.pointerX), static_cast<int>(event.pointerY),
-                                   /*left_down=*/false);
+        m_browserHost->OnMouseMove(px, py, /*left_down=*/false);
         return Result<void>::success();
     case InputEventType::PointerDown:
-        m_browserHost->OnMouseMove(static_cast<int>(event.pointerX), static_cast<int>(event.pointerY),
-                                   /*left_down=*/true);
-        m_browserHost->OnMouseButton(static_cast<int>(event.pointerX), static_cast<int>(event.pointerY),
-                                     /*cef_button=*/0, /*down=*/true, /*click_count=*/1);
+        m_browserHost->OnMouseMove(px, py, /*left_down=*/true);
+        m_browserHost->OnMouseButton(px, py, /*cef_button=*/0, /*down=*/true, /*click_count=*/1);
         return Result<void>::success();
     case InputEventType::PointerUp:
-        m_browserHost->OnMouseMove(static_cast<int>(event.pointerX), static_cast<int>(event.pointerY),
-                                   /*left_down=*/false);
-        m_browserHost->OnMouseButton(static_cast<int>(event.pointerX), static_cast<int>(event.pointerY),
-                                     /*cef_button=*/0, /*down=*/false, /*click_count=*/1);
+        m_browserHost->OnMouseMove(px, py, /*left_down=*/false);
+        m_browserHost->OnMouseButton(px, py, /*cef_button=*/0, /*down=*/false, /*click_count=*/1);
         return Result<void>::success();
     case InputEventType::KeyDown:
     case InputEventType::KeyUp:

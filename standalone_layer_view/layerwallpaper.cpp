@@ -558,8 +558,6 @@ int main(int argc, char** argv) {
         return err.empty() ? 0 : 1;
     }
 
-    we_runtime_init(argc, argv);
-
     WaylandState wayland;
     if (! initWayland(wayland, static_cast<std::uint32_t>(args.width), static_cast<std::uint32_t>(args.height))) {
         destroyWayland(wayland);

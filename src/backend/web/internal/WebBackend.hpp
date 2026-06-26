@@ -63,6 +63,8 @@ private:
 
     void appendDiagnostic(DiagnosticSeverity severity, std::string message);
     bool ensureBrowserHostReady();
+    Result<void> validateSubprocessPath(const std::filesystem::path& path);
+    std::pair<int, int> resolveInputPixels(const InputEvent& event) const;
 
 private:
     BackendContext                       m_context;

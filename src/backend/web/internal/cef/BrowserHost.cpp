@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 
 #include "backend/web/internal/cef/UserProperties.hpp"
 
@@ -12,20 +13,16 @@ WebBrowserHost::WebBrowserHost(): impl_(std::make_unique<Impl>()) { impl_->app =
 
 WebBrowserHost::~WebBrowserHost() { Shutdown(); }
 
-int WebBrowserHost::RunOrExitIfHelper(int argc, char** argv) {
-    impl_->saved_argc = argc;
-    impl_->saved_argv = argv;
-    CefMainArgs main_args(argc, argv);
-    return CefExecuteProcess(main_args, impl_->app.get(), nullptr);
-}
-
 bool WebBrowserHost::Init(const InitOptions& opts) {
     if (impl_->initialised) {
         std::fprintf(stderr, "web: WebBrowserHost::Init called twice\n");
         return false;
     }
 
-    CefMainArgs main_args(impl_->saved_argc, impl_->saved_argv);
+    int argc = 1;
+    char arg0[] = "we-browser-host";
+    char* argv[] = { arg0 };
+    CefMainArgs main_args(argc, argv);
 
     CefSettings settings;
     settings.no_sandbox                   = true;
@@ -41,6 +38,7 @@ bool WebBrowserHost::Init(const InitOptions& opts) {
     set_cef_path(&settings.resources_dir_path, opts.resources_dir);
     set_cef_path(&settings.locales_dir_path, opts.locales_dir);
     set_cef_path(&settings.root_cache_path, opts.cache_dir);
+    set_cef_path(&settings.browser_subprocess_path, opts.browser_subprocess_path);
 
     if (opts.enable_remote_debugging && opts.remote_debugging_port > 0) {
         settings.remote_debugging_port = opts.remote_debugging_port;
