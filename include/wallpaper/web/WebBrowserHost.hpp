@@ -99,11 +99,11 @@ public:
     // __weweb_pushAudio. No-op until the page's V8 context exists.
     virtual void PushAudioData(const float* data, std::size_t count);
 
-    // True once the browser has been closed (close button, JS-driven
-    // close, etc.).
+    // True once the browser has been closed (close button, host-driven
+    // shutdown, JS-driven close, etc.).
     virtual bool ShouldExit() const;
 
-    // Flag the host for graceful exit.
+    // Request that the active browser close gracefully.
     virtual void RequestClose();
 
     // Tear down CEF. Safe to call multiple times.

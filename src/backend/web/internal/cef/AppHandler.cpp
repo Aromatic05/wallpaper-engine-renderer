@@ -43,6 +43,7 @@ void AppHandler::OnBeforeCommandLineProcessing(const CefString&          process
     // and are imported into our own Vulkan device in the web backend.
     cmd->AppendSwitchWithValue("use-gl", "angle");
     cmd->AppendSwitchWithValue("use-angle", "gl-egl");
+    cmd->AppendSwitchWithValue("use-vulkan", "disabled");
     cmd->AppendSwitch("disable-vulkan-surface");
     dis_features += ",Vulkan,VulkanFromANGLE,DefaultAngleVulkan,SkiaGraphite";
 

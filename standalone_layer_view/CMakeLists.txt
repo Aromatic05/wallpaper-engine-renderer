@@ -142,3 +142,7 @@ target_link_libraries(${PROJECT_NAME}
         ${WAYLAND_CLIENT_LIBRARIES}
         wallpaper-engine-renderer
 )
+
+if(BUILD_WEWEB)
+    target_link_libraries(${PROJECT_NAME} PUBLIC WebCef::Core)
+endif()

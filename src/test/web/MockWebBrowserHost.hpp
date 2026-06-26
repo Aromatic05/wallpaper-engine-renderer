@@ -55,6 +55,7 @@ public:
     int                                   focus_gained_count { 0 };
     int                                   pump_count { 0 };
     int                                   shutdown_count { 0 };
+    int                                   request_close_count { 0 };
     int                                   push_audio_count { 0 };
     bool                                  has_accelerated_paint_callback { false };
     AcceleratedPaintCallback              accelerated_paint_callback;
@@ -153,7 +154,10 @@ public:
 
     bool ShouldExit() const override { return false; }
 
-    void RequestClose() override { calls.push_back({"RequestClose"}); }
+    void RequestClose() override {
+        calls.push_back({"RequestClose"});
+        ++request_close_count;
+    }
 
     void Shutdown() override {
         calls.push_back({"Shutdown"});

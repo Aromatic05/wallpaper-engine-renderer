@@ -87,6 +87,13 @@ target_link_options(
   PRIVATE
     -Wl,--exclude-libs=ALL)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+if(BUILD_WEWEB AND DEFINED Vulkan_LIBRARY AND DEFINED CEF_LIBRARY)
+  get_filename_component(_wp_vulkan_libdir "${Vulkan_LIBRARY}" DIRECTORY)
+  get_filename_component(_wp_cef_libdir "${CEF_LIBRARY}" DIRECTORY)
+  set_property(TARGET ${PROJECT_NAME} PROPERTY BUILD_RPATH "${_wp_vulkan_libdir};${_wp_cef_libdir}")
+  set_property(TARGET ${PROJECT_NAME} PROPERTY INSTALL_RPATH "${_wp_vulkan_libdir};${_wp_cef_libdir}")
+  set_property(TARGET ${PROJECT_NAME} PROPERTY BUILD_RPATH_USE_ORIGIN FALSE)
+endif()
 
 add_library(${PROJECT_NAME}-internal STATIC $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 target_compile_definitions(

@@ -78,17 +78,25 @@ std::string trim_copy(std::string s) {
 struct ProjectSourceInfo {
     wallpaper::BackendType type { wallpaper::BackendType::WEScene };
     std::filesystem::path  projectJson;
+    std::filesystem::path  sourcePath;
     std::string            backendUri;
 };
 
 wallpaper::Result<ProjectSourceInfo> parse_project_source(const char* uri) {
     if (! uri || ! *uri) {
         return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::InvalidArgument, "project.json uri is empty");
+            wallpaper::ResultCode::InvalidArgument, "source uri is empty");
     }
 
     ProjectSourceInfo info;
-    info.projectJson = uri;
+    info.sourcePath = uri;
+
+    std::error_code ec;
+    if (std::filesystem::is_directory(info.sourcePath, ec) && ! ec) {
+        info.projectJson = info.sourcePath / "project.json";
+    } else {
+        info.projectJson = info.sourcePath;
+    }
 
     std::ifstream is(info.projectJson);
     if (! is) {
@@ -215,9 +223,14 @@ wallpaper::WebOutputBinding* asWebBinding(const std::shared_ptr<wallpaper::Outpu
 
 extern "C" {
 we_session_t* we_session_create(void) {
+    return we_session_create_with_cache_path(nullptr);
+}
+
+we_session_t* we_session_create_with_cache_path(const char* cache_path) {
     auto* state = new (std::nothrow) WeSessionState();
     if (!state) return nullptr;
-    state->session = wallpaper::CreateBuiltinSession(state->runtime, {});
+    state->session = wallpaper::CreateBuiltinSession(
+        state->runtime, cache_path ? std::string(cache_path) : std::string {});
     return as_handle(state);
 }
 
@@ -249,6 +262,16 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     if (!state || !state->session || !config) return -1;
     if (config->size < sizeof(we_render_config_v1) || config->version != 1) return -1;
     if (! state->sourceSet) return -1;
+
+    if (state->sourceType == wallpaper::BackendType::Web) {
+        if (! config->prefer_dmabuf) {
+            return static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1;
+        }
+        if (config->allow_shm_fallback) {
+            return static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1;
+        }
+    }
+
     state->renderInitInfo.enable_valid_layer = config->enable_valid_layer;
     state->renderInitInfo.offscreen          = true;
     state->renderInitInfo.export_mode        = config->prefer_dmabuf

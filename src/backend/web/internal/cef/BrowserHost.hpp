@@ -19,6 +19,8 @@ struct WebBrowserHost::Impl {
     CefRefPtr<ClientHandler>    client;
     AcceleratedPaintCallback    accel_cb;
     std::atomic<bool>           should_exit { false };
+    std::atomic<bool>           close_requested { false };
     bool                        initialised { false };
+    bool                        runtime_acquired { false };
 };
 } // namespace wallpaper

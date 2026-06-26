@@ -491,7 +491,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    we_session_t* session = we_session_create();
+    we_session_t* session = args.cache_path.empty()
+        ? we_session_create()
+        : we_session_create_with_cache_path(args.cache_path.c_str());
     if (! session) {
         std::cerr << "we_session_create failed\n";
         destroyWayland(wayland);

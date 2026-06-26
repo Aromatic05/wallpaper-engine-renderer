@@ -38,6 +38,17 @@ if(BUILD_WEWEB)
     target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
 
     add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
+
+    add_executable(
+      we-renderer-web-source-test
+      we_renderer_web_source_test.cpp
+      ../abi/WeRenderer.cpp)
+
+    target_link_libraries(we-renderer-web-source-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(we-renderer-web-source-test PRIVATE .. web)
+    target_compile_options(we-renderer-web-source-test PRIVATE ${warn_opts})
+
+    add_test(NAME we-renderer-web-source-test COMMAND we-renderer-web-source-test)
 endif()
 
 # Optional real-CEF smoke test. Off by default because the host

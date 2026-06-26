@@ -1,22 +1,35 @@
 #include "backend/web/internal/cef/BrowserHost.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
+#include <thread>
 
 #include "backend/web/internal/cef/UserProperties.hpp"
 
 namespace wallpaper
 {
-WebBrowserHost::WebBrowserHost(): impl_(std::make_unique<Impl>()) { impl_->app = new AppHandler(); }
+namespace
+{
+struct CefRuntimeState {
+    std::mutex mutex;
+    std::size_t ref_count { 0 };
+};
 
-WebBrowserHost::~WebBrowserHost() { Shutdown(); }
+CefRuntimeState& runtimeState() {
+    static CefRuntimeState state;
+    return state;
+}
 
-bool WebBrowserHost::Init(const InitOptions& opts) {
-    if (impl_->initialised) {
-        std::fprintf(stderr, "web: WebBrowserHost::Init called twice\n");
-        return false;
+bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOptions& opts) {
+    auto& state = runtimeState();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    if (state.ref_count > 0) {
+        ++state.ref_count;
+        return true;
     }
 
     int argc = 1;
@@ -26,7 +39,7 @@ bool WebBrowserHost::Init(const InitOptions& opts) {
 
     CefSettings settings;
     settings.no_sandbox                   = true;
-    settings.windowless_rendering_enabled = true; // OSR mode
+    settings.windowless_rendering_enabled = true;
     settings.multi_threaded_message_loop  = false;
     settings.log_severity                 = LOGSEVERITY_WARNING;
 
@@ -44,15 +57,45 @@ bool WebBrowserHost::Init(const InitOptions& opts) {
         settings.remote_debugging_port = opts.remote_debugging_port;
     }
 
-    // Stash before CefInitialize; AppHandler::OnBeforeCommandLineProcessing
-    // runs synchronously inside it and reads the flag.
-    impl_->app->SetMuteAudio(! opts.enable_audio);
+    app->SetMuteAudio(! opts.enable_audio);
 
-    if (! CefInitialize(main_args, settings, impl_->app.get(), nullptr)) {
+    if (! CefInitialize(main_args, settings, app.get(), nullptr)) {
         std::fprintf(stderr, "web: CefInitialize failed\n");
         return false;
     }
+
+    state.ref_count = 1;
+    return true;
+}
+
+void releaseCefRuntime() {
+    auto& state = runtimeState();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    if (state.ref_count == 0) return;
+    --state.ref_count;
+    if (state.ref_count == 0) {
+        CefShutdown();
+    }
+}
+} // namespace
+
+WebBrowserHost::WebBrowserHost(): impl_(std::make_unique<Impl>()) { impl_->app = new AppHandler(); }
+
+WebBrowserHost::~WebBrowserHost() { Shutdown(); }
+
+bool WebBrowserHost::Init(const InitOptions& opts) {
+    if (impl_->initialised) {
+        std::fprintf(stderr, "web: WebBrowserHost::Init called twice\n");
+        return false;
+    }
+
+    if (! acquireCefRuntime(impl_->app, opts)) {
+        return false;
+    }
+    impl_->runtime_acquired = true;
     impl_->initialised = true;
+    impl_->should_exit.store(false);
+    impl_->close_requested.store(false);
     return true;
 }
 
@@ -86,8 +129,13 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 60;
 
-    CefBrowserHost::CreateBrowser(
+    auto browser = CefBrowserHost::CreateBrowserSync(
         info, impl_->client.get(), url, browser_settings, nullptr, nullptr);
+    if (! browser) {
+        impl_->client = nullptr;
+        impl_->osr = nullptr;
+        return false;
+    }
     return true;
 }
 
@@ -231,11 +279,39 @@ void WebBrowserHost::PushAudioData(const float* data, std::size_t count) {
 
 bool WebBrowserHost::ShouldExit() const { return impl_->should_exit.load(); }
 
-void WebBrowserHost::RequestClose() { impl_->should_exit.store(true); }
+void WebBrowserHost::RequestClose() {
+    if (impl_->close_requested.exchange(true)) return;
+    if (! impl_->client) {
+        impl_->should_exit.store(true);
+        return;
+    }
+    auto browser = impl_->client->GetBrowser();
+    if (! browser || ! browser->GetHost()) {
+        impl_->should_exit.store(true);
+        return;
+    }
+    browser->GetHost()->CloseBrowser(true);
+}
 
 void WebBrowserHost::Shutdown() {
     if (! impl_->initialised) return;
-    CefShutdown();
+
+    RequestClose();
+
+    for (int i = 0; i < 200 && ! impl_->should_exit.load(); ++i) {
+        CefDoMessageLoopWork();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    impl_->client = nullptr;
+    impl_->osr = nullptr;
+    impl_->accel_cb = {};
+    impl_->should_exit.store(true);
+    impl_->close_requested.store(false);
     impl_->initialised = false;
+    if (impl_->runtime_acquired) {
+        releaseCefRuntime();
+        impl_->runtime_acquired = false;
+    }
 }
 } // namespace wallpaper

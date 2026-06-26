@@ -210,26 +210,34 @@ Result<void> WebBackend::start() {
     m_sharedState->readyState.store(BackendReadyState::OutputReady);
     m_sharedState->contentStateChanged.store(true);
     m_sharedState->frameRequested.store(true);
+    m_paused = false;
     return Result<void>::success();
 }
 
 Result<void> WebBackend::pause() {
     if (m_browserHost) m_browserHost->SetPaused(true);
+    m_paused = true;
     return Result<void>::success();
 }
 
 Result<void> WebBackend::resume() {
     if (m_browserHost) m_browserHost->SetPaused(false);
+    m_paused = false;
     return Result<void>::success();
 }
 
 Result<void> WebBackend::stop() {
-    if (m_browserHost) m_browserHost->Shutdown();
+    if (m_browserHost) {
+        m_browserHost->RequestClose();
+        m_browserHost->Shutdown();
+    }
     m_browserHost.reset();
     if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
     m_frameSwapchain.reset();
     m_sharedState->readyState.store(BackendReadyState::Idle);
     m_sharedState->outputBound.store(false);
+    m_sharedState->frameRequested.store(false);
+    m_paused = false;
     return Result<void>::success();
 }
 
@@ -300,7 +308,9 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
 
 Result<void> WebBackend::update() {
     if (m_browserHost) {
-        m_browserHost->Invalidate();
+        if (! m_paused) {
+            m_browserHost->Invalidate();
+        }
         m_browserHost->Pump();
     }
     return Result<void>::success();

@@ -78,5 +78,6 @@ private:
     std::shared_ptr<WebOutputBinding>    m_renderBinding;
     std::unique_ptr<WebFrameSwapchain>   m_frameSwapchain;
     DiagnosticsSnapshot                  m_diagnostics;
+    bool                                 m_paused { false };
 };
 } // namespace wallpaper

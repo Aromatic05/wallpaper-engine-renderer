@@ -6,8 +6,8 @@
 //      locales/) and CEF_ROOT. If either is missing, the test
 //      skips with a one-line diagnostic instead of failing — this
 //      keeps CI green when no CEF is staged.
-//   2. Writes a minimal workshop dir (project.json + index.html)
-//      into a temp directory.
+//   2. Loads a workshop dir from WE_WEB_TEST_WORKSHOP_DIR when set,
+//      otherwise writes a minimal workshop dir into a temp directory.
 //   3. Constructs a WebBackend through the BuiltinBackendFactory,
 //      drives load / bind / play, and pumps CefDoMessageLoopWork
 //      a few times to make sure CEF does not deadlock or SIGABRT
@@ -51,8 +51,17 @@ constexpr const char* kIndexHtml = R"(<!doctype html>
 
 struct WorkshopFixture {
     std::filesystem::path dir;
+    bool                  owns_dir { true };
 
     WorkshopFixture() {
+        if (const char* configured = std::getenv("WE_WEB_TEST_WORKSHOP_DIR")) {
+            if (configured[0]) {
+                dir = configured;
+                owns_dir = false;
+                return;
+            }
+        }
+
         dir = std::filesystem::temp_directory_path()
             / ("wp-web-cef-integration-" + std::to_string(::getpid()));
         std::filesystem::create_directories(dir);
@@ -63,26 +72,34 @@ struct WorkshopFixture {
     }
 
     ~WorkshopFixture() {
+        if (! owns_dir) return;
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
     }
 };
+
+bool hasWorkshopManifest(const std::filesystem::path& dir) {
+    return std::filesystem::exists(dir / "project.json")
+        && std::filesystem::is_regular_file(dir / "project.json");
+}
 
 bool hasCefRuntime() {
     if (const char* root = std::getenv("CEF_ROOT")) {
         if (! root[0]) return false;
         std::filesystem::path p { root };
         if (! std::filesystem::exists(p / "libcef.so")) return false;
-        if (! std::filesystem::exists(p / "Resources" / "locales" / "en-US.pak")) return false;
+        if (! std::filesystem::exists(p / "Resources" / "locales" / "en-US.pak")
+            && ! std::filesystem::exists(p / "locales" / "en-US.pak")) {
+            return false;
+        }
         return true;
     }
-    // Fall back to a best-effort probe: some hosts stage the CEF
-    // binary into a system library path. We don't dlopen here —
-    // the web backend's BrowserHost::Init will fail with a clear
-    // diagnostic if libcef isn't reachable, and the test catches
-    // that failure.
-    return std::filesystem::exists("/usr/lib/libcef.so")
-        || std::filesystem::exists("/usr/lib64/libcef.so");
+    return (std::filesystem::exists("/usr/lib/libcef.so")
+            && std::filesystem::exists("/usr/lib/cef/locales/en-US.pak"))
+        || (std::filesystem::exists("/usr/lib64/libcef.so")
+            && std::filesystem::exists("/usr/lib64/cef/locales/en-US.pak"))
+        || (std::filesystem::exists("/usr/lib/cef/libcef.so")
+            && std::filesystem::exists("/usr/lib/cef/locales/en-US.pak"));
 }
 } // namespace
 
@@ -95,6 +112,12 @@ int main() {
     }
 
     WorkshopFixture workshop;
+    if (! hasWorkshopManifest(workshop.dir)) {
+        std::fprintf(stderr,
+                     "web_cef_integration_test: workshop dir has no project.json: %s\n",
+                     workshop.dir.string().c_str());
+        return 7;
+    }
 
     wallpaper::WallpaperRuntime runtime;
     auto                        session = wallpaper::CreateBuiltinSession(runtime, {});
@@ -121,14 +144,15 @@ int main() {
     target.height = 240;
     if (! session->bindOutput(target)) return 3;
 
-    // The smoke check is "play succeeds and a few pumps do not
+    // The smoke check is "play succeeds and a few ticks do not
     // deadlock". We do not assert any frame flow — that requires
     // a real Vulkan allocator the headless test environment does
     // not provide.
     if (! session->play()) return 4;
 
     for (int i = 0; i < 30; ++i) {
-        if (! session->update()) return 5;
+        auto tickResult = session->tick();
+        if (! tickResult) return 5;
     }
 
     if (! session->stop()) return 6;

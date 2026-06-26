@@ -170,10 +170,14 @@ int main() {
     // Pause / resume forward to SetPaused.
     assert(session->pause());
     assert(mock->last_paused);
+    const auto invalidate_count_before_pause = mock->callCount("Invalidate");
+    assert(session->update());
+    assert(mock->callCount("Invalidate") == invalidate_count_before_pause);
+    assert(mock->callCount("Pump") >= 1);
     assert(session->play());
     assert(! mock->last_paused);
 
-    // Update -> Pump.
+    // Update -> Invalidate + Pump while active.
     assert(session->update());
     assert(mock->callCount("Pump") >= 1);
     assert(mock->callCount("Invalidate") >= 1);
@@ -210,6 +214,7 @@ int main() {
 
     // Stop -> Shutdown.
     assert(session->stop());
+    assert(mock->request_close_count == 1);
     assert(mock->callCount("Shutdown") == 1);
 
     return 0;

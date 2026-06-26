@@ -76,6 +76,7 @@ typedef struct we_render_config_v1 {
 } we_render_config_v1;
 
 WE_RENDERER_API we_session_t* we_session_create(void);
+WE_RENDERER_API we_session_t* we_session_create_with_cache_path(const char* cache_path);
 WE_RENDERER_API void          we_session_destroy(we_session_t* session);
 
 WE_RENDERER_API int32_t we_session_set_source(we_session_t* session, const we_source_v1* source);

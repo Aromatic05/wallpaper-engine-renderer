@@ -75,9 +75,11 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
 inline void printHelp(const char* prog) {
     std::fprintf(stderr,
                  "Usage: %s [options] <assets> <project.json>\n"
+                 "       %s [options] <assets> <workshop-dir>\n"
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"
                  "  -h, --help           show this help\n",
+                 prog,
                  prog);
 }
