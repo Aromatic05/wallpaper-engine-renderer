@@ -16,6 +16,53 @@ namespace wallpaper
 {
 namespace
 {
+WebCefRuntimeProfile runtimeProfileFromEnv() {
+    if (const char* value = std::getenv("WE_CEF_PROFILE")) {
+        const std::string profile { value };
+        if (profile == "compat" || profile == "compatibility") {
+            return WebCefRuntimeProfile::Compatibility;
+        }
+        if (profile == "debug") {
+            return WebCefRuntimeProfile::Debug;
+        }
+    }
+    return WebCefRuntimeProfile::Default;
+}
+
+WebCefWindowSystem preferredWindowSystemFromEnv() {
+    if (const char* value = std::getenv("WE_CEF_WINDOW_SYSTEM")) {
+        const std::string system { value };
+        if (system == "x11") {
+            return WebCefWindowSystem::X11;
+        }
+        if (system == "wayland") {
+            return WebCefWindowSystem::Wayland;
+        }
+    }
+    return WebCefWindowSystem::Auto;
+}
+
+std::vector<std::string> extraSwitchesFromEnv() {
+    std::vector<std::string> switches;
+    if (const char* value = std::getenv("WE_CEF_EXTRA_SWITCHES")) {
+        std::string current;
+        for (const char ch : std::string(value)) {
+            if (ch == ',' || ch == ';' || ch == '\n') {
+                if (! current.empty()) {
+                    switches.push_back(current);
+                    current.clear();
+                }
+                continue;
+            }
+            current.push_back(ch);
+        }
+        if (! current.empty()) {
+            switches.push_back(current);
+        }
+    }
+    return switches;
+}
+
 std::filesystem::path helperPathFromEnv() {
     if (const char* value = std::getenv("WE_CEF_HELPER_PATH")) {
         if (*value) return value;
@@ -135,6 +182,15 @@ std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServicesImpl(const Back
     services->provideCefSubprocessPath = []() -> std::filesystem::path {
         return resolveDefaultCefHelperPath();
     };
+    services->runtimeProfile = []() {
+        return runtimeProfileFromEnv();
+    };
+    services->preferredWindowSystem = []() {
+        return preferredWindowSystemFromEnv();
+    };
+    services->extraCommandLineSwitches = []() {
+        return extraSwitchesFromEnv();
+    };
     services->audioMuted             = []() { return true; };
     services->captureAudioSamples    = [](std::chrono::milliseconds)
         -> std::optional<std::array<float, 128>> { return std::nullopt; };
@@ -165,6 +221,18 @@ Result<void> validateWebEngineServices(const std::shared_ptr<WebEngineServices>&
     if (! services->audioMuted) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "web backend requires audioMuted");
+    }
+    if (! services->runtimeProfile) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "web backend requires runtimeProfile");
+    }
+    if (! services->preferredWindowSystem) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "web backend requires preferredWindowSystem");
+    }
+    if (! services->extraCommandLineSwitches) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "web backend requires extraCommandLineSwitches");
     }
     if (! services->captureAudioSamples) {
         return Result<void>::failure(ResultCode::InvalidArgument,

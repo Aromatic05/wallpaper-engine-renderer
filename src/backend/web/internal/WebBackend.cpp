@@ -180,6 +180,9 @@ Result<void> WebBackend::start() {
     opts.cache_dir             = m_services->provideCefCacheDir();
     opts.browser_subprocess_path = m_services->provideCefSubprocessPath();
     opts.enable_audio          = ! m_services->audioMuted();
+    opts.runtime_profile       = m_services->runtimeProfile();
+    opts.preferred_window_system = m_services->preferredWindowSystem();
+    opts.extra_command_line_switches = m_services->extraCommandLineSwitches();
     auto helperPathResult = validateSubprocessPath(opts.browser_subprocess_path);
     if (! helperPathResult) {
         return helperPathResult;

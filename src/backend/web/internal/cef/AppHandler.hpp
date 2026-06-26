@@ -4,6 +4,11 @@
 #include "include/cef_browser_process_handler.h"
 #include "include/cef_render_process_handler.h"
 
+#include "wallpaper/web/WebEngineServices.hpp"
+
+#include <string>
+#include <vector>
+
 namespace wallpaper
 {
 // CEF application-level handler. Owns the command-line tweaks Wallpaper
@@ -20,6 +25,11 @@ public:
     // true ⇒ append --mute-audio so Chromium never opens an output
     // device. Must be set BEFORE Init() runs.
     void SetMuteAudio(bool m) { m_mute_audio = m; }
+    void SetRuntimeProfile(WebCefRuntimeProfile profile) { m_runtime_profile = profile; }
+    void SetPreferredWindowSystem(WebCefWindowSystem system) { m_window_system = system; }
+    void SetExtraCommandLineSwitches(std::vector<std::string> switches) {
+        m_extra_switches = std::move(switches);
+    }
 
     // CefApp.
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
@@ -36,7 +46,12 @@ public:
                           CefRefPtr<CefV8Context> context) override;
 
 private:
+    static void appendSwitch(CefRefPtr<CefCommandLine> cmd, const std::string& entry);
+
     bool m_mute_audio { false };
+    WebCefRuntimeProfile m_runtime_profile { WebCefRuntimeProfile::Default };
+    WebCefWindowSystem   m_window_system { WebCefWindowSystem::Auto };
+    std::vector<std::string> m_extra_switches;
 
     IMPLEMENT_REFCOUNTING(AppHandler);
     DISALLOW_COPY_AND_ASSIGN(AppHandler);

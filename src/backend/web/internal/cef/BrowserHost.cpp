@@ -58,6 +58,9 @@ bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOpti
     }
 
     app->SetMuteAudio(! opts.enable_audio);
+    app->SetRuntimeProfile(opts.runtime_profile);
+    app->SetPreferredWindowSystem(opts.preferred_window_system);
+    app->SetExtraCommandLineSwitches(opts.extra_command_line_switches);
 
     if (! CefInitialize(main_args, settings, app.get(), nullptr)) {
         std::fprintf(stderr, "web: CefInitialize failed\n");

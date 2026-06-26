@@ -1,11 +1,14 @@
 #pragma once
 
 #include "wallpaper/web/WebTypes.hpp"
+#include "wallpaper/web/WebEngineServices.hpp"
 
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace wallpaper
 {
@@ -37,6 +40,9 @@ public:
         int                   remote_debugging_port { 0 };
         // false ⇒ pass --mute-audio to Chromium so no output device opens.
         bool enable_audio { true };
+        WebCefRuntimeProfile runtime_profile { WebCefRuntimeProfile::Default };
+        WebCefWindowSystem   preferred_window_system { WebCefWindowSystem::Auto };
+        std::vector<std::string> extra_command_line_switches;
     };
 
     WebBrowserHost();

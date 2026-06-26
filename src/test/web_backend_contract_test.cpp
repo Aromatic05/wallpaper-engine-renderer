@@ -74,7 +74,24 @@ int main() {
     WorkshopFixture workshop;
 
     wallpaper::WallpaperRuntime runtime;
-    auto rawBackend = wallpaper::CreateWebBackend(wallpaper::BackendContext {});
+    auto services = std::make_shared<wallpaper::WebEngineServices>();
+    services->provideCefResourcesDir = []() { return std::filesystem::path("/usr/lib/cef"); };
+    services->provideCefLocalesDir = []() { return std::filesystem::path("/usr/lib/cef/locales"); };
+    services->provideCefCacheDir = []() { return std::filesystem::path("/tmp/web-backend-contract-cache"); };
+    services->provideCefSubprocessPath = []() { return std::filesystem::path("/bin/sh"); };
+    services->runtimeProfile = []() { return wallpaper::WebCefRuntimeProfile::Compatibility; };
+    services->preferredWindowSystem = []() { return wallpaper::WebCefWindowSystem::X11; };
+    services->extraCommandLineSwitches = []() {
+        return std::vector<std::string> { "foo", "bar=baz" };
+    };
+    services->audioMuted = []() { return true; };
+    services->captureAudioSamples =
+        [](std::chrono::milliseconds) -> std::optional<std::array<float, 128>> {
+            return std::nullopt;
+        };
+
+    auto rawBackend =
+        wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(services));
     require(static_cast<bool>(rawBackend));
     auto* backend = static_cast<wallpaper::WebBackend*>(rawBackend.value().get());
 
@@ -122,6 +139,11 @@ int main() {
     require(mock->hasCall("SetAcceleratedPaintCallback"));
     require(mock->hasCall("OpenWallpaper"));
     require(mock->has_accelerated_paint_callback);
+    assert(mock->last_init_opts.runtime_profile == wallpaper::WebCefRuntimeProfile::Compatibility);
+    assert(mock->last_init_opts.preferred_window_system == wallpaper::WebCefWindowSystem::X11);
+    assert(mock->last_init_opts.extra_command_line_switches.size() == 2);
+    assert(mock->last_init_opts.extra_command_line_switches[0] == "foo");
+    assert(mock->last_init_opts.extra_command_line_switches[1] == "bar=baz");
 
     // The manifest was forwarded verbatim: entry_html is "index.html",
     // the user_props_json round-trips the {color: {type, value}} object.

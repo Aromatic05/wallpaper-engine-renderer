@@ -8,6 +8,16 @@ namespace wallpaper
 {
 AppHandler::AppHandler() = default;
 
+void AppHandler::appendSwitch(CefRefPtr<CefCommandLine> cmd, const std::string& entry) {
+    if (entry.empty()) return;
+    const auto pos = entry.find('=');
+    if (pos == std::string::npos) {
+        cmd->AppendSwitch(entry);
+        return;
+    }
+    cmd->AppendSwitchWithValue(entry.substr(0, pos), entry.substr(pos + 1));
+}
+
 void AppHandler::OnBeforeCommandLineProcessing(const CefString&          process_type,
                                                CefRefPtr<CefCommandLine> cmd) {
     // Only tweak the browser process command line. Renderer / utility
@@ -40,7 +50,7 @@ void AppHandler::OnBeforeCommandLineProcessing(const CefString&          process
             "Crashpad,AutofillServerCommunication,HardwareMediaKeyHandling,WebBluetooth,WebUSB";
     }
 
-    // EGL-on-ANGLE-on-Wayland; we deliberately do NOT enable Vulkan from
+    // EGL-on-ANGLE by default; we deliberately do NOT enable Vulkan from
     // the CEF side — the page's frames come through OnAcceleratedPaint
     // and are imported into our own Vulkan device in the web backend.
     cmd->AppendSwitchWithValue("use-gl", "angle");
@@ -49,15 +59,35 @@ void AppHandler::OnBeforeCommandLineProcessing(const CefString&          process
     cmd->AppendSwitch("disable-vulkan-surface");
     dis_features += ",Vulkan,VulkanFromANGLE,DefaultAngleVulkan,SkiaGraphite";
 
-    cmd->AppendSwitchWithValue("ozone-platform", "wayland");
+    switch (m_window_system) {
+    case WebCefWindowSystem::Wayland:
+        cmd->AppendSwitchWithValue("ozone-platform", "wayland");
+        break;
+    case WebCefWindowSystem::X11:
+        cmd->AppendSwitchWithValue("ozone-platform", "x11");
+        break;
+    case WebCefWindowSystem::Auto:
+        cmd->AppendSwitchWithValue("ozone-platform", "wayland");
+        break;
+    }
+
     cmd->AppendSwitch("enable-gpu");
     cmd->AppendSwitch("ignore-gpu-blocklist");
     cmd->AppendSwitch("enable-gpu-rasterization");
     cmd->AppendSwitch("enable-gpu-compositing");
     cmd->AppendSwitch("enable-zero-copy");
-
     cmd->AppendSwitch("enable-accelerated-video-decode");
     cmd->AppendSwitch("enable-native-gpu-memory-buffers");
+
+    if (m_runtime_profile == WebCefRuntimeProfile::Compatibility) {
+        dis_features += ",UseSkiaRenderer";
+        cmd->AppendSwitch("disable-gpu-vsync");
+    } else if (m_runtime_profile == WebCefRuntimeProfile::Debug) {
+        cmd->AppendSwitch("enable-logging");
+        cmd->AppendSwitchWithValue("log-level", "0");
+        cmd->AppendSwitch("disable-background-timer-throttling");
+        cmd->AppendSwitch("disable-renderer-backgrounding");
+    }
 
     cmd->AppendSwitchWithValue("enable-features", features);
     cmd->AppendSwitchWithValue("disable-features", dis_features);
@@ -88,6 +118,10 @@ void AppHandler::OnBeforeCommandLineProcessing(const CefString&          process
 
     if (m_mute_audio) {
         cmd->AppendSwitch("mute-audio");
+    }
+
+    for (const auto& entry : m_extra_switches) {
+        appendSwitch(cmd, entry);
     }
 }
 

@@ -6,9 +6,25 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace wallpaper
 {
+enum class WebCefRuntimeProfile
+{
+    Default,
+    Compatibility,
+    Debug,
+};
+
+enum class WebCefWindowSystem
+{
+    Auto,
+    Wayland,
+    X11,
+};
+
 // ---------------------------------------------------------------------------
 // Services the CEF-based web backend needs but cannot create by itself.
 // ---------------------------------------------------------------------------
@@ -46,6 +62,21 @@ struct WebEngineServices {
     // Path to the helper executable CEF should spawn for renderer /
     // utility / zygote child processes.
     std::function<std::filesystem::path()> provideCefSubprocessPath;
+
+    // Profile describing how aggressively to enable Chromium/CEF
+    // features. `Default` keeps the current accelerated path, `Compatibility`
+    // relaxes a few assumptions for debugging/troubleshooting, and `Debug`
+    // keeps the runtime easy to inspect.
+    std::function<WebCefRuntimeProfile()> runtimeProfile;
+
+    // Preferred window-system backend for Chromium's ozone layer.
+    // `Auto` leaves it to the backend's own detection/defaulting logic.
+    std::function<WebCefWindowSystem()> preferredWindowSystem;
+
+    // Additional Chromium command-line switches to append after the
+    // selected runtime profile has been applied. Entries may be either
+    // `name` or `name=value`.
+    std::function<std::vector<std::string>()> extraCommandLineSwitches;
 
     // If true (default), the backend appends --mute-audio to the
     // Chromium command line so no PulseAudio / PipeWire output device
