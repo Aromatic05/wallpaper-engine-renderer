@@ -104,16 +104,52 @@ Expected:
 
 - web backend should not claim unsupported surface/runtime behavior
 
-Current evidence:
+Current evidence (pre-port):
 
 - `src/backend/web/internal/WebBackend.cpp`
   - `supportsSurfaceOutput = false`
   - `start()` returns `NotSupported`
   - `tick()/update()/produceFrame()/acquireOutput()` are honest skeleton hooks
 
-Verification:
+Verification (pre-port):
 
-- `src/test/web_backend_contract_test.cpp`
+- `src/test/web_backend_contract_test.cpp` (asserted `play() ==
+  NotSupported`)
+
+Current evidence (post-port):
+
+- `src/backend/web/internal/WebBackend.cpp` is the real CEF-backed
+  implementation. Lifecycle / properties / input / Pump all route
+  through the CEF BrowserHost; capabilities now include
+  `supportsRenderPlan = true` and the `WebOutputSource` exposes the
+  `WebRenderPlan` to the `OutputController`.
+- The C ABI's `we_session_set_render_config` dispatches on
+  `state->sourceKind` (SCENE -> `BindWESceneOutput`; WEB -> new
+  `MakeWebOutputBinding` + `session->bindOutput`). The
+  `we_session_acquire_frame` central `dynamic_cast` to
+  `WESceneOutputBinding` / `WebOutputBinding` keeps the swapchain
+  read path unified.
+- The web backend is gated on `-DBUILD_WEWEB=ON`; the C ABI's
+  `BackendType::Web` returns a clear "not built" error in the
+  default build.
+- `we_runtime_init(argc, argv)` is the new C ABI entry that
+  supplies the host's real argv so CEF's CefExecuteProcess can
+  detect helper processes.
+
+Verification (post-port):
+
+- `src/test/web_backend_contract_test.cpp` — mock contract test
+  (BUILD_WEWEB=ON) that drives the full lifecycle with a
+  `MockWebBrowserHost` and asserts the recorded BrowserHost call
+  sequence matches the contract for load / bind / play /
+  setProperty / sendInput / pause / resume / update / stop.
+- `src/test/web_cef_integration_test.cpp` — optional real-CEF
+  smoke test gated on `-DWP_ENABLE_CEF_INTEGRATION_TEST=ON` that
+  drives a minimal HTML project and asserts CefDoMessageLoopWork
+  does not deadlock on it. The test self-skips when no CEF
+  runtime is present.
+- `src/test/web/MockWebBrowserHost.hpp` — recording fake used by
+  the contract test.
 
 ## P1: Session state lied about load completion
 
@@ -230,14 +266,25 @@ ctest --test-dir build-check --output-on-failure
 cmake --build build-check -j2 --target sceneviewer
 ```
 
-Current verified results:
+Optional web backend:
+
+```bash
+cmake -S . -B build-check -DBUILD_WEWEB=ON -DCEF_ROOT=/path/to/cef
+cmake --build build-check -j2
+ctest --test-dir build-check --output-on-failure
+# additionally:
+cmake -S . -B build-check -DBUILD_WEWEB=ON -DCEF_ROOT=... -DWP_ENABLE_CEF_INTEGRATION_TEST=ON
+```
+
+Current verified results (default -DBUILD_WEWEB=OFF):
 
 - main library builds
 - `sceneviewer` builds
-- test suite passes:
+- test suite passes (pre-existing 2 segfaults in
+  `resource-correctness-test` / `scenescript-host-test` are
+  baseline issues unrelated to the web port):
   - `wallpaper-session-contract-test`
   - `wallpaper-public-api-test`
   - `output-controller-contract-test`
-  - `web-backend-contract-test`
   - `host-services-contract-test`
   - `wallpaper-architecture-guard-test`

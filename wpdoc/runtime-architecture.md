@@ -35,8 +35,15 @@ WallpaperSession -> ContentBackend -> Output
   - legacy scene execution remains behind `src/backend/scene/internal/engine`
   - the old scene pipeline is not a public API surface
 - `web`
-  - present as a peer backend
-  - currently reports unsupported runtime/output behavior honestly
+  - implemented as `src/backend/web`
+  - CEF-backed BrowserHost under `src/backend/web/internal/cef/`
+  - the C++-internal target is gated on `-DBUILD_WEWEB=ON`; the C
+    ABI's `BackendType::Web` returns a clear "not built" error in
+    the default build so consumers can detect the missing CEF
+    runtime without dereferencing a null backend
+  - the public include surface (`include/wallpaper/web/**`) is
+    CEF-free; only the implementation in `internal/cef/` pulls in
+    `libcef_dll` headers, preserving the architecture boundary
 
 ## Runtime vs Engine
 
@@ -48,10 +55,17 @@ WallpaperSession -> ContentBackend -> Output
 - backend-internal `engine/`
   - legacy scene execution details
   - renderer-driver glue that has not yet been replaced
+- backend-internal `cef/`
+  - CEF handler classes (App / Client / Osr / UserProperties) and
+    the CEF-driven `BrowserHost` implementation
+  - the public `WebBrowserHost` (`include/wallpaper/web/`) is the
+    CEF-free pImpl; the Impl lives in `internal/cef/BrowserHost.cpp`
 
 `src/backend/scene/internal/runtime` is intentionally no longer used. Scene
 internal execution code lives under `internal/engine` to avoid conflicting with
-the shared runtime concept.
+the shared runtime concept. Web backend internals live under
+`src/backend/web/internal/cef/` to keep the CEF include surface off the
+shared runtime concept.
 
 ## Output Contract
 
