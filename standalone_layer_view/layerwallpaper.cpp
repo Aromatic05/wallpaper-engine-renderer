@@ -1,6 +1,7 @@
 #include "arg.hpp"
 #include "wallpaper/abi/WeRenderer.h"
 
+#include <drm/drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <poll.h>
 #include <sys/mman.h>
@@ -29,6 +30,14 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
 namespace {
+
+std::uint32_t toOpaqueDrmFourcc(std::uint32_t drm_fourcc) {
+    switch (drm_fourcc) {
+    case DRM_FORMAT_ABGR8888: return DRM_FORMAT_XBGR8888;
+    case DRM_FORMAT_ARGB8888: return DRM_FORMAT_XRGB8888;
+    default: return drm_fourcc;
+    }
+}
 
 constexpr std::uint32_t kLayerSurfaceAnchors =
     ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
@@ -178,15 +187,6 @@ void updateSurfaceRegions(WaylandState& state) {
 
     if (state.logical_width == 0 || state.logical_height == 0) return;
 
-    wl_region* opaque_region = wl_compositor_create_region(state.compositor);
-    if (! opaque_region) return;
-    wl_region_add(opaque_region,
-                  0,
-                  0,
-                  static_cast<std::int32_t>(state.logical_width),
-                  static_cast<std::int32_t>(state.logical_height));
-    wl_surface_set_opaque_region(state.surface, opaque_region);
-    wl_region_destroy(opaque_region);
 }
 
 void logRenderGeometry(const WaylandState& state, const char* reason) {
@@ -568,7 +568,7 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
                                                       static_cast<int>(frame.width),
                                                       static_cast<int>(frame.height),
                                                       static_cast<int>(frame.shm_stride),
-                                                      WL_SHM_FORMAT_ARGB8888);
+                                                      WL_SHM_FORMAT_XRGB8888);
         wl_shm_pool_destroy(pool);
         if (! buffer) return nullptr;
         auto entry = std::make_unique<WaylandBuffer>();
@@ -612,7 +612,7 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
         params,
         static_cast<std::int32_t>(frame.width),
         static_cast<std::int32_t>(frame.height),
-        frame.drm_fourcc,
+        toOpaqueDrmFourcc(frame.drm_fourcc),
         0);
     zwp_linux_buffer_params_v1_destroy(params);
 
