@@ -33,7 +33,7 @@ if(BUILD_WEWEB)
       web_backend_contract_test.cpp)
 
     target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
-    target_include_directories(web-backend-contract-test PRIVATE ..)
+    target_include_directories(web-backend-contract-test PRIVATE .. web)
     target_compile_options(web-backend-contract-test PRIVATE ${warn_opts})
 
     add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
