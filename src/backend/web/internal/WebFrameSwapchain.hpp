@@ -1,10 +1,8 @@
 #pragma once
 
-#include "wallpaper/swapchain/ExSwapchain.hpp"
+#include "output/swapchain/ShmFrameSwapchain.hpp"
 #include "wallpaper/web/WebTypes.hpp"
 
-#include <array>
-#include <atomic>
 #include <algorithm>
 #include <cstdint>
 #include <unistd.h>
@@ -12,19 +10,12 @@
 
 namespace wallpaper
 {
-class WebFrameSwapchain final : public ExSwapchain {
-    using atomic_ = std::atomic<ExHandle*>;
-
+class WebFrameSwapchain final : public ShmFrameSwapchain {
 public:
-    explicit WebFrameSwapchain(std::uint32_t width, std::uint32_t height)
-        : m_presented(&m_handles[0]), m_ready(&m_handles[1]), m_inprogress(&m_handles[2]),
-          m_width(width), m_height(height) {}
+    using ShmFrameSwapchain::publishFrame;
 
-    ~WebFrameSwapchain() override {
-        for (auto& handle : m_handles) {
-            resetHandle(handle);
-        }
-    }
+    explicit WebFrameSwapchain(std::uint32_t width, std::uint32_t height)
+        : ShmFrameSwapchain(width, height) {}
 
     bool publishFrame(const DmaBufFrame& frame) {
         const int coded_width = std::max(frame.coded_width, 0);
@@ -93,14 +84,6 @@ public:
         return true;
     }
 
-    std::uint32_t width() const override { return m_width; }
-    std::uint32_t height() const override { return m_height; }
-
-protected:
-    atomic_& presented() override { return m_presented; }
-    atomic_& ready() override { return m_ready; }
-    atomic_& inprogress() override { return m_inprogress; }
-
 private:
     static void resetHandle(ExHandle& handle) {
         for (auto& plane : handle.planes) {
@@ -138,12 +121,5 @@ private:
         return 4;
     }
 
-private:
-    std::array<ExHandle, 3> m_handles {};
-    atomic_                 m_presented { nullptr };
-    atomic_                 m_ready { nullptr };
-    atomic_                 m_inprogress { nullptr };
-    std::uint32_t           m_width { 1 };
-    std::uint32_t           m_height { 1 };
 };
 } // namespace wallpaper

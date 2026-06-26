@@ -32,10 +32,10 @@ bool OsrRenderHandler::GetScreenInfo(CefRefPtr<CefBrowser> /*browser*/, CefScree
 }
 
 void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> /*browser*/, PaintElementType /*type*/,
-                               const RectList& /*dirtyRects*/, const void* /*buffer*/,
+                               const RectList& /*dirtyRects*/, const void* buffer,
                                int width, int height) {
     if (software_cb_) {
-        software_cb_(width, height);
+        software_cb_(buffer, width, height, width * 4);
     }
 }
 

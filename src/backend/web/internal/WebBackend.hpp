@@ -82,6 +82,7 @@ private:
     std::unique_ptr<WebFrameSwapchain>   m_frameSwapchain;
     DiagnosticsSnapshot                  m_diagnostics;
     bool                                 m_paused { false };
+    bool                                 m_softwareFallbackEnabled { false };
     bool                                 m_reportedSoftwareFallbackUnsupported { false };
     bool                                 m_reportedMissingAcceleratedFrames { false };
     int                                  m_updatesWithoutAcceleratedFrame { 0 };

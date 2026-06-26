@@ -64,9 +64,9 @@ private:
     std::unique_ptr<wallpaper::ContentBackend> backend_;
 };
 
-void require(bool condition) {
+void requireAt(bool condition, const char* label) {
     if (! condition) {
-        std::fprintf(stderr, "web_backend_contract_test: requirement failed\n");
+        std::fprintf(stderr, "web_backend_contract_test: requirement failed at %s\n", label);
         std::abort();
     }
 }
@@ -94,7 +94,7 @@ int main() {
 
     auto rawBackend =
         wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(services));
-    require(static_cast<bool>(rawBackend));
+    requireAt(static_cast<bool>(rawBackend), "raw backend create");
     auto* backend = static_cast<wallpaper::WebBackend*>(rawBackend.value().get());
 
     // Replace the BrowserHost with a recording fake so the test
@@ -107,19 +107,20 @@ int main() {
     sessionConfig.backendFactory =
         std::make_shared<SingleBackendFactory>(std::move(rawBackend.value()));
     auto session = runtime.createSession(sessionConfig);
-    require(static_cast<bool>(session));
+    requireAt(static_cast<bool>(session), "session create");
 
     // Load: parses the workshop project.json and stores the manifest.
     wallpaper::WebSourceConfig sourceConfig;
     sourceConfig.uri = workshop.dir.string();
     auto loadResult = session->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
-    require(static_cast<bool>(loadResult));
+    requireAt(static_cast<bool>(loadResult), "load result");
 
     // Render config + bind: required before start().
     wallpaper::RenderInitInfo info {};
     info.offscreen = true;
     info.export_mode = wallpaper::ExternalFrameExportMode::DMA_BUF;
     info.offscreen_tiling = wallpaper::TexTiling::LINEAR;
+    info.allow_shm_fallback = true;
     info.width = 640;
     info.height = 480;
     auto binding = wallpaper::MakeWebOutputBinding(info);
@@ -129,20 +130,20 @@ int main() {
     target.width = 640;
     target.height = 480;
     auto bindResult = session->bindOutput(target);
-    require(static_cast<bool>(bindResult));
+    requireAt(static_cast<bool>(bindResult), "bind result");
 
     // Start: begin the CEF lifecycle (Init, OpenWallpaper) — the mock records every call without
     // touching CEF.
     auto playResult = session->play();
-    require(static_cast<bool>(playResult));
+    requireAt(static_cast<bool>(playResult), "play result");
 
     // Init runs before OpenWallpaper.
-    require(mock->hasCall("Init"));
-    require(mock->hasCall("SetAcceleratedPaintCallback"));
-    require(mock->hasCall("SetSoftwarePaintCallback"));
-    require(mock->hasCall("OpenWallpaper"));
-    require(mock->has_accelerated_paint_callback);
-    require(mock->has_software_paint_callback);
+    requireAt(mock->hasCall("Init"), "mock init call");
+    requireAt(mock->hasCall("SetAcceleratedPaintCallback"), "mock accel callback call");
+    requireAt(mock->hasCall("SetSoftwarePaintCallback"), "mock software callback call");
+    requireAt(mock->hasCall("OpenWallpaper"), "mock open wallpaper call");
+    requireAt(mock->has_accelerated_paint_callback, "mock accel callback installed");
+    requireAt(mock->has_software_paint_callback, "mock software callback installed");
     assert(mock->last_init_opts.runtime_profile == wallpaper::WebCefRuntimeProfile::Compatibility);
     assert(mock->last_init_opts.preferred_window_system == wallpaper::WebCefWindowSystem::X11);
     assert(mock->last_init_opts.extra_command_line_switches.size() == 2);
@@ -215,24 +216,32 @@ int main() {
     assert(mock->wheel_delta_x == -5);
     assert(mock->wheel_delta_y == 120);
 
-    mock->software_paint_callback(320, 240);
+    std::vector<std::uint8_t> software_pixels(320u * 240u * 4u, 0x7f);
+    mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
     diagnostics = backend->diagnostics();
     std::size_t software_fallback_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
-        if (entry.message.find("SHM/software fallback is not implemented") != std::string::npos) {
+        if (entry.message.find("exported it through SHM fallback") != std::string::npos) {
             ++software_fallback_warnings;
         }
     }
-    require(software_fallback_warnings == 1);
-    auto no_frame_after_software_paint = backend->tick();
-    assert(no_frame_after_software_paint);
-    require(! no_frame_after_software_paint.value().frameRequested);
+    requireAt(software_fallback_warnings == 1, "single software fallback warning");
+    auto software_frame_lifecycle = backend->tick();
+    assert(software_frame_lifecycle);
+    requireAt(software_frame_lifecycle.value().frameRequested,
+              "software paint should request frame");
+    auto* software_frame = binding->swapchain()->eatFrame();
+    requireAt(software_frame != nullptr, "software frame should be published");
+    requireAt(software_frame->isShm(), "software frame should use shm");
+    requireAt(software_frame->width == 320, "software frame width");
+    requireAt(software_frame->height == 240, "software frame height");
+    requireAt(software_frame->fd >= 0, "software frame fd");
 
-    mock->software_paint_callback(320, 240);
+    mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
     diagnostics = backend->diagnostics();
     software_fallback_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
-        if (entry.message.find("SHM/software fallback is not implemented") != std::string::npos) {
+        if (entry.message.find("exported it through SHM fallback") != std::string::npos) {
             ++software_fallback_warnings;
         }
     }
@@ -266,7 +275,7 @@ int main() {
     assert(session->play());
     assert(! mock->last_paused);
 
-    for (int i = 0; i < kMissingAcceleratedFrameWarningUpdates - 1; ++i) {
+    for (int i = 0; i < kMissingAcceleratedFrameWarningUpdates; ++i) {
         assert(session->update());
     }
     diagnostics = backend->diagnostics();
@@ -276,19 +285,11 @@ int main() {
             ++missing_accelerated_warnings;
         }
     }
-    require(missing_accelerated_warnings == 0);
+    requireAt(missing_accelerated_warnings == 0,
+              "no missing accel warning when shm fallback is enabled");
 
-    // Update -> Invalidate + Pump while active.
-    assert(session->update());
     assert(mock->callCount("Pump") >= 1);
     assert(mock->callCount("Invalidate") >= 1);
-    diagnostics = backend->diagnostics();
-    for (const auto& entry : diagnostics.entries) {
-        if (entry.message.find("accelerated paint frames after") != std::string::npos) {
-            ++missing_accelerated_warnings;
-        }
-    }
-    require(missing_accelerated_warnings == 1);
 
     // Accelerated paint callback drives real frame availability into the
     // attached WebOutputBinding swapchain.
@@ -347,25 +348,38 @@ int main() {
 
     auto missingHelperBackend =
         wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(missingHelperServices));
-    require(static_cast<bool>(missingHelperBackend));
+    requireAt(static_cast<bool>(missingHelperBackend), "missing helper backend create");
     auto* missingHelperRaw =
         static_cast<wallpaper::WebBackend*>(missingHelperBackend.value().get());
     missingHelperRaw->testSetBrowserHost(std::make_shared<wallpaper::test::MockWebBrowserHost>());
+
+    wallpaper::RenderInitInfo missingInfo {};
+    missingInfo.offscreen = true;
+    missingInfo.export_mode = wallpaper::ExternalFrameExportMode::DMA_BUF;
+    missingInfo.offscreen_tiling = wallpaper::TexTiling::LINEAR;
+    missingInfo.width = 640;
+    missingInfo.height = 480;
+    auto missingBinding = wallpaper::MakeWebOutputBinding(missingInfo);
+    wallpaper::OutputTarget missingTarget {};
+    missingTarget.type = wallpaper::OutputTargetType::Offscreen;
+    missingTarget.binding = missingBinding;
+    missingTarget.width = 640;
+    missingTarget.height = 480;
 
     wallpaper::SessionConfig missingHelperSessionConfig {};
     missingHelperSessionConfig.backendFactory =
         std::make_shared<SingleBackendFactory>(std::move(missingHelperBackend.value()));
     auto missingHelperSession = runtime.createSession(missingHelperSessionConfig);
-    require(static_cast<bool>(missingHelperSession));
+    requireAt(static_cast<bool>(missingHelperSession), "missing helper session create");
 
     auto missingLoadResult = missingHelperSession->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
-    require(static_cast<bool>(missingLoadResult));
-    auto missingBindResult = missingHelperSession->bindOutput(target);
-    require(static_cast<bool>(missingBindResult));
+    requireAt(static_cast<bool>(missingLoadResult), "missing helper load");
+    auto missingBindResult = missingHelperSession->bindOutput(missingTarget);
+    requireAt(static_cast<bool>(missingBindResult), "missing helper bind");
     auto missingPlayResult = missingHelperSession->play();
-    require(! missingPlayResult);
+    requireAt(! missingPlayResult, "missing helper play should fail");
     const auto missingDiagnostics = missingHelperRaw->diagnostics();
-    require(! missingDiagnostics.entries.empty());
+    requireAt(! missingDiagnostics.entries.empty(), "missing helper diagnostics not empty");
     bool sawMissingHelperDiagnostic = false;
     for (const auto& entry : missingDiagnostics.entries) {
         if (entry.message.find("CEF subprocess helper not found") != std::string::npos) {
@@ -373,7 +387,7 @@ int main() {
             break;
         }
     }
-    require(sawMissingHelperDiagnostic);
+    requireAt(sawMissingHelperDiagnostic, "missing helper diagnostic content");
 
     return 0;
 }

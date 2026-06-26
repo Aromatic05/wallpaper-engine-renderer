@@ -1,5 +1,4 @@
 #include "wallpaper/abi/WeRenderer.h"
-#include "wallpaper/Result.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -51,15 +50,15 @@ int main() {
     const std::int32_t set_source_result = we_session_set_source(session, &source);
     assert(set_source_result == 0);
 
-    we_render_config_v1 unsupported_config {};
-    unsupported_config.size = sizeof(unsupported_config);
-    unsupported_config.version = 1;
-    unsupported_config.width = 1280;
-    unsupported_config.height = 720;
-    unsupported_config.prefer_dmabuf = false;
-    unsupported_config.allow_shm_fallback = true;
-    const std::int32_t unsupported_result = we_session_set_render_config(session, &unsupported_config);
-    assert(unsupported_result == static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
+    we_render_config_v1 shm_config {};
+    shm_config.size = sizeof(shm_config);
+    shm_config.version = 1;
+    shm_config.width = 1280;
+    shm_config.height = 720;
+    shm_config.prefer_dmabuf = false;
+    shm_config.allow_shm_fallback = true;
+    const std::int32_t shm_result = we_session_set_render_config(session, &shm_config);
+    assert(shm_result == 0);
 
     we_render_config_v1 supported_config {};
     supported_config.size = sizeof(supported_config);
@@ -70,6 +69,16 @@ int main() {
     supported_config.allow_shm_fallback = false;
     const std::int32_t supported_result = we_session_set_render_config(session, &supported_config);
     assert(supported_result == 0);
+
+    we_render_config_v1 fallback_config {};
+    fallback_config.size = sizeof(fallback_config);
+    fallback_config.version = 1;
+    fallback_config.width = 1280;
+    fallback_config.height = 720;
+    fallback_config.prefer_dmabuf = true;
+    fallback_config.allow_shm_fallback = true;
+    const std::int32_t fallback_result = we_session_set_render_config(session, &fallback_config);
+    assert(fallback_result == 0);
 
     we_session_destroy(session);
     return 0;

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace wallpaper
 {
@@ -62,7 +63,8 @@ struct DmaBufFrame {
 // the main thread inside CefDoMessageLoopWork. FDs in the delivered frame
 // are valid only for the duration of the call.
 using AcceleratedPaintCallback = std::function<void(const DmaBufFrame&)>;
-using SoftwarePaintCallback = std::function<void(int width, int height)>;
+using SoftwarePaintCallback =
+    std::function<void(const void* buffer, int width, int height, int stride_bytes)>;
 
 // ---------------------------------------------------------------------------
 // Parsed <workshop_dir>/project.json for a Wallpaper Engine *web* wallpaper.

@@ -97,6 +97,7 @@ bool WebBrowserHost::Init(const InitOptions& opts) {
     }
     impl_->runtime_acquired = true;
     impl_->initialised = true;
+    impl_->prefer_accelerated_paint = opts.prefer_accelerated_paint;
     impl_->should_exit.store(false);
     impl_->close_requested.store(false);
     return true;
@@ -129,8 +130,8 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
     std::string url   = "file://" + entry.string();
 
     CefWindowInfo info;
-    info.SetAsWindowless(0);         // no parent window — pure OSR
-    info.shared_texture_enabled = 1; // request DMA-BUF / OnAcceleratedPaint
+    info.SetAsWindowless(0); // no parent window — pure OSR
+    info.shared_texture_enabled = impl_->prefer_accelerated_paint ? 1 : 0;
 
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 60;

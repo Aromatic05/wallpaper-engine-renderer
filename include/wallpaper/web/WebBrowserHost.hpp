@@ -42,6 +42,7 @@ public:
         bool enable_audio { true };
         WebCefRuntimeProfile runtime_profile { WebCefRuntimeProfile::Default };
         WebCefWindowSystem   preferred_window_system { WebCefWindowSystem::Auto };
+        bool                 prefer_accelerated_paint { true };
         std::vector<std::string> extra_command_line_switches;
     };
 

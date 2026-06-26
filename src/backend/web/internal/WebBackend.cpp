@@ -89,6 +89,7 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
     m_sharedState->acceleratedFrameSeen.store(false);
     m_reportedSoftwareFallbackUnsupported = false;
     m_reportedMissingAcceleratedFrames = false;
+    m_softwareFallbackEnabled = false;
     m_updatesWithoutAcceleratedFrame = 0;
 
     m_workshopDir = WorkshopDirFromSourceUri(source.uri);
@@ -197,10 +198,17 @@ Result<void> WebBackend::start() {
 
     int width  = 1280;
     int height = 720;
+    ExternalFrameExportMode export_mode = ExternalFrameExportMode::DMA_BUF;
+    bool allow_shm_fallback = false;
     if (m_renderBinding) {
         width  = m_renderBinding->renderInitInfo().width;
         height = m_renderBinding->renderInitInfo().height;
+        export_mode = m_renderBinding->renderInitInfo().export_mode;
+        allow_shm_fallback = m_renderBinding->renderInitInfo().allow_shm_fallback;
     }
+    m_softwareFallbackEnabled =
+        export_mode == ExternalFrameExportMode::SHM || allow_shm_fallback;
+    opts.prefer_accelerated_paint = export_mode == ExternalFrameExportMode::DMA_BUF;
     m_browserHost->SetAcceleratedPaintCallback([this](const DmaBufFrame& frame) {
         if (! m_frameSwapchain) return;
         if (! m_frameSwapchain->publishFrame(frame)) {
@@ -212,13 +220,38 @@ Result<void> WebBackend::start() {
         m_updatesWithoutAcceleratedFrame = 0;
         m_sharedState->frameRequested.store(true);
     });
-    m_browserHost->SetSoftwarePaintCallback([this](int width, int height) {
-        if (m_reportedSoftwareFallbackUnsupported) return;
-        m_reportedSoftwareFallbackUnsupported = true;
-        appendDiagnostic(DiagnosticSeverity::Warning,
-                         "web backend received CPU paint frame ("
-                             + std::to_string(width) + "x" + std::to_string(height)
-                             + ") but SHM/software fallback is not implemented");
+    m_browserHost->SetSoftwarePaintCallback([this, export_mode, allow_shm_fallback](
+                                                const void* buffer,
+                                                int         width,
+                                                int         height,
+                                                int         stride_bytes) {
+        if (! m_softwareFallbackEnabled) {
+            if (m_reportedSoftwareFallbackUnsupported) return;
+            m_reportedSoftwareFallbackUnsupported = true;
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "web backend received CPU paint frame ("
+                                 + std::to_string(width) + "x" + std::to_string(height)
+                                 + ") but SHM/software fallback is disabled");
+            return;
+        }
+        if (! m_frameSwapchain) return;
+        if (! m_frameSwapchain->publishFrame(
+                buffer,
+                static_cast<std::uint32_t>(std::max(width, 0)),
+                static_cast<std::uint32_t>(std::max(height, 0)),
+                static_cast<std::uint32_t>(std::max(stride_bytes, 0)))) {
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "web backend failed to publish software paint frame");
+            return;
+        }
+        if (! m_reportedSoftwareFallbackUnsupported) {
+            m_reportedSoftwareFallbackUnsupported = true;
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "web backend received CPU paint frame ("
+                                 + std::to_string(width) + "x" + std::to_string(height)
+                                 + ") and exported it through SHM fallback");
+        }
+        m_sharedState->frameRequested.store(true);
     });
     if (! m_browserHost->OpenWallpaper(*m_manifest, m_workshopDir, width, height)) {
         return Result<void>::failure(ResultCode::InternalError, "CEF CreateBrowser failed");
@@ -361,7 +394,8 @@ Result<void> WebBackend::update() {
     if (m_browserHost) {
         if (! m_paused) {
             m_browserHost->Invalidate();
-            if (! m_sharedState->acceleratedFrameSeen.load()
+            if (! m_softwareFallbackEnabled
+                && ! m_sharedState->acceleratedFrameSeen.load()
                 && ! m_reportedMissingAcceleratedFrames) {
                 ++m_updatesWithoutAcceleratedFrame;
                 if (m_updatesWithoutAcceleratedFrame

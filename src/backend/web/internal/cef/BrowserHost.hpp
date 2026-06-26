@@ -23,5 +23,6 @@ struct WebBrowserHost::Impl {
     std::atomic<bool>           close_requested { false };
     bool                        initialised { false };
     bool                        runtime_acquired { false };
+    bool                        prefer_accelerated_paint { true };
 };
 } // namespace wallpaper
