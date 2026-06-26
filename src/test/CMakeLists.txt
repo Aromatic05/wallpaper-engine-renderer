@@ -49,6 +49,16 @@ if(BUILD_WEWEB)
     target_compile_options(we-renderer-web-source-test PRIVATE ${warn_opts})
 
     add_test(NAME we-renderer-web-source-test COMMAND we-renderer-web-source-test)
+
+    add_executable(
+      web-user-properties-test
+      web_user_properties_test.cpp)
+
+    target_link_libraries(web-user-properties-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(web-user-properties-test PRIVATE ..)
+    target_compile_options(web-user-properties-test PRIVATE ${warn_opts})
+
+    add_test(NAME web-user-properties-test COMMAND web-user-properties-test)
 endif()
 
 # Optional real-CEF smoke test. Off by default because the host

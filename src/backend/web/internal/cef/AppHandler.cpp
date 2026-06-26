@@ -2,6 +2,8 @@
 
 #include "include/cef_command_line.h"
 
+#include "backend/web/internal/cef/UserProperties.hpp"
+
 namespace wallpaper
 {
 AppHandler::AppHandler() = default;
@@ -119,5 +121,11 @@ void AppHandler::OnContextCreated(CefRefPtr<CefBrowser> /*browser*/, CefRefPtr<C
         "  };"
         "})();";
     frame->ExecuteJavaScript(kAudioApi, "wallpaper://internal/audio_api.js", 0);
+
+    const auto propertyBridge = BuildPropertyListenerBootstrapSnippet();
+    if (! propertyBridge.empty()) {
+        frame->ExecuteJavaScript(
+            propertyBridge, "wallpaper://internal/property_bridge.js", 0);
+    }
 }
 } // namespace wallpaper

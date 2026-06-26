@@ -59,6 +59,8 @@ void OsrRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> /*browser*/, Pai
                                                                    : DmaBufFormat::RGBA8_UNORM;
     frame.coded_width    = info.extra.coded_size.width;
     frame.coded_height   = info.extra.coded_size.height;
+    frame.visible_x      = info.extra.visible_rect.x;
+    frame.visible_y      = info.extra.visible_rect.y;
     frame.visible_width  = info.extra.visible_rect.width;
     frame.visible_height = info.extra.visible_rect.height;
 

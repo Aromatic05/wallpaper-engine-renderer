@@ -27,10 +27,29 @@ public:
     }
 
     bool publishFrame(const DmaBufFrame& frame) {
-        const std::uint32_t width =
-            static_cast<std::uint32_t>(std::max(frame.visible_width, frame.coded_width));
-        const std::uint32_t height =
-            static_cast<std::uint32_t>(std::max(frame.visible_height, frame.coded_height));
+        const int coded_width = std::max(frame.coded_width, 0);
+        const int coded_height = std::max(frame.coded_height, 0);
+        const int visible_x = std::max(frame.visible_x, 0);
+        const int visible_y = std::max(frame.visible_y, 0);
+        const int visible_width =
+            frame.visible_width > 0 ? frame.visible_width : frame.coded_width;
+        const int visible_height =
+            frame.visible_height > 0 ? frame.visible_height : frame.coded_height;
+        if (visible_width <= 0 || visible_height <= 0 || frame.plane_count <= 0) {
+            return false;
+        }
+        if (coded_width > 0 && visible_x + visible_width > coded_width) {
+            return false;
+        }
+        if (coded_height > 0 && visible_y + visible_height > coded_height) {
+            return false;
+        }
+        if ((visible_x != 0 || visible_y != 0) && frame.plane_count != 1) {
+            return false;
+        }
+
+        const std::uint32_t width = static_cast<std::uint32_t>(visible_width);
+        const std::uint32_t height = static_cast<std::uint32_t>(visible_height);
         if (width == 0 || height == 0 || frame.plane_count <= 0) {
             return false;
         }
@@ -49,6 +68,11 @@ public:
         slot->n_planes = static_cast<std::uint32_t>(std::min(frame.plane_count, 4));
         slot->premultiplied = false;
 
+        const std::uint32_t x_offset_bytes =
+            static_cast<std::uint32_t>(visible_x) * bytesPerPixel(frame.format);
+        const std::uint32_t y_offset_bytes =
+            static_cast<std::uint32_t>(visible_y) * frame.planes[0].stride;
+
         for (std::uint32_t i = 0; i < slot->n_planes; ++i) {
             const int dup_fd = ::dup(frame.planes[i].fd);
             if (dup_fd < 0) {
@@ -58,6 +82,9 @@ public:
             slot->planes[i].fd = dup_fd;
             slot->planes[i].stride = frame.planes[i].stride;
             slot->planes[i].offset = static_cast<std::uint32_t>(frame.planes[i].offset);
+            if (i == 0) {
+                slot->planes[i].offset += x_offset_bytes + y_offset_bytes;
+            }
         }
 
         m_width = width;
@@ -101,6 +128,14 @@ private:
         case DmaBufFormat::RGBA8_UNORM: return DRM_FORMAT_ABGR8888;
         }
         return DRM_FORMAT_ABGR8888;
+    }
+
+    static std::uint32_t bytesPerPixel(DmaBufFormat format) {
+        switch (format) {
+        case DmaBufFormat::BGRA8_UNORM:
+        case DmaBufFormat::RGBA8_UNORM: return 4;
+        }
+        return 4;
     }
 
 private:

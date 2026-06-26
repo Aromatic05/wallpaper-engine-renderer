@@ -15,9 +15,11 @@ namespace wallpaper
 {
 // CefClient + life-span / load / display handler glue. Holds the
 // verbatim user-properties JSON (already serialised by LoadWebManifest
-// — see include/wallpaper/web/WebTypes.hpp) and injects it into the
-// page's wallpaperPropertyListener.applyUserProperties hook on first
-// OnLoadEnd. Routes CefConsoleMessage through stderr for diagnostics.
+// — see include/wallpaper/web/WebTypes.hpp) and injects it on first
+// OnLoadEnd. The property bridge itself is preinstalled from
+// AppHandler::OnContextCreated so late listener registration still
+// receives the queued payload. Routes CefConsoleMessage through stderr
+// for diagnostics.
 class ClientHandler : public CefClient,
                       public CefLifeSpanHandler,
                       public CefLoadHandler,

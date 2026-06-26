@@ -52,6 +52,8 @@ struct DmaBufFrame {
     int coded_width { 0 };
     int coded_height { 0 };
     // Visible portion (typically equals coded for our use case).
+    int visible_x { 0 };
+    int visible_y { 0 };
     int visible_width { 0 };
     int visible_height { 0 };
 };

@@ -6,31 +6,79 @@ namespace wallpaper
 {
 namespace
 {
-// We need to inject a JS literal that may itself contain an arbitrary
-// JSON object. The page-side listener convention is:
-//
-//   window.wallpaperPropertyListener = {
-//     applyUserProperties: function(props) { ... }
-//   };
-//
-// We hand it the project.json `general.properties` object verbatim
-// (already serialised by LoadWebManifest); each entry preserves its
-// `type` and `value` fields, matching what WE's own runtime delivers.
-// The wrapper is defensive: if the page hasn't installed the listener
-// yet (or installed one with the wrong type), the call is dropped with
-// a console-side diagnostic instead of throwing.
-const char* kListenerGuard =
-    "  if (typeof window.wallpaperPropertyListener !== 'object') return false;"
-    "  if (typeof window.wallpaperPropertyListener.applyUserProperties !== 'function') return false;"
-    "  try {";
-
-const char* kListenerGuardEnd =
-    "  } catch (e) {"
-    "    console.error('web: applyUserProperties threw:', e);"
-    "    return false;"
-    "  }"
-    "  return true;";
+std::string buildBridgeApplyCall(std::string payload_expr) {
+    std::string snippet =
+        "(function(){"
+        "  if (typeof window.__weweb_applyUserProperties === 'function') {"
+        "    window.__weweb_applyUserProperties(";
+    snippet += payload_expr;
+    snippet += ");"
+               "    return;"
+               "  }"
+               "  if (typeof window.wallpaperPropertyListener !== 'object') return;"
+               "  if (typeof window.wallpaperPropertyListener.applyUserProperties !== 'function') return;"
+               "  try {"
+               "    window.wallpaperPropertyListener.applyUserProperties(";
+    snippet += payload_expr;
+    snippet += ");"
+               "  } catch (e) {"
+               "    console.error('web: applyUserProperties threw:', e);"
+               "  }"
+               "})();";
+    return snippet;
+}
 } // namespace
+
+std::string BuildPropertyListenerBootstrapSnippet() {
+    return
+        "(function(){"
+        "  if (window.__weweb_property_bridge_installed) return;"
+        "  window.__weweb_property_bridge_installed = true;"
+        "  var pending = [];"
+        "  var pollId = 0;"
+        "  var flush = function(){"
+        "    var listener = window.wallpaperPropertyListener;"
+        "    if (typeof listener !== 'object' || listener === null) return false;"
+        "    if (typeof listener.applyUserProperties !== 'function') return false;"
+        "    while (pending.length > 0) {"
+        "      var payload = pending.shift();"
+        "      try {"
+        "        listener.applyUserProperties(payload);"
+        "      } catch (e) {"
+        "        console.error('web: applyUserProperties threw:', e);"
+        "      }"
+        "    }"
+        "    if (pollId) { window.clearInterval(pollId); pollId = 0; }"
+        "    return true;"
+        "  };"
+        "  var startPolling = function(){"
+        "    if (pollId) return;"
+        "    pollId = window.setInterval(function(){ flush(); }, 250);"
+        "  };"
+        "  window.__weweb_applyUserProperties = function(payload){"
+        "    if (typeof payload === 'undefined') return false;"
+        "    pending.push(payload);"
+        "    if (!flush()) startPolling();"
+        "    return true;"
+        "  };"
+        "  try {"
+        "    var currentListener = window.wallpaperPropertyListener;"
+        "    Object.defineProperty(window, 'wallpaperPropertyListener', {"
+        "      configurable: true,"
+        "      enumerable: true,"
+        "      get: function(){ return currentListener; },"
+        "      set: function(value){ currentListener = value; if (!flush()) startPolling(); }"
+        "    });"
+        "    if (typeof currentListener !== 'undefined') {"
+        "      window.wallpaperPropertyListener = currentListener;"
+        "    }"
+        "  } catch (e) {"
+        "    console.error('web: install property bridge failed:', e);"
+        "    startPolling();"
+        "  }"
+        "  flush();"
+        "})();";
+}
 
 std::string BuildPropertyListenerApplySnippet(const std::string& user_props_json) {
     // The page side typically registers a listener like:
@@ -45,19 +93,7 @@ std::string BuildPropertyListenerApplySnippet(const std::string& user_props_json
     if (user_props_json.empty()) {
         return {};
     }
-    std::string snippet =
-        "(function(){"
-        "  if (typeof window.wallpaperPropertyListener !== 'object') return;"
-        "  if (typeof window.wallpaperPropertyListener.applyUserProperties !== 'function') return;"
-        "  try {"
-        "    window.wallpaperPropertyListener.applyUserProperties(";
-    snippet += user_props_json;
-    snippet += "    );"
-               "  } catch (e) {"
-               "    console.error('web: applyUserProperties threw:', e);"
-               "  }"
-               "})();";
-    return snippet;
+    return buildBridgeApplyCall(user_props_json);
 }
 
 void InjectUserProperties(CefRefPtr<CefBrowser> browser, const std::string& user_props_json,
@@ -79,20 +115,11 @@ std::string BuildApplyUserPropertySnippet(const std::string& key, const std::str
     // `{"value": 0.8, "type": "slider"}`); we splice it directly so
     // the page sees the same {type, value} envelope it would on
     // project.json load.
-    std::string snippet =
-        "(function(){"
-        "  if (typeof window.wallpaperPropertyListener !== 'object') return;"
-        "  if (typeof window.wallpaperPropertyListener.applyUserProperties !== 'function') return;"
-        "  try {"
-        "    window.wallpaperPropertyListener.applyUserProperties({\"";
-    snippet += key;
-    snippet += "\": ";
-    snippet += value_json;
-    snippet += "});"
-               "  } catch (e) {"
-               "    console.error('web: applyUserProperties patch threw:', e);"
-               "  }"
-               "})();";
-    return snippet;
+    std::string payload = "{\"";
+    payload += key;
+    payload += "\": ";
+    payload += value_json;
+    payload += "}";
+    return buildBridgeApplyCall(std::move(payload));
 }
 } // namespace wallpaper

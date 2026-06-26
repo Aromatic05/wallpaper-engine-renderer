@@ -209,7 +209,7 @@ Result<void> WebBackend::start() {
 
     m_sharedState->readyState.store(BackendReadyState::OutputReady);
     m_sharedState->contentStateChanged.store(true);
-    m_sharedState->frameRequested.store(true);
+    m_sharedState->frameRequested.store(false);
     m_paused = false;
     return Result<void>::success();
 }

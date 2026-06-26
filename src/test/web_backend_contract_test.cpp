@@ -134,6 +134,12 @@ int main() {
     assert(mock->last_open_height == 480);
     assert(mock->last_workshop_dir == workshop.dir);
 
+    // Start should not advertise a frame until CEF has delivered one.
+    auto startupLifecycle = backend->tick();
+    assert(startupLifecycle);
+    assert(startupLifecycle.value().contentStateChanged);
+    assert(! startupLifecycle.value().frameRequested);
+
     // Audio volume 0.7 lands on ApplyVolume(0.7). ApplyVolume builds
     // the applyUserProperties({audio: {value: 0.7}}) snippet, so the
     // JS-side ApplyUserProperty call is expected too.
@@ -189,12 +195,14 @@ int main() {
     wallpaper::DmaBufFrame frame {};
     frame.plane_count = 1;
     frame.planes[0].fd = frame_fd;
-    frame.planes[0].stride = 640 * 4;
-    frame.planes[0].offset = 0;
+    frame.planes[0].stride = 800 * 4;
+    frame.planes[0].offset = 128;
     frame.modifier = static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR);
     frame.format = wallpaper::DmaBufFormat::RGBA8_UNORM;
-    frame.coded_width = 640;
-    frame.coded_height = 480;
+    frame.coded_width = 800;
+    frame.coded_height = 600;
+    frame.visible_x = 10;
+    frame.visible_y = 20;
     frame.visible_width = 640;
     frame.visible_height = 480;
     mock->accelerated_paint_callback(frame);
@@ -209,6 +217,8 @@ int main() {
     assert(ex_frame->width == 640);
     assert(ex_frame->height == 480);
     assert(ex_frame->drm_fourcc == DRM_FORMAT_ABGR8888);
+    assert(ex_frame->planes[0].stride == 800u * 4u);
+    assert(ex_frame->planes[0].offset == 128u + 20u * 800u * 4u + 10u * 4u);
     assert(ex_frame->planes[0].fd >= 0);
     ::close(frame_fd);
 
