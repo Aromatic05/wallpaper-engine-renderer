@@ -11,12 +11,17 @@
 //   - presents frames (acquire_frame / frame_release)
 //   - forwards input (send_pointer_event)
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
@@ -42,7 +47,6 @@ typedef struct VkPhysicalDeviceExternalMemoryFeatures {
 
 #include "arg.hpp"
 #include "wallpaper/abi/WeRenderer.h"
-
 namespace {
 
 // ---- Vulkan state -----------------------------------------------------
@@ -596,9 +600,8 @@ int main(int argc, char** argv) {
     we_source_v1 source {};
     source.size    = sizeof(source);
     source.version = 1;
-    source.kind    = WE_SOURCE_KIND_SCENE;
-    source.uri     = args.scene.c_str();
-    source.assets_uri = args.assets.c_str();
+    source.uri     = args.uri.c_str();
+    source.assets_uri = args.assets_uri.c_str();
     source.fps     = args.fps;
     if (int32_t r = we_session_set_source(session, &source); r != 0) {
         std::cerr << "we_session_set_source failed: " << r << "\n";

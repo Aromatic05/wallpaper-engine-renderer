@@ -152,68 +152,119 @@ endif()
 # ---------------------------------------------------------------------------
 # System CEF detection (optional; enabled by -DBUILD_WEWEB=ON)
 # ---------------------------------------------------------------------------
-# CEF's binary distribution is unpacked into a directory whose layout matches
-# what Chromium's `cefclient` / `cefsimple` builds ship: a `cmake/FindCEF.cmake`
-# module, a `libcef_dll/` subdirectory, and Release/ + Debug/ folders under
-# either the root or a build-type-named subdirectory. The build invokes
-# `find_package(CEF)` against that root.
+# Two layouts are supported, in priority order:
 #
-# The CEF variable contract used here (CEF_ROOT, CEF_LIB_*,
-# CEF_LIBCEF_DLL_WRAPPER_PATH, CEF_INCLUDE) is what upstream's
-# `cef_variables.cmake` and `FindCEF.cmake` define; consumers should not need
-# to re-discover these names. See `cmake/CEF.cmake` for the wrapper that the
-# web backend uses to link CefWrapper + WebCef::Core.
-set(CEF_ROOT "" CACHE PATH "Path to the CEF binary distribution root")
+#  1. CEF_ROOT explicitly set: the user has the upstream CEF binary
+#     distribution (cmake/FindCEF.cmake + libcef_dll/ + Release/libcef.so
+#     + Release/Resources/...). We use the upstream FindCEF.cmake.
+#
+#  2. CEF_ROOT unset: the user has a Debian/Ubuntu-style system CEF
+#     (libcef-dev package), with the layout
+#       /usr/include/cef/include/    — headers
+#       /usr/lib/cef/libcef.so       — runtime
+#       /usr/lib/cef/                — resources (no Resources/ subdir)
+#       /usr/lib/cef/locales/        — language packs
+#       /usr/src/cef/libcef_dll/     — C++ wrapper source
+#     We fall back to the system FindCEF.cmake at
+#     /usr/share/cmake/Modules/FindCEF.cmake which probes that layout.
+#
+# Both paths produce the same target names:
+#   WebCef::Core  — IMPORTED, the libcef.so binary
+#   CefWrapper    — STATIC, the libcef_dll C++ wrapper
+set(CEF_ROOT "" CACHE PATH "Path to the CEF binary distribution root (optional; see comment)")
 if(BUILD_WEWEB)
-    if(NOT CEF_ROOT)
-        if(DEFINED ENV{CEF_ROOT})
-            set(CEF_ROOT $ENV{CEF_ROOT})
-        else()
-            message(FATAL_ERROR
-                "BUILD_WEWEB=ON requires CEF_ROOT to point to the CEF binary "
-                "distribution root (the directory containing cmake/FindCEF.cmake "
-                "and a libcef_dll/ subdirectory). Set -DCEF_ROOT=/path/to/cef or "
-                "export CEF_ROOT in the environment.")
-        endif()
-    endif()
-    if(NOT EXISTS "${CEF_ROOT}/cmake/FindCEF.cmake")
+    if(CEF_ROOT)
+        set(_cef_layout "binary distribution at ${CEF_ROOT}")
+    elseif(DEFINED ENV{CEF_ROOT})
+        set(CEF_ROOT $ENV{CEF_ROOT})
+        set(_cef_layout "binary distribution at ${CEF_ROOT} (from env)")
+    elseif(EXISTS "/usr/share/cmake/Modules/FindCEF.cmake"
+           AND EXISTS "/usr/include/cef/include/cef_version.h"
+           AND EXISTS "/usr/lib/cef/libcef.so"
+           AND EXISTS "/usr/src/cef/libcef_dll/CMakeLists.txt")
+        # System libcef-dev layout. Use the system FindCEF.cmake which
+        # already probes /usr/include/cef + /usr/lib/cef + /usr/src/cef.
+        # CEF_ROOT stays empty in this case so the rest of the build
+        # can fall back to /usr/lib/cef for the CefSettings paths.
+        set(_cef_layout "system libcef-dev (Debian/Ubuntu)")
+    else()
         message(FATAL_ERROR
-            "CEF_ROOT='${CEF_ROOT}' does not contain cmake/FindCEF.cmake. "
-            "Set CEF_ROOT to the CEF binary distribution root (e.g. the "
-            "directory created by extracting cef_binary_*_linux64.tar.bz2).")
+            "BUILD_WEWEB=ON requires CEF. Set -DCEF_ROOT=/path/to/cef_binary_distro, "
+            "export CEF_ROOT in the environment, or install the libcef-dev package "
+            "(headers in /usr/include/cef, library in /usr/lib/cef, wrapper source "
+            "in /usr/src/cef).")
     endif()
-    list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
-    find_package(CEF REQUIRED)
-    # CEF's variables.cmake derives CEF_BINARY_DIR from CMAKE_BUILD_TYPE
-    # (${CEF_ROOT}/${CMAKE_BUILD_TYPE}). The 'minimal' linux64 distribution
-    # ships only Release/, so a Debug configure would point at a non-existent
-    # Debug/ folder. Pin both to Release — the prebuilt libcef.so is the same
-    # regardless of our build type, only the wrapper compile around it differs.
-    if(DEFINED CEF_BINARY_DIR_RELEASE)
-        set(CEF_BINARY_DIR "${CEF_BINARY_DIR_RELEASE}")
+
+    if(CEF_ROOT)
+        if(NOT EXISTS "${CEF_ROOT}/cmake/FindCEF.cmake")
+            message(FATAL_ERROR
+                "CEF_ROOT='${CEF_ROOT}' does not contain cmake/FindCEF.cmake. "
+                "Set CEF_ROOT to the CEF binary distribution root (e.g. the "
+                "directory created by extracting cef_binary_*_linux64.tar.bz2).")
+        endif()
+        list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+        find_package(CEF REQUIRED)
+        # CEF's variables.cmake derives CEF_BINARY_DIR from CMAKE_BUILD_TYPE
+        # (${CEF_ROOT}/${CMAKE_BUILD_TYPE}). The 'minimal' linux64 distribution
+        # ships only Release/, so a Debug configure would point at a non-existent
+        # Debug/ folder. Pin both to Release — the prebuilt libcef.so is the same
+        # regardless of our build type, only the wrapper compile around it differs.
+        if(DEFINED CEF_BINARY_DIR_RELEASE)
+            set(CEF_BINARY_DIR "${CEF_BINARY_DIR_RELEASE}")
+        endif()
+        if(DEFINED CEF_LIB_RELEASE)
+            set(CEF_LIB "${CEF_LIB_RELEASE}")
+            set(CEF_LIB_DEBUG "${CEF_LIB_RELEASE}")
+        endif()
+        if(NOT TARGET WebCef::Core)
+            add_library(WebCef::Core SHARED IMPORTED GLOBAL)
+            set_target_properties(WebCef::Core PROPERTIES
+                IMPORTED_LOCATION "${CEF_LIB}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CEF_INCLUDE}")
+        endif()
+        if(NOT TARGET libcef_dll_wrapper)
+            add_subdirectory(
+                "${CEF_LIBCEF_DLL_WRAPPER_PATH}"
+                "${CMAKE_CURRENT_BINARY_DIR}/libcef_dll_wrapper"
+                EXCLUDE_FROM_ALL)
+        endif()
+    else()
+        # System CEF. The system FindCEF.cmake at
+        # /usr/share/cmake/Modules/FindCEF.cmake creates the targets
+        # CEF::Library (imported, libcef.so) and CEF::Wrapper (alias
+        # for libcef_dll_wrapper) and also calls add_subdirectory on
+        # /usr/src/cef/libcef_dll itself.
+        # Pin CEF_API_VERSION to a numeric value because the system
+        # FindCEF.cmake defaults it to the literal symbol name
+        # "CEF_API_VERSION_EXPERIMENTAL", which is not a valid C
+        # integer when passed to the compiler as a -D value. 999999
+        # is the upstream-defined value of CEF_API_VERSION_EXPERIMENTAL
+        # and is supported by every CEF API version of recent
+        # Debian/Ubuntu libcef-dev packages.
+        if(NOT CEF_API_VERSION OR CEF_API_VERSION STREQUAL "CEF_API_VERSION_EXPERIMENTAL")
+            set(CEF_API_VERSION 999999 CACHE STRING "CEF API version" FORCE)
+        endif()
+        find_package(CEF REQUIRED)
+        # Surface the system FindCEF.cmake's CEF::Library as our
+        # WebCef::Core so the rest of the build can use one name.
+        if(NOT TARGET WebCef::Core AND TARGET CEF::Library)
+            add_library(WebCef::Core SHARED IMPORTED GLOBAL)
+            set_target_properties(WebCef::Core PROPERTIES
+                IMPORTED_LOCATION "${CEF_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CEF_INCLUDE_DIRS}")
+        endif()
+        # CEF::Wrapper is an ALIAS for libcef_dll_wrapper, which the
+        # system FindCEF.cmake already add_subdirectory'd for us. The
+        # web backend's CMakeLists links CefWrapper / libcef_dll_wrapper
+        # by the same name.
     endif()
-    if(DEFINED CEF_LIB_RELEASE)
-        set(CEF_LIB "${CEF_LIB_RELEASE}")
-        set(CEF_LIB_DEBUG "${CEF_LIB_RELEASE}")
+
+    message(STATUS "CEF: ${_cef_layout}")
+    if(CEF_ROOT)
+        message(STATUS "CEF library: ${CEF_LIB}")
+    else()
+        message(STATUS "CEF library: ${CEF_LIBRARY}")
     endif()
-    if(NOT TARGET WebCef::Core)
-        add_library(WebCef::Core SHARED IMPORTED GLOBAL)
-        set_target_properties(WebCef::Core PROPERTIES
-            IMPORTED_LOCATION "${CEF_LIB}"
-            INTERFACE_INCLUDE_DIRECTORIES "${CEF_INCLUDE}")
-    endif()
-    # Build CEF's libcef_dll C++ wrapper. CefRefPtr / IMPLEMENT_REFCOUNTING
-    # / CefString live in this static lib; every target that includes CEF
-    # headers must link against it. CEF's own CMakeLists defines the
-    # target as `libcef_dll_wrapper`.
-    if(NOT TARGET libcef_dll_wrapper)
-        add_subdirectory(
-            "${CEF_LIBCEF_DLL_WRAPPER_PATH}"
-            "${CMAKE_CURRENT_BINARY_DIR}/libcef_dll_wrapper"
-            EXCLUDE_FROM_ALL)
-    endif()
-    message(STATUS "CEF binary distribution: ${CEF_ROOT}")
-    message(STATUS "CEF library: ${CEF_LIB}")
 endif()
 
 add_subdirectory(third_party)

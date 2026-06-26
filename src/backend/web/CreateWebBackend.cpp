@@ -72,6 +72,9 @@ std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServices() {
 
 Result<std::unique_ptr<ContentBackend>> CreateWebBackend(const BackendContext&              context,
                                                           std::shared_ptr<WebEngineServices> services) {
+    if (! services) {
+        services = CreateDefaultWebEngineServices();
+    }
     auto validation = validateWebEngineServices(services);
     if (! validation) {
         return Result<std::unique_ptr<ContentBackend>>(validation.error());

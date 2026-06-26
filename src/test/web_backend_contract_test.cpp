@@ -3,6 +3,9 @@
 #include "backend/BuiltinSessionFactory.hpp"
 #include "backend/web/CreateWebBackend.hpp"
 #include "backend/web/internal/WebBackend.hpp"
+#include "wallpaper/VulkanOutputInit.hpp"
+#include "wallpaper/scene/WESceneContract.hpp"
+#include "wallpaper/web/WebOutputBinding.hpp"
 #include "test/web/MockWebBrowserHost.hpp"
 
 #include <cassert>

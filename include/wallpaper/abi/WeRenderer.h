@@ -15,12 +15,6 @@ extern "C" {
 
 typedef struct we_session we_session_t;
 
-typedef enum we_source_kind_v1 {
-    WE_SOURCE_KIND_SCENE = 1,
-    WE_SOURCE_KIND_WEB   = 2,
-    WE_SOURCE_KIND_VIDEO = 3,
-} we_source_kind_v1;
-
 typedef enum we_frame_kind_v1 {
     WE_FRAME_KIND_DMABUF = 1,
     WE_FRAME_KIND_SHM    = 2,
@@ -58,7 +52,6 @@ typedef struct we_frame_v1 {
 typedef struct we_source_v1 {
     uint32_t size;
     uint32_t version;
-    we_source_kind_v1 kind;
     const char* uri;
     // Optional tail fields are append-only. Consumers must set `size`
     // so the library can safely detect which fields are present.

@@ -157,7 +157,7 @@ void WebBrowserHost::OnKey(int cef_key_event_type, int native_key_code, int wind
     ev.type                 = static_cast<cef_key_event_type_t>(cef_key_event_type);
     ev.native_key_code      = native_key_code;
     ev.windows_key_code     = windows_key_code;
-    ev.modifiers            = modifiers;
+    ev.modifiers            = static_cast<uint32_t>(modifiers);
     ev.character            = static_cast<char16_t>(unicode_char);
     ev.unmodified_character = ev.character;
     b->GetHost()->SendKeyEvent(ev);

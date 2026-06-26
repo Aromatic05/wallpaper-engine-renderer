@@ -2,15 +2,15 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
-constexpr std::string_view ARG_ASSETS = "<assets>";
-constexpr std::string_view ARG_SCENE  = "<scene>";
+constexpr std::string_view ARG_PROJECT_JSON = "<project.json>";
 
 struct Args {
-    std::string assets;
-    std::string scene;
+    std::string assets_uri;
+    std::string uri;
     std::string cache_path;
     int32_t     fps    { 15 };
     int32_t     width  { 1280 };
@@ -57,16 +57,16 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
         } else if (a.empty() || a[0] == '-') {
             err = "unknown option: " + a;
             return false;
-        } else if (args.assets.empty()) {
-            args.assets = a;
-        } else if (args.scene.empty()) {
-            args.scene = a;
+        } else if (args.assets_uri.empty()) {
+            args.assets_uri = a;
+        } else if (args.uri.empty()) {
+            args.uri = a;
         } else {
             err = "unexpected positional: " + a;
             return false;
         }
     }
-    if (args.assets.empty() || args.scene.empty()) {
+    if (args.assets_uri.empty() || args.uri.empty()) {
         return false;
     }
     return true;
@@ -74,7 +74,7 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
 
 inline void printHelp(const char* prog) {
     std::fprintf(stderr,
-                 "Usage: %s [options] <assets> <scene>\n"
+                 "Usage: %s [options] <assets> <project.json>\n"
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"

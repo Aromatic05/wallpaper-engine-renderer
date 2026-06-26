@@ -6,7 +6,6 @@
 #include "wallpaper/WallpaperRuntime.hpp"
 #include "wallpaper/scene/WEScene.hpp"
 #include "wallpaper/scene/WESceneContract.hpp"
-#include "wallpaper/web/Web.hpp"
 #include "wallpaper/web/WebOutputBinding.hpp"
 #include "wallpaper/OutputTargetBinding.hpp"
 #include "wallpaper/OutputTarget.hpp"
@@ -15,12 +14,18 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <unistd.h>
 #include <string>
 #include <utility>
 #include <cstring>
+
+#include <nlohmann/json.hpp>
 
 namespace
 {
@@ -35,8 +40,8 @@ struct WeSessionState {
     wallpaper::WallpaperRuntime runtime;
     std::unique_ptr<wallpaper::WallpaperSession> session;
     wallpaper::RenderInitInfo renderInitInfo;
-    we_source_kind_v1          sourceKind { WE_SOURCE_KIND_SCENE };
-    bool                      sourceSet { false };
+    wallpaper::BackendType     sourceType { wallpaper::BackendType::WEScene };
+    bool                       sourceSet { false };
     std::shared_ptr<wallpaper::OutputTargetBinding> binding;
     uint64_t                  frameSerial { 0 };
 };
@@ -53,19 +58,111 @@ int32_t to_error(const wallpaper::Result<void>& result) {
     return result ? 0 : static_cast<int32_t>(result.error().code) + 1;
 }
 
+template<typename T>
+int32_t to_error(const wallpaper::Result<T>& result) {
+    return result ? 0 : static_cast<int32_t>(result.error().code) + 1;
+}
+
 bool source_has_field(const we_source_v1* source, std::size_t field_offset, std::size_t field_size) {
     return source && source->size >= field_offset + field_size;
+}
+
+std::string lower_ascii(std::string s) {
+    for (auto& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+std::string trim_copy(std::string s) {
+    auto not_space = [](unsigned char ch) { return ! std::isspace(ch); };
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
+    s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
+    return s;
+}
+
+struct ProjectSourceInfo {
+    wallpaper::BackendType type { wallpaper::BackendType::WEScene };
+    std::filesystem::path  projectJson;
+    std::string            backendUri;
+};
+
+wallpaper::Result<ProjectSourceInfo> parse_project_source(const char* uri) {
+    if (! uri || ! *uri) {
+        return wallpaper::Result<ProjectSourceInfo>::failure(
+            wallpaper::ResultCode::InvalidArgument, "project.json uri is empty");
+    }
+
+    ProjectSourceInfo info;
+    info.projectJson = uri;
+
+    std::ifstream is(info.projectJson);
+    if (! is) {
+        return wallpaper::Result<ProjectSourceInfo>::failure(
+            wallpaper::ResultCode::NotFound,
+            "cannot open project.json: " + info.projectJson.string());
+    }
+
+    auto j = nlohmann::json::parse(is, nullptr, false, true);
+    if (j.is_discarded()) {
+        return wallpaper::Result<ProjectSourceInfo>::failure(
+            wallpaper::ResultCode::InvalidArgument,
+            "invalid JSON: " + info.projectJson.string());
+    }
+
+    auto type_it = j.find("type");
+    if (type_it == j.end() || ! type_it->is_string()) {
+        return wallpaper::Result<ProjectSourceInfo>::failure(
+            wallpaper::ResultCode::InvalidArgument,
+            "project.json is missing a string type field: " + info.projectJson.string());
+    }
+
+    const std::string type = lower_ascii(type_it->get<std::string>());
+    if (type == "web") {
+        info.type = wallpaper::BackendType::Web;
+        info.backendUri = info.projectJson.parent_path().string();
+    } else if (type == "scene") {
+        info.type = wallpaper::BackendType::WEScene;
+        info.backendUri = info.projectJson.parent_path().string();
+        std::ifstream pj(info.projectJson);
+        if (! pj) {
+            return wallpaper::Result<ProjectSourceInfo>::failure(
+                wallpaper::ResultCode::NotFound,
+                "cannot open project.json: " + info.projectJson.string());
+        }
+        auto j = nlohmann::json::parse(pj, nullptr, false, true);
+        if (j.is_discarded()) {
+            return wallpaper::Result<ProjectSourceInfo>::failure(
+                wallpaper::ResultCode::InvalidArgument,
+                "invalid JSON: " + info.projectJson.string());
+        }
+        auto file_it = j.find("file");
+        if (file_it != j.end() && file_it->is_string()) {
+            const auto file_value = trim_copy(file_it->get<std::string>());
+            if (! file_value.empty()) {
+                const std::filesystem::path file_path { file_value };
+                if (file_path.has_extension() && file_path.extension() == ".pkg") {
+                    info.backendUri = (info.projectJson.parent_path() / file_path).string();
+                } else {
+                    info.backendUri =
+                        (info.projectJson.parent_path() / file_path).replace_extension("pkg").string();
+                }
+            }
+        }
+    } else if (type == "video") {
+        info.type = wallpaper::BackendType::Video;
+    } else {
+        return wallpaper::Result<ProjectSourceInfo>::failure(
+            wallpaper::ResultCode::NotSupported,
+            "unsupported project type: " + type);
+    }
+
+    return wallpaper::Result<ProjectSourceInfo>::success(std::move(info));
 }
 
 wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     wallpaper::WallpaperSource out;
     if (!source) return out;
-    switch (source->kind) {
-    case WE_SOURCE_KIND_SCENE: out.type = wallpaper::BackendType::WEScene; break;
-    case WE_SOURCE_KIND_WEB: out.type = wallpaper::BackendType::Web; break;
-    case WE_SOURCE_KIND_VIDEO: out.type = wallpaper::BackendType::Video; break;
-    default: out.type = wallpaper::BackendType::WEScene; break;
-    }
     if (source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri)) && source->uri) {
         out.uri = source->uri;
     }
@@ -161,10 +258,18 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     auto* state = as_state(session);
     if (!state || !state->session) return -1;
     if (!source || source->version != 1) return -1;
-    if (!source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri))) return -1;
-    state->sourceKind = source->kind;
+    if (! source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri)) || ! source->uri) {
+        return -1;
+    }
+    auto parsed = parse_project_source(source->uri);
+    if (! parsed) return to_error(parsed);
+
+    state->sourceType = parsed.value().type;
     state->sourceSet  = true;
-    auto result = state->session->load(make_source(source));
+    wallpaper::WallpaperSource normalized = make_source(source);
+    normalized.type = parsed.value().type;
+    normalized.uri  = parsed.value().backendUri;
+    auto result = state->session->load(normalized);
     return to_error(result);
 }
 
@@ -188,14 +293,14 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     state->renderInitInfo.height             = static_cast<std::uint16_t>(config->height);
     state->renderInitInfo.render_scale       = 1.0;
 
-    switch (state->sourceKind) {
-    case WE_SOURCE_KIND_SCENE: {
+    switch (state->sourceType) {
+    case wallpaper::BackendType::WEScene: {
         auto binding_result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
         if (! binding_result) return 1;
         state->binding = binding_result.value();
         return 0;
     }
-    case WE_SOURCE_KIND_WEB: {
+    case wallpaper::BackendType::Web: {
         auto binding = wallpaper::MakeWebOutputBinding(state->renderInitInfo);
         wallpaper::OutputTarget target {};
         target.type    = wallpaper::OutputTargetType::Offscreen;
@@ -207,7 +312,7 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
         state->binding = std::move(binding);
         return 0;
     }
-    case WE_SOURCE_KIND_VIDEO:
+    case wallpaper::BackendType::Video:
     default:
         return 1;
     }
@@ -251,11 +356,11 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
     // swapchain() lives on the derived binding, not the base, so a
     // dynamic_cast is the cheapest way to read it.
     wallpaper::ExSwapchain* ex_swapchain = nullptr;
-    if (state->sourceKind == WE_SOURCE_KIND_SCENE) {
+    if (state->sourceType == wallpaper::BackendType::WEScene) {
         auto* sceneBinding = asSceneBinding(state->binding);
         if (! sceneBinding) return -1;
         ex_swapchain = sceneBinding->swapchain();
-    } else if (state->sourceKind == WE_SOURCE_KIND_WEB) {
+    } else if (state->sourceType == wallpaper::BackendType::Web) {
         auto* webBinding = asWebBinding(state->binding);
         if (! webBinding) return -1;
         ex_swapchain = webBinding->swapchain();

@@ -7,6 +7,7 @@ if(BUILD_WEWEB)
     add_library(${LIB_NAME} STATIC
         CreateWebBackend.cpp
         internal/Manifest.cpp
+        internal/WebRenderPlan.cpp
         internal/WebBackend.cpp)
     target_link_libraries(${LIB_NAME} PUBLIC
         wpUtils
@@ -33,7 +34,7 @@ if(BUILD_WEWEB)
         ../..    # src/ — for backend/... and runtime/... includes
         ../../../include)  # include/ — for wallpaper/web/WebTypes.hpp
     target_compile_options(${CEF_LIB_NAME} PRIVATE ${warn_opts})
-    target_compile_definitions(${CEF_LIB_NAME} PRIVATE
+    target_compile_options(${CEF_LIB_NAME} PRIVATE
         # CEF's libcef_dll wrapper is built without exceptions.
         -fno-exceptions)
     set_property(TARGET ${CEF_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

@@ -30,7 +30,8 @@ add_test(NAME output-controller-contract-test COMMAND output-controller-contract
 if(BUILD_WEWEB)
     add_executable(
       web-backend-contract-test
-      web_backend_contract_test.cpp)
+      web_backend_contract_test.cpp
+      ../abi/WeRenderer.cpp)
 
     target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(web-backend-contract-test PRIVATE .. web)

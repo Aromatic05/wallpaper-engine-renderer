@@ -84,7 +84,7 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
     m_sharedState->frameRequested.store(false);
 
     m_workshopDir = WorkshopDirFromSourceUri(source.uri);
-    auto manifest = LoadWebManifest(m_workshopDir);
+    auto manifest = web::LoadWebManifest(m_workshopDir);
     if (! manifest) {
         m_sharedState->readyState.store(BackendReadyState::Error);
         appendDiagnostic(DiagnosticSeverity::Error,
