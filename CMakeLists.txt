@@ -202,6 +202,16 @@ if(BUILD_WEWEB)
             IMPORTED_LOCATION "${CEF_LIB}"
             INTERFACE_INCLUDE_DIRECTORIES "${CEF_INCLUDE}")
     endif()
+    # Build CEF's libcef_dll C++ wrapper. CefRefPtr / IMPLEMENT_REFCOUNTING
+    # / CefString live in this static lib; every target that includes CEF
+    # headers must link against it. CEF's own CMakeLists defines the
+    # target as `libcef_dll_wrapper`.
+    if(NOT TARGET libcef_dll_wrapper)
+        add_subdirectory(
+            "${CEF_LIBCEF_DLL_WRAPPER_PATH}"
+            "${CMAKE_CURRENT_BINARY_DIR}/libcef_dll_wrapper"
+            EXCLUDE_FROM_ALL)
+    endif()
     message(STATUS "CEF binary distribution: ${CEF_ROOT}")
     message(STATUS "CEF library: ${CEF_LIB}")
 endif()
