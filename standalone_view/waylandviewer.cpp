@@ -500,7 +500,10 @@ int main(int argc, char** argv) {
     wayland.session = session;
 
     we_source_v1 source {};
-    source.size       = sizeof(source);
+    // Only advertise fields up through fps. Passing sizeof(we_source_v1) while leaving the
+    // append-only tail zero-initialized would explicitly force speed=0 and volume=0, which
+    // freezes scene animation and silences audio compared to the historical standalone viewer.
+    source.size       = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
     source.version    = 1;
     source.uri        = args.uri.c_str();
     source.assets_uri = args.assets_uri.c_str();
