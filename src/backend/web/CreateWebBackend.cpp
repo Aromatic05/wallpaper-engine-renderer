@@ -70,6 +70,8 @@ std::filesystem::path helperPathFromEnv() {
     return {};
 }
 
+std::filesystem::path resolveDefaultCefHelperPath();
+
 std::filesystem::path currentExecutableDir() {
     std::array<char, PATH_MAX> buf {};
     const auto length = ::readlink("/proc/self/exe", buf.data(), buf.size() - 1);
@@ -104,7 +106,31 @@ std::filesystem::path firstExistingRegularFile(const std::vector<std::filesystem
     return {};
 }
 
+std::filesystem::path resolveBundledCefResourcesDir() {
+    const auto helperPath = resolveDefaultCefHelperPath();
+    if (helperPath.empty()) return {};
+    const auto helperDir = helperPath.parent_path();
+    return firstExistingDirectory({
+        helperDir / "cef",
+        helperDir / ".." / "share" / "wallpaper-engine-renderer" / "cef",
+    });
+}
+
+std::filesystem::path resolveBundledCefLocalesDir() {
+    const auto helperPath = resolveDefaultCefHelperPath();
+    if (helperPath.empty()) return {};
+    const auto helperDir = helperPath.parent_path();
+    return firstExistingDirectory({
+        helperDir / "cef" / "locales",
+        helperDir / ".." / "share" / "wallpaper-engine-renderer" / "cef" / "locales",
+    });
+}
+
 std::filesystem::path resolveDefaultCefResourcesDir() {
+    if (auto bundled = resolveBundledCefResourcesDir(); ! bundled.empty()) {
+        return bundled;
+    }
+
     if (const char* cefRoot = std::getenv("CEF_ROOT")) {
         if (*cefRoot) {
             const std::filesystem::path root { cefRoot };
@@ -122,6 +148,10 @@ std::filesystem::path resolveDefaultCefResourcesDir() {
 }
 
 std::filesystem::path resolveDefaultCefLocalesDir() {
+    if (auto bundled = resolveBundledCefLocalesDir(); ! bundled.empty()) {
+        return bundled;
+    }
+
     if (const char* cefRoot = std::getenv("CEF_ROOT")) {
         if (*cefRoot) {
             const std::filesystem::path root { cefRoot };

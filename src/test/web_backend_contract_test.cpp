@@ -329,5 +329,51 @@ int main() {
     assert(mock->request_close_count == 1);
     assert(mock->callCount("Shutdown") == 1);
 
+    auto missingHelperServices = std::make_shared<wallpaper::WebEngineServices>();
+    missingHelperServices->provideCefResourcesDir = []() { return std::filesystem::path("/usr/lib/cef"); };
+    missingHelperServices->provideCefLocalesDir = []() { return std::filesystem::path("/usr/lib/cef/locales"); };
+    missingHelperServices->provideCefCacheDir = []() { return std::filesystem::path("/tmp/web-backend-contract-cache"); };
+    missingHelperServices->provideCefSubprocessPath = []() {
+        return std::filesystem::path("/definitely/missing/we-cef-helper");
+    };
+    missingHelperServices->runtimeProfile = []() { return wallpaper::WebCefRuntimeProfile::Compatibility; };
+    missingHelperServices->preferredWindowSystem = []() { return wallpaper::WebCefWindowSystem::Wayland; };
+    missingHelperServices->extraCommandLineSwitches = []() { return std::vector<std::string> {}; };
+    missingHelperServices->audioMuted = []() { return true; };
+    missingHelperServices->captureAudioSamples =
+        [](std::chrono::milliseconds) -> std::optional<std::array<float, 128>> {
+            return std::nullopt;
+        };
+
+    auto missingHelperBackend =
+        wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(missingHelperServices));
+    require(static_cast<bool>(missingHelperBackend));
+    auto* missingHelperRaw =
+        static_cast<wallpaper::WebBackend*>(missingHelperBackend.value().get());
+    missingHelperRaw->testSetBrowserHost(std::make_shared<wallpaper::test::MockWebBrowserHost>());
+
+    wallpaper::SessionConfig missingHelperSessionConfig {};
+    missingHelperSessionConfig.backendFactory =
+        std::make_shared<SingleBackendFactory>(std::move(missingHelperBackend.value()));
+    auto missingHelperSession = runtime.createSession(missingHelperSessionConfig);
+    require(static_cast<bool>(missingHelperSession));
+
+    auto missingLoadResult = missingHelperSession->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
+    require(static_cast<bool>(missingLoadResult));
+    auto missingBindResult = missingHelperSession->bindOutput(target);
+    require(static_cast<bool>(missingBindResult));
+    auto missingPlayResult = missingHelperSession->play();
+    require(! missingPlayResult);
+    const auto missingDiagnostics = missingHelperRaw->diagnostics();
+    require(! missingDiagnostics.entries.empty());
+    bool sawMissingHelperDiagnostic = false;
+    for (const auto& entry : missingDiagnostics.entries) {
+        if (entry.message.find("CEF subprocess helper not found") != std::string::npos) {
+            sawMissingHelperDiagnostic = true;
+            break;
+        }
+    }
+    require(sawMissingHelperDiagnostic);
+
     return 0;
 }

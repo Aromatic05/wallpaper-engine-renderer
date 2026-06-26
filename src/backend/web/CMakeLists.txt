@@ -53,4 +53,10 @@ if(BUILD_WEWEB)
 
     install(TARGETS we-cef-helper
         RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/wallpaper-engine-renderer)
+
+    if(CEF_ROOT)
+        install(DIRECTORY "${CEF_ROOT}/Release/Resources/"
+            DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/wallpaper-engine-renderer/cef
+            OPTIONAL)
+    endif()
 endif()
