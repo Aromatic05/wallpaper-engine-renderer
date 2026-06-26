@@ -122,7 +122,7 @@ void onPointerButton(void* data,
         : WE_INPUT_POINTER_UP;
     event.pointer_x = static_cast<float>(state->pointer_x / state->surface_width);
     event.pointer_y = static_cast<float>(state->pointer_y / state->surface_height);
-    event.button = 1;
+    event.button = 0;
     we_session_send_input_event(state->session, &event);
 }
 
