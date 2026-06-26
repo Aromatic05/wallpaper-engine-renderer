@@ -3,6 +3,7 @@
 
 #include <linux/input-event-codes.h>
 #include <poll.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <wayland-client.h>
 
@@ -42,6 +43,7 @@ struct WaylandState {
     xdg_surface*            xdg_surface_obj { nullptr };
     xdg_toplevel*           xdg_toplevel_obj { nullptr };
     zwp_linux_dmabuf_v1*    dmabuf { nullptr };
+    wl_shm*                 shm { nullptr };
     std::uint32_t           dmabuf_version { 0 };
     bool                    running { true };
     bool                    configured { false };
@@ -246,6 +248,9 @@ void onRegistryGlobal(void* data,
         state->dmabuf_version = std::min(version, 4u);
         state->dmabuf = static_cast<zwp_linux_dmabuf_v1*>(
             wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface, state->dmabuf_version));
+    } else if (std::strcmp(interface, wl_shm_interface.name) == 0) {
+        state->shm =
+            static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, std::min(version, 1u)));
     } else if (std::strcmp(interface, wl_seat_interface.name) == 0) {
         state->seat =
             static_cast<wl_seat*>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5u)));
@@ -316,15 +321,16 @@ bool initWayland(WaylandState& state, std::uint32_t width, std::uint32_t height)
         std::fprintf(stderr, "sceneviewer: initial Wayland roundtrip failed\n");
         return false;
     }
-    if (! state.compositor || ! state.wm_base || ! state.dmabuf) {
+    if (! state.compositor || ! state.wm_base || (! state.dmabuf && ! state.shm)) {
         std::fprintf(stderr,
-                     "sceneviewer: missing required Wayland globals compositor=%p wm_base=%p dmabuf=%p\n",
+                     "sceneviewer: missing required Wayland globals compositor=%p wm_base=%p dmabuf=%p shm=%p\n",
                      static_cast<void*>(state.compositor),
                      static_cast<void*>(state.wm_base),
-                     static_cast<void*>(state.dmabuf));
+                     static_cast<void*>(state.dmabuf),
+                     static_cast<void*>(state.shm));
         return false;
     }
-    if (state.dmabuf_version < 2) {
+    if (state.dmabuf && state.dmabuf_version < 2) {
         std::fprintf(stderr,
                      "sceneviewer: zwp_linux_dmabuf_v1 version %u does not support create_immed\n",
                      state.dmabuf_version);
@@ -371,6 +377,26 @@ bool initWayland(WaylandState& state, std::uint32_t width, std::uint32_t height)
 }
 
 std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const we_frame_v1& frame) {
+    if (frame.kind == WE_FRAME_KIND_SHM) {
+        if (! state.shm || frame.planes[0].fd < 0 || frame.shm_stride == 0 || frame.shm_size == 0) {
+            return nullptr;
+        }
+        wl_shm_pool* pool = wl_shm_create_pool(state.shm, frame.planes[0].fd, static_cast<int>(frame.shm_size));
+        if (! pool) return nullptr;
+        wl_buffer* buffer = wl_shm_pool_create_buffer(pool,
+                                                      0,
+                                                      static_cast<int>(frame.width),
+                                                      static_cast<int>(frame.height),
+                                                      static_cast<int>(frame.shm_stride),
+                                                      WL_SHM_FORMAT_ARGB8888);
+        wl_shm_pool_destroy(pool);
+        if (! buffer) return nullptr;
+        auto entry = std::make_unique<WaylandBuffer>();
+        entry->buffer = buffer;
+        wl_buffer_add_listener(entry->buffer, &kBufferListener, entry.get());
+        return entry;
+    }
+
     if (frame.kind != WE_FRAME_KIND_DMABUF || frame.n_planes == 0 || frame.n_planes > 4) return nullptr;
     auto params = zwp_linux_dmabuf_v1_create_params(state.dmabuf);
     if (! params) return nullptr;
@@ -467,6 +493,10 @@ void destroyWayland(WaylandState& state) {
         zwp_linux_dmabuf_v1_destroy(state.dmabuf);
         state.dmabuf = nullptr;
     }
+    if (state.shm) {
+        wl_shm_destroy(state.shm);
+        state.shm = nullptr;
+    }
     if (state.wm_base) {
         xdg_wm_base_destroy(state.wm_base);
         state.wm_base = nullptr;
@@ -530,6 +560,7 @@ int main(int argc, char** argv) {
     config.width         = static_cast<std::uint32_t>(args.width);
     config.height        = static_cast<std::uint32_t>(args.height);
     config.prefer_dmabuf = true;
+    config.allow_shm_fallback = true;
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
         std::cerr << "we_session_set_render_config failed: " << r << "\n";
         we_session_destroy(session);

@@ -34,6 +34,7 @@ struct RenderInitInfo {
     bool enable_valid_layer { false };
     bool offscreen { false };
     ExternalFrameExportMode export_mode { ExternalFrameExportMode::OPAQUE_FD };
+    bool allow_shm_fallback { false };
 
     std::span<const std::uint8_t> uuid;
     VulkanDevicePreference        device_preference { VulkanDevicePreference::Default };

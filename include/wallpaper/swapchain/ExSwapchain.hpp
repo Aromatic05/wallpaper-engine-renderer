@@ -16,14 +16,16 @@ enum class TexTiling
 enum class ExternalFrameExportMode
 {
     OPAQUE_FD,
-    DMA_BUF
+    DMA_BUF,
+    SHM
 };
 
 enum class ExternalFrameHandleType
 {
     NONE,
     OPAQUE_FD,
-    DMA_BUF
+    DMA_BUF,
+    SHM
 };
 
 struct ExPlane {
@@ -41,6 +43,7 @@ struct ExHandle {
     int32_t     width { 0 };
     int32_t     height { 0 };
     std::size_t size { 0 };
+    uint32_t    shm_stride { 0 };
     uint32_t    drm_fourcc { 0 };
     uint64_t    drm_modifier { INVALID_DRM_MODIFIER };
     uint32_t    n_planes { 0 };
@@ -53,6 +56,7 @@ struct ExHandle {
     int32_t id() const { return m_id; }
     bool    isOpaqueFd() const { return handle_type == ExternalFrameHandleType::OPAQUE_FD; }
     bool    isDmabuf() const { return handle_type == ExternalFrameHandleType::DMA_BUF; }
+    bool    isShm() const { return handle_type == ExternalFrameHandleType::SHM; }
     int     primaryFd() const {
         if (n_planes > 0 && planes[0].fd >= 0) return planes[0].fd;
         return fd;

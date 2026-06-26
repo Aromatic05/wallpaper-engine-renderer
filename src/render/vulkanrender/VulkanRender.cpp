@@ -22,6 +22,7 @@
 #include "Resource.hpp"
 
 #include "core/ArrayHelper.hpp"
+#include "output/swapchain/ShmFrameSwapchain.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -241,6 +242,10 @@ struct VulkanRender::Impl {
     void drawFrameOffscreen();
     bool captureOffscreenFrameToPng(const ImageParameters& image, std::string_view output_path,
                                     std::string* error_message);
+    bool readbackOffscreenFrameBgra(const ImageParameters& image,
+                                    std::vector<std::uint8_t>* bgra,
+                                    std::uint32_t*             stride_bytes,
+                                    std::string*               error_message);
     void processDeferredGraphPreparation(Scene&);
     void setRenderTargetSize(Scene&, rg::RenderGraph&);
     bool isDeviceFaultResult(VkResult) const;
@@ -271,6 +276,7 @@ struct VulkanRender::Impl {
     std::unordered_set<std::size_t> m_deferred_waiting_indices_logged;
 
     std::unique_ptr<VulkanExSwapchain> m_ex_swapchain;
+    std::unique_ptr<ShmFrameSwapchain> m_shm_swapchain;
     RenderingResources                 m_rendering_resources;
 
     std::vector<VulkanPass*> m_passes;
@@ -319,7 +325,10 @@ bool VulkanRender::captureNextOffscreenFrame(std::string output_path, int32_t fr
     return pImpl->requestOffscreenFrameDump(std::move(output_path), frame_number, error_message);
 }
 
-wallpaper::ExSwapchain* VulkanRender::exSwapchain() const { return pImpl->m_ex_swapchain.get(); };
+wallpaper::ExSwapchain* VulkanRender::exSwapchain() const {
+    if (pImpl->m_shm_swapchain) return pImpl->m_shm_swapchain.get();
+    return pImpl->m_ex_swapchain.get();
+};
 
 bool VulkanRender::Impl::init(RenderInitInfo info) {
     if (m_inited) return true;
@@ -398,15 +407,47 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     }
 
     if (info.offscreen) {
-        m_ex_swapchain = CreateExSwapchain(*m_device,
-                                           extent.width,
-                                           extent.height,
-                                           (info.offscreen_tiling == TexTiling::OPTIMAL
-                                                ? VK_IMAGE_TILING_OPTIMAL
-                                                : VK_IMAGE_TILING_LINEAR),
-                                           info.export_mode,
-                                           info.export_drm_fourcc,
-                                           info.export_drm_modifiers);
+        const auto createShmReadbackSwapchains = [&]() {
+            m_ex_swapchain = CreateExSwapchain(*m_device,
+                                               extent.width,
+                                               extent.height,
+                                               VK_IMAGE_TILING_OPTIMAL,
+                                               ExternalFrameExportMode::OPAQUE_FD,
+                                               info.export_drm_fourcc,
+                                               info.export_drm_modifiers);
+            if (! m_ex_swapchain) return false;
+            m_shm_swapchain = std::make_unique<ShmFrameSwapchain>(extent.width, extent.height);
+            return static_cast<bool>(m_shm_swapchain);
+        };
+
+        if (info.export_mode == ExternalFrameExportMode::SHM) {
+            if (! createShmReadbackSwapchains()) {
+                LOG_ERROR("create offscreen shm swapchains failed");
+                return false;
+            }
+        } else {
+            m_ex_swapchain = CreateExSwapchain(*m_device,
+                                               extent.width,
+                                               extent.height,
+                                               (info.offscreen_tiling == TexTiling::OPTIMAL
+                                                    ? VK_IMAGE_TILING_OPTIMAL
+                                                    : VK_IMAGE_TILING_LINEAR),
+                                               info.export_mode,
+                                               info.export_drm_fourcc,
+                                               info.export_drm_modifiers);
+            if (! m_ex_swapchain && info.export_mode == ExternalFrameExportMode::DMA_BUF
+                && info.allow_shm_fallback) {
+                LOG_INFO("dma-buf offscreen export unavailable, falling back to shm readback");
+                if (! createShmReadbackSwapchains()) {
+                    LOG_ERROR("create offscreen shm fallback swapchains failed");
+                    return false;
+                }
+            }
+        }
+        if (! m_ex_swapchain) {
+            LOG_ERROR("create offscreen swapchain failed");
+            return false;
+        }
         m_with_surface = false;
     }
 
@@ -890,6 +931,23 @@ void VulkanRender::Impl::drawFrameOffscreen() {
                                        &m_pending_frame_capture->last_error);
         m_pending_frame_capture->completed = true;
     }
+    if (m_shm_swapchain) {
+        std::vector<std::uint8_t> bgra;
+        std::uint32_t             stride_bytes { 0 };
+        std::string               error_message;
+        if (! readbackOffscreenFrameBgra(image, &bgra, &stride_bytes, &error_message)) {
+            LOG_ERROR("offscreen shm readback failed: %s", error_message.c_str());
+            return;
+        }
+        if (! m_shm_swapchain->publishFrame(bgra.data(),
+                                            image.extent.width,
+                                            image.extent.height,
+                                            stride_bytes,
+                                            false)) {
+            LOG_ERROR("offscreen shm publish failed");
+            return;
+        }
+    }
     m_ex_swapchain->renderFrame();
 }
 
@@ -1080,6 +1138,164 @@ bool VulkanRender::Impl::captureOffscreenFrameToPng(const ImageParameters& image
     }
 
     return WriteRgbaPng(std::string(output_path), width, height, flipped, error_message);
+}
+
+bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image,
+                                                    std::vector<std::uint8_t>* bgra,
+                                                    std::uint32_t*             stride_bytes,
+                                                    std::string*               error_message) {
+    if (! bgra || ! stride_bytes) {
+        if (error_message) *error_message = "invalid readback output pointers";
+        return false;
+    }
+
+    const uint32_t width = image.extent.width;
+    const uint32_t height = image.extent.height;
+    const std::size_t pixel_bytes = static_cast<std::size_t>(width) * height * 4u;
+    if (pixel_bytes == 0) {
+        if (error_message) *error_message = "offscreen frame has zero size";
+        return false;
+    }
+
+    VmaBufferParameters readback_buffer;
+    if (! CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
+        if (error_message) *error_message = "failed to allocate readback buffer";
+        return false;
+    }
+
+    vvk::CommandBuffers command_buffers;
+    VVK_CHECK_BOOL_RE(
+        m_device->cmd_pool().Allocate(1, VK_COMMAND_BUFFER_LEVEL_PRIMARY, command_buffers));
+    vvk::CommandBuffer command(command_buffers[0], m_device->handle().Dispatch());
+
+    if (! checkVkResult(command.Begin(VkCommandBufferBeginInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        }),
+        "begin offscreen shm readback command buffer")) {
+        return false;
+    }
+
+    VkImageMemoryBarrier image_to_transfer {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image.handle,
+        .subresourceRange = VkImageSubresourceRange {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            0,
+                            image_to_transfer);
+
+    VkBufferImageCopy copy_region {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = VkImageSubresourceLayers {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = image.extent,
+    };
+    command.CopyImageToBuffer(image.handle,
+                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              *readback_buffer.handle,
+                              spanone { copy_region });
+
+    VkBufferMemoryBarrier buffer_ready {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = *readback_buffer.handle,
+        .offset = 0,
+        .size = VK_WHOLE_SIZE,
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_HOST_BIT,
+                            0,
+                            buffer_ready);
+
+    VkImageMemoryBarrier image_restore {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image.handle,
+        .subresourceRange = image_to_transfer.subresourceRange,
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            0,
+                            image_restore);
+
+    if (! checkVkResult(command.End(), "end offscreen shm readback command buffer")) {
+        return false;
+    }
+
+    vvk::Fence fence;
+    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(VkFenceCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    }, fence));
+    VkSubmitInfo submit {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = command.address(),
+    };
+    if (! checkVkResult(m_device->graphics_queue().handle.Submit(submit, *fence),
+                        "submit offscreen shm readback")) {
+        return false;
+    }
+    if (! checkVkResult(fence.Wait(vk_wait_time), "wait offscreen shm readback")) {
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (readback_buffer.handle.MapMemory(&mapped) != VK_SUCCESS) {
+        if (error_message) *error_message = "failed to map readback buffer";
+        return false;
+    }
+
+    const std::size_t row_bytes = static_cast<std::size_t>(width) * 4u;
+    bgra->resize(pixel_bytes);
+    auto* src = static_cast<const std::uint8_t*>(mapped);
+    for (uint32_t row = 0; row < height; ++row) {
+        const std::size_t src_offset = static_cast<std::size_t>(height - 1 - row) * row_bytes;
+        const std::size_t dst_offset = static_cast<std::size_t>(row) * row_bytes;
+        std::memcpy(bgra->data() + dst_offset, src + src_offset, row_bytes);
+        for (std::size_t pixel = dst_offset; pixel < dst_offset + row_bytes; pixel += 4u) {
+            std::swap((*bgra)[pixel], (*bgra)[pixel + 2u]);
+        }
+    }
+    readback_buffer.handle.UnMapMemory();
+
+    *stride_bytes = static_cast<std::uint32_t>(row_bytes);
+    return true;
 }
 
 void VulkanRender::Impl::setRenderTargetSize(Scene& scene, rg::RenderGraph& rg) {

@@ -27,6 +27,16 @@ target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
 
 add_test(NAME output-controller-contract-test COMMAND output-controller-contract-test)
 
+add_executable(
+  shm-frame-swapchain-test
+  shm_frame_swapchain_test.cpp)
+
+target_link_libraries(shm-frame-swapchain-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(shm-frame-swapchain-test PRIVATE ..)
+target_compile_options(shm-frame-swapchain-test PRIVATE ${warn_opts})
+
+add_test(NAME shm-frame-swapchain-test COMMAND shm-frame-swapchain-test)
+
 if(BUILD_WEWEB)
     add_executable(
       web-backend-contract-test

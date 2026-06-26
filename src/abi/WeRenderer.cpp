@@ -208,6 +208,26 @@ bool copy_dmabuf_frame(const wallpaper::ExHandle& handle, we_frame_v1* out_frame
     return true;
 }
 
+bool copy_shm_frame(const wallpaper::ExHandle& handle, we_frame_v1* out_frame) {
+    if (! out_frame) return false;
+    if (handle.fd < 0 || handle.width <= 0 || handle.height <= 0 || handle.size == 0
+        || handle.shm_stride == 0) {
+        return false;
+    }
+
+    std::memset(out_frame, 0, sizeof(*out_frame));
+    out_frame->size = sizeof(*out_frame);
+    out_frame->version = 1;
+    out_frame->kind = WE_FRAME_KIND_SHM;
+    out_frame->width = static_cast<uint32_t>(handle.width);
+    out_frame->height = static_cast<uint32_t>(handle.height);
+    out_frame->shm_stride = handle.shm_stride;
+    out_frame->shm_size = static_cast<uint32_t>(handle.size);
+    out_frame->flags = handle.premultiplied ? 1u : 0u;
+    out_frame->planes[0].fd = handle.fd;
+    return true;
+}
+
 // Centralised dynamic_cast helpers. The base class does not expose
 // swapchain() because scene and web bindings have different
 // lifecycle semantics around it; the ABI is the one place that
@@ -264,25 +284,21 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     if (! state->sourceSet) return -1;
 
     if (state->sourceType == wallpaper::BackendType::Web) {
-        if (! config->prefer_dmabuf) {
-            return static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1;
-        }
-        if (config->allow_shm_fallback) {
-            return static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1;
-        }
+        // Web can prefer dma-buf while still falling back to SHM on CPU paint.
     }
 
     state->renderInitInfo.enable_valid_layer = config->enable_valid_layer;
     state->renderInitInfo.offscreen          = true;
-    state->renderInitInfo.export_mode        = config->prefer_dmabuf
-                                                    ? wallpaper::ExternalFrameExportMode::DMA_BUF
-                                                    : wallpaper::ExternalFrameExportMode::OPAQUE_FD;
+    state->renderInitInfo.allow_shm_fallback = config->allow_shm_fallback;
+    state->renderInitInfo.export_mode = config->prefer_dmabuf
+        ? wallpaper::ExternalFrameExportMode::DMA_BUF
+        : wallpaper::ExternalFrameExportMode::SHM;
     // DMA_BUF export requires the offscreen image to use LINEAR tiling
     // (TextureCache.cpp:307); pick it automatically when the consumer
     // asked for dmabuf so we don't leak that internal constraint.
-    state->renderInitInfo.offscreen_tiling   = config->prefer_dmabuf
-                                                    ? wallpaper::TexTiling::LINEAR
-                                                    : wallpaper::TexTiling::OPTIMAL;
+    state->renderInitInfo.offscreen_tiling = config->prefer_dmabuf
+        ? wallpaper::TexTiling::LINEAR
+        : wallpaper::TexTiling::OPTIMAL;
     state->renderInitInfo.width              = static_cast<std::uint16_t>(config->width);
     state->renderInitInfo.height             = static_cast<std::uint16_t>(config->height);
     state->renderInitInfo.render_scale       = 1.0;
@@ -365,27 +381,50 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
 
     auto* frame = ex_swapchain->eatFrame();
     if (!frame) return 1;
-    if (!frame->isDmabuf()) return -2;
-
-    if (!copy_dmabuf_frame(*frame, out_frame)) {
-        return -1;
+    if (frame->isDmabuf()) {
+        if (! copy_dmabuf_frame(*frame, out_frame)) {
+            return -1;
+        }
+    } else if (frame->isShm()) {
+        if (! copy_shm_frame(*frame, out_frame)) {
+            return -1;
+        }
+    } else {
+        return -2;
     }
     out_frame->serial = ++state->frameSerial;
-    for (uint32_t i = 0; i < out_frame->n_planes && i < 4; ++i) {
-        if (out_frame->planes[i].fd >= 0) {
-            const int dup_fd = ::dup(out_frame->planes[i].fd);
-            if (dup_fd < 0) {
-                we_frame_release(out_frame);
+    if (out_frame->kind == WE_FRAME_KIND_DMABUF) {
+        std::array<int, 4> duplicated_fds { -1, -1, -1, -1 };
+        for (uint32_t i = 0; i < out_frame->n_planes && i < 4; ++i) {
+            if (out_frame->planes[i].fd < 0) continue;
+            duplicated_fds[i] = ::dup(out_frame->planes[i].fd);
+            if (duplicated_fds[i] < 0) {
+                for (int duplicated_fd : duplicated_fds) {
+                    if (duplicated_fd >= 0) ::close(duplicated_fd);
+                }
                 return -1;
             }
-            out_frame->planes[i].fd = dup_fd;
         }
+        for (uint32_t i = 0; i < out_frame->n_planes && i < 4; ++i) {
+            if (duplicated_fds[i] >= 0) out_frame->planes[i].fd = duplicated_fds[i];
+        }
+    } else if (out_frame->kind == WE_FRAME_KIND_SHM) {
+        const int dup_fd = ::dup(out_frame->planes[0].fd);
+        if (dup_fd < 0) return -1;
+        out_frame->planes[0].fd = dup_fd;
     }
     return 0;
 }
 
 void we_frame_release(we_frame_v1* frame) {
     if (!frame) return;
+    if (frame->kind == WE_FRAME_KIND_SHM) {
+        if (frame->planes[0].fd >= 0) {
+            ::close(frame->planes[0].fd);
+            frame->planes[0].fd = -1;
+        }
+        return;
+    }
     for (uint32_t i = 0; i < frame->n_planes && i < 4; ++i) {
         if (frame->planes[i].fd >= 0) {
             ::close(frame->planes[i].fd);
