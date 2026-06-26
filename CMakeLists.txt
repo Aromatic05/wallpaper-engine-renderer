@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 include(ExternalProject)
+include(GNUInstallDirs)
 
 include(CTest)
 

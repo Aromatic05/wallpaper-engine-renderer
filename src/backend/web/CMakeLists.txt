@@ -41,7 +41,8 @@ if(BUILD_WEWEB)
 
     add_executable(we-cef-helper
         internal/cef/helper/main.cpp
-        internal/cef/AppHandler.cpp)
+        internal/cef/AppHandler.cpp
+        internal/cef/UserProperties.cpp)
     target_link_libraries(we-cef-helper PRIVATE
         WebCef::Core
         libcef_dll_wrapper)
@@ -49,4 +50,7 @@ if(BUILD_WEWEB)
         ../..
         ../../../include)
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
+
+    install(TARGETS we-cef-helper
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/wallpaper-engine-renderer)
 endif()
