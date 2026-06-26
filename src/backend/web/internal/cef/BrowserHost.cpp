@@ -116,6 +116,9 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
     if (impl_->accel_cb) {
         impl_->osr->SetAcceleratedPaintCallback(impl_->accel_cb);
     }
+    if (impl_->software_cb) {
+        impl_->osr->SetSoftwarePaintCallback(impl_->software_cb);
+    }
 
     impl_->client = new ClientHandler(manifest.user_props_json, manifest.has_user_props, impl_->osr);
     impl_->client->SetCloseCallback([this] {
@@ -145,6 +148,11 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
 void WebBrowserHost::SetAcceleratedPaintCallback(AcceleratedPaintCallback cb) {
     impl_->accel_cb = std::move(cb);
     if (impl_->osr) impl_->osr->SetAcceleratedPaintCallback(impl_->accel_cb);
+}
+
+void WebBrowserHost::SetSoftwarePaintCallback(SoftwarePaintCallback cb) {
+    impl_->software_cb = std::move(cb);
+    if (impl_->osr) impl_->osr->SetSoftwarePaintCallback(impl_->software_cb);
 }
 
 void WebBrowserHost::Invalidate() {

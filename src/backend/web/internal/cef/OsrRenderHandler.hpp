@@ -23,6 +23,7 @@ public:
     // Install the accelerated-paint sink. Must NOT be reset while a
     // frame callback is in flight.
     void SetAcceleratedPaintCallback(AcceleratedPaintCallback cb) { accel_cb_ = std::move(cb); }
+    void SetSoftwarePaintCallback(SoftwarePaintCallback cb) { software_cb_ = std::move(cb); }
 
     // CefRenderHandler.
     void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
@@ -38,6 +39,7 @@ private:
     int                      view_w_ { 1280 };
     int                      view_h_ { 720 };
     AcceleratedPaintCallback accel_cb_;
+    SoftwarePaintCallback    software_cb_;
 
     IMPLEMENT_REFCOUNTING(OsrRenderHandler);
     DISALLOW_COPY_AND_ASSIGN(OsrRenderHandler);

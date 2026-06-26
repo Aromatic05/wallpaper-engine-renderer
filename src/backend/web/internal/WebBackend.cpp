@@ -86,6 +86,9 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
     m_sharedState->contentStateChanged.store(true);
     m_sharedState->outputStateChanged.store(false);
     m_sharedState->frameRequested.store(false);
+    m_sharedState->acceleratedFrameSeen.store(false);
+    m_reportedSoftwareFallbackUnsupported = false;
+    m_reportedMissingAcceleratedFrames = false;
 
     m_workshopDir = WorkshopDirFromSourceUri(source.uri);
     auto manifest = web::LoadWebManifest(m_workshopDir);
@@ -204,7 +207,16 @@ Result<void> WebBackend::start() {
                              "web backend failed to publish accelerated paint frame");
             return;
         }
+        m_sharedState->acceleratedFrameSeen.store(true);
         m_sharedState->frameRequested.store(true);
+    });
+    m_browserHost->SetSoftwarePaintCallback([this](int width, int height) {
+        if (m_reportedSoftwareFallbackUnsupported) return;
+        m_reportedSoftwareFallbackUnsupported = true;
+        appendDiagnostic(DiagnosticSeverity::Warning,
+                         "web backend received CPU paint frame ("
+                             + std::to_string(width) + "x" + std::to_string(height)
+                             + ") but SHM/software fallback is not implemented");
     });
     if (! m_browserHost->OpenWallpaper(*m_manifest, m_workshopDir, width, height)) {
         return Result<void>::failure(ResultCode::InternalError, "CEF CreateBrowser failed");
@@ -344,6 +356,13 @@ Result<void> WebBackend::update() {
             m_browserHost->Invalidate();
         }
         m_browserHost->Pump();
+        if (! m_paused && ! m_sharedState->acceleratedFrameSeen.load()
+            && ! m_reportedMissingAcceleratedFrames) {
+            m_reportedMissingAcceleratedFrames = true;
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "web backend has not received any accelerated paint frames yet; "
+                             "only dma-buf output is currently supported");
+        }
     }
     return Result<void>::success();
 }

@@ -137,8 +137,10 @@ int main() {
     // Init runs before OpenWallpaper.
     require(mock->hasCall("Init"));
     require(mock->hasCall("SetAcceleratedPaintCallback"));
+    require(mock->hasCall("SetSoftwarePaintCallback"));
     require(mock->hasCall("OpenWallpaper"));
     require(mock->has_accelerated_paint_callback);
+    require(mock->has_software_paint_callback);
     assert(mock->last_init_opts.runtime_profile == wallpaper::WebCefRuntimeProfile::Compatibility);
     assert(mock->last_init_opts.preferred_window_system == wallpaper::WebCefWindowSystem::X11);
     assert(mock->last_init_opts.extra_command_line_switches.size() == 2);
@@ -161,6 +163,9 @@ int main() {
     assert(startupLifecycle);
     assert(startupLifecycle.value().contentStateChanged);
     assert(! startupLifecycle.value().frameRequested);
+    auto diagnostics = backend->diagnostics();
+    assert(! diagnostics.entries.empty());
+    assert(diagnostics.entries.back().message.find("accelerated paint frames") != std::string::npos);
 
     // Audio volume 0.7 lands on ApplyVolume(0.7). ApplyVolume builds
     // the applyUserProperties({audio: {value: 0.7}}) snippet, so the
@@ -208,6 +213,18 @@ int main() {
     assert(mock->wheel_y == 34);
     assert(mock->wheel_delta_x == -5);
     assert(mock->wheel_delta_y == 120);
+
+    mock->software_paint_callback(320, 240);
+    diagnostics = backend->diagnostics();
+    bool saw_software_fallback_warning = false;
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("SHM/software fallback is not implemented") != std::string::npos) {
+            saw_software_fallback_warning = true;
+            break;
+        }
+    }
+    assert(saw_software_fallback_warning);
+    assert(saw_software_fallback_warning);
 
     wallpaper::InputEvent keyDown;
     keyDown.type = wallpaper::InputEventType::KeyDown;

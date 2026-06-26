@@ -60,6 +60,7 @@ public:
     // delivers DMA-BUF frames here instead of CPU OnPaint bitmaps.
     // Plane FDs are valid only inside the synchronous call.
     virtual void SetAcceleratedPaintCallback(AcceleratedPaintCallback cb);
+    virtual void SetSoftwarePaintCallback(SoftwarePaintCallback cb);
 
     // Spawn a windowless (OSR) browser for the wallpaper. The entry
     // HTML is loaded from `workshop_dir / manifest.entry_html`; the

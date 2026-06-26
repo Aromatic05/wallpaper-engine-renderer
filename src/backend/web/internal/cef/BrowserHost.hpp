@@ -18,6 +18,7 @@ struct WebBrowserHost::Impl {
     CefRefPtr<OsrRenderHandler> osr;
     CefRefPtr<ClientHandler>    client;
     AcceleratedPaintCallback    accel_cb;
+    SoftwarePaintCallback       software_cb;
     std::atomic<bool>           should_exit { false };
     std::atomic<bool>           close_requested { false };
     bool                        initialised { false };

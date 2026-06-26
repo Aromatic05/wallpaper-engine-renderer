@@ -33,10 +33,10 @@ bool OsrRenderHandler::GetScreenInfo(CefRefPtr<CefBrowser> /*browser*/, CefScree
 
 void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> /*browser*/, PaintElementType /*type*/,
                                const RectList& /*dirtyRects*/, const void* /*buffer*/,
-                               int /*width*/, int /*height*/) {
-    // Pure virtual in CefRenderHandler so we must define it. Never fires
-    // while shared_texture_enabled = 1 — CEF routes to
-    // OnAcceleratedPaint instead.
+                               int width, int height) {
+    if (software_cb_) {
+        software_cb_(width, height);
+    }
 }
 
 void OsrRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> /*browser*/, PaintElementType type,

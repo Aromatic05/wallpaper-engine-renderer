@@ -62,6 +62,7 @@ struct DmaBufFrame {
 // the main thread inside CefDoMessageLoopWork. FDs in the delivered frame
 // are valid only for the duration of the call.
 using AcceleratedPaintCallback = std::function<void(const DmaBufFrame&)>;
+using SoftwarePaintCallback = std::function<void(int width, int height)>;
 
 // ---------------------------------------------------------------------------
 // Parsed <workshop_dir>/project.json for a Wallpaper Engine *web* wallpaper.

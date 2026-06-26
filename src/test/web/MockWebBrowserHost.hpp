@@ -67,7 +67,9 @@ public:
     int                                   request_close_count { 0 };
     int                                   push_audio_count { 0 };
     bool                                  has_accelerated_paint_callback { false };
+    bool                                  has_software_paint_callback { false };
     AcceleratedPaintCallback              accelerated_paint_callback;
+    SoftwarePaintCallback                 software_paint_callback;
     std::vector<float>                    last_audio;
     std::string                           last_user_key;
     std::string                           last_user_value_json;
@@ -83,6 +85,13 @@ public:
         has_accelerated_paint_callback = static_cast<bool>(cb);
         accelerated_paint_callback = std::move(cb);
         WebBrowserHost::SetAcceleratedPaintCallback(accelerated_paint_callback);
+    }
+
+    void SetSoftwarePaintCallback(SoftwarePaintCallback cb) override {
+        calls.push_back({"SetSoftwarePaintCallback"});
+        has_software_paint_callback = static_cast<bool>(cb);
+        software_paint_callback = std::move(cb);
+        WebBrowserHost::SetSoftwarePaintCallback(software_paint_callback);
     }
 
     bool OpenWallpaper(const WebManifestData& manifest,
