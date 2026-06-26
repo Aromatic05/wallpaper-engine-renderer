@@ -39,6 +39,20 @@ if(BUILD_WEWEB)
     add_test(NAME web-backend-contract-test COMMAND web-backend-contract-test)
 endif()
 
+# Optional real-CEF smoke test. Off by default because the host
+# needs a stageable CEF runtime; the test itself probes for
+# libcef.so and Resources/locales and skips (exit 0) when they
+# are not present. Opt in with -DWP_ENABLE_CEF_INTEGRATION_TEST=ON
+# on a machine that has staged CEF.
+option(WP_ENABLE_CEF_INTEGRATION_TEST "Build the real-CEF smoke test for the web backend" OFF)
+if(WP_ENABLE_CEF_INTEGRATION_TEST AND BUILD_WEWEB)
+    add_executable(web-cef-integration-test web_cef_integration_test.cpp)
+    target_link_libraries(web-cef-integration-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(web-cef-integration-test PRIVATE ..)
+    target_compile_options(web-cef-integration-test PRIVATE ${warn_opts})
+    add_test(NAME web-cef-integration-test COMMAND web-cef-integration-test)
+endif()
+
 add_executable(
   host-services-contract-test
   host_services_contract_test.cpp)
