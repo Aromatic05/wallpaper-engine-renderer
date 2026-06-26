@@ -3,11 +3,14 @@
 #include "backend/web/internal/Manifest.hpp"
 #include "backend/web/internal/WebRenderPlan.hpp"
 
+#include "abi/WeRuntimeArgs.hpp"
+
 #include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/WebBrowserHost.hpp"
 #include "wallpaper/web/WebOutputBinding.hpp"
 #include "wallpaper/web/WebTypes.hpp"
 
+#include <cstdlib>
 #include <utility>
 
 namespace wallpaper
@@ -117,6 +120,31 @@ Result<void> WebBackend::start() {
     if (! ensureBrowserHostReady()) {
         return Result<void>::failure(ResultCode::InternalError,
                                      "web backend BrowserHost allocation failed");
+    }
+
+    // CEF multi-process short-circuit. The host's main() must call
+    // we_runtime_init(argc, argv) so the saved argv reaches us here.
+    // If the host did not, CefExecuteProcess cannot decide whether
+    // this is a helper process and CEF stays single-process —
+    // acceptable for tests that link against a non-multi-process CEF
+    // build, broken for production. Surface the missing-init case as
+    // a diagnostic rather than silently downgrading.
+    int  runtime_argc = 0;
+    char** runtime_argv = nullptr;
+    if (wallpaper::abi::TryGetRuntimeArgs(runtime_argc, runtime_argv)) {
+        const int helper_exit = m_browserHost->RunOrExitIfHelper(runtime_argc, runtime_argv);
+        if (helper_exit >= 0) {
+            // We are a CEF helper process; CefExecuteProcess has
+            // already invoked exit(). The line below is unreachable
+            // in a real multi-process build but kept as a safety
+            // net in case exit() is intercepted by an LD_PRELOAD
+            // shim.
+            std::_Exit(helper_exit);
+        }
+    } else {
+        appendDiagnostic(DiagnosticSeverity::Warning,
+                         "web backend start called before we_runtime_init; "
+                         "CEF will run single-process");
     }
 
     WebBrowserHost::InitOptions opts {};

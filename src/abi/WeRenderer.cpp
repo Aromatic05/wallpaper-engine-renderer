@@ -7,6 +7,11 @@
 #include "wallpaper/scene/WEScene.hpp"
 #include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/Web.hpp"
+#include "wallpaper/web/WebOutputBinding.hpp"
+#include "wallpaper/OutputTargetBinding.hpp"
+#include "wallpaper/OutputTarget.hpp"
+
+#include "abi/WeRuntimeArgs.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -19,12 +24,21 @@
 
 namespace
 {
+int           g_runtime_argc { 0 };
+char**        g_runtime_argv { nullptr };
+bool          g_runtime_inited { false };
+
+// Owns the saved binding polymorphically; the concrete type
+// (WESceneOutputBinding or WebOutputBinding) is chosen in
+// we_session_set_render_config from state->sourceKind.
 struct WeSessionState {
     wallpaper::WallpaperRuntime runtime;
     std::unique_ptr<wallpaper::WallpaperSession> session;
     wallpaper::RenderInitInfo renderInitInfo;
-    std::shared_ptr<wallpaper::WESceneOutputBinding> binding;
-    uint64_t frameSerial { 0 };
+    we_source_kind_v1          sourceKind { WE_SOURCE_KIND_SCENE };
+    bool                      sourceSet { false };
+    std::shared_ptr<wallpaper::OutputTargetBinding> binding;
+    uint64_t                  frameSerial { 0 };
 };
 
 we_session_t* as_handle(WeSessionState* state) {
@@ -94,9 +108,44 @@ bool copy_dmabuf_frame(const wallpaper::ExHandle& handle, we_frame_v1* out_frame
     }
     return true;
 }
+
+// Centralised dynamic_cast helpers. The base class does not expose
+// swapchain() because scene and web bindings have different
+// lifecycle semantics around it; the ABI is the one place that
+// needs to read frames, so it pays the cast cost.
+wallpaper::WESceneOutputBinding* asSceneBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
+    return std::dynamic_pointer_cast<wallpaper::WESceneOutputBinding>(b).get();
+}
+
+wallpaper::WebOutputBinding* asWebBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
+    return std::dynamic_pointer_cast<wallpaper::WebOutputBinding>(b).get();
+}
 } // namespace
 
+namespace wallpaper::abi
+{
+bool TryGetRuntimeArgs(int& argc, char**& argv) {
+    if (! g_runtime_inited || g_runtime_argc <= 0 || g_runtime_argv == nullptr) return false;
+    argc = g_runtime_argc;
+    argv = g_runtime_argv;
+    return true;
+}
+} // namespace wallpaper::abi
+
 extern "C" {
+int32_t we_runtime_init(int argc, char** argv) {
+    if (argc <= 0 || argv == nullptr) {
+        g_runtime_argc   = 0;
+        g_runtime_argv   = nullptr;
+        g_runtime_inited = false;
+        return 0;
+    }
+    g_runtime_argc   = argc;
+    g_runtime_argv   = argv;
+    g_runtime_inited = true;
+    return 0;
+}
+
 we_session_t* we_session_create(void) {
     auto* state = new (std::nothrow) WeSessionState();
     if (!state) return nullptr;
@@ -113,6 +162,8 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     if (!state || !state->session) return -1;
     if (!source || source->version != 1) return -1;
     if (!source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri))) return -1;
+    state->sourceKind = source->kind;
+    state->sourceSet  = true;
     auto result = state->session->load(make_source(source));
     return to_error(result);
 }
@@ -121,6 +172,7 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     auto* state = as_state(session);
     if (!state || !state->session || !config) return -1;
     if (config->size < sizeof(we_render_config_v1) || config->version != 1) return -1;
+    if (! state->sourceSet) return -1;
     state->renderInitInfo.enable_valid_layer = config->enable_valid_layer;
     state->renderInitInfo.offscreen          = true;
     state->renderInitInfo.export_mode        = config->prefer_dmabuf
@@ -132,13 +184,33 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     state->renderInitInfo.offscreen_tiling   = config->prefer_dmabuf
                                                     ? wallpaper::TexTiling::LINEAR
                                                     : wallpaper::TexTiling::OPTIMAL;
-    state->renderInitInfo.width              = static_cast<uint16_t>(config->width);
-    state->renderInitInfo.height             = static_cast<uint16_t>(config->height);
+    state->renderInitInfo.width              = static_cast<std::uint16_t>(config->width);
+    state->renderInitInfo.height             = static_cast<std::uint16_t>(config->height);
     state->renderInitInfo.render_scale       = 1.0;
-    auto binding_result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
-    if (! binding_result) return 1;
-    state->binding = std::move(binding_result.value());
-    return 0;
+
+    switch (state->sourceKind) {
+    case WE_SOURCE_KIND_SCENE: {
+        auto binding_result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
+        if (! binding_result) return 1;
+        state->binding = binding_result.value();
+        return 0;
+    }
+    case WE_SOURCE_KIND_WEB: {
+        auto binding = wallpaper::MakeWebOutputBinding(state->renderInitInfo);
+        wallpaper::OutputTarget target {};
+        target.type    = wallpaper::OutputTargetType::Offscreen;
+        target.binding = binding;
+        target.width   = state->renderInitInfo.width;
+        target.height  = state->renderInitInfo.height;
+        auto bindResult = state->session->bindOutput(target);
+        if (! bindResult) return 1;
+        state->binding = std::move(binding);
+        return 0;
+    }
+    case WE_SOURCE_KIND_VIDEO:
+    default:
+        return 1;
+    }
 }
 
 int32_t we_session_play(we_session_t* session) {
@@ -172,11 +244,27 @@ int32_t we_session_tick(we_session_t* session) {
 int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) {
     auto* state = as_state(session);
     if (!state || !state->session || !out_frame) return -1;
-    if (!state->binding || !state->binding->swapchain()) return 1;
     if (out_frame->size != 0 && out_frame->size < sizeof(we_frame_v1)) return -1;
+    if (!state->binding) return 1;
 
-    auto* ex_swapchain = state->binding->swapchain();
-    auto* frame        = ex_swapchain->eatFrame();
+    // Dispatch to the right swapchain based on state->sourceKind.
+    // swapchain() lives on the derived binding, not the base, so a
+    // dynamic_cast is the cheapest way to read it.
+    wallpaper::ExSwapchain* ex_swapchain = nullptr;
+    if (state->sourceKind == WE_SOURCE_KIND_SCENE) {
+        auto* sceneBinding = asSceneBinding(state->binding);
+        if (! sceneBinding) return -1;
+        ex_swapchain = sceneBinding->swapchain();
+    } else if (state->sourceKind == WE_SOURCE_KIND_WEB) {
+        auto* webBinding = asWebBinding(state->binding);
+        if (! webBinding) return -1;
+        ex_swapchain = webBinding->swapchain();
+    } else {
+        return -1;
+    }
+    if (! ex_swapchain) return 1;
+
+    auto* frame = ex_swapchain->eatFrame();
     if (!frame) return 1;
     if (!frame->isDmabuf()) return -2;
 
