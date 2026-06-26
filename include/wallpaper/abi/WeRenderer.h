@@ -20,12 +20,6 @@ typedef enum we_frame_kind_v1 {
     WE_FRAME_KIND_SHM    = 2,
 } we_frame_kind_v1;
 
-typedef enum we_pointer_event_v1 {
-    WE_POINTER_DOWN = 0,
-    WE_POINTER_UP   = 1,
-    WE_POINTER_MOVE = 2,
-} we_pointer_event_v1;
-
 typedef enum we_input_event_type_v2 {
     WE_INPUT_POINTER_MOVE = 0,
     WE_INPUT_POINTER_DOWN = 1,
@@ -116,10 +110,6 @@ WE_RENDERER_API int32_t we_session_tick(we_session_t* session);
 WE_RENDERER_API int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame);
 WE_RENDERER_API void    we_frame_release(we_frame_v1* frame);
 
-WE_RENDERER_API int32_t we_session_send_pointer_event(we_session_t* session,
-                                                      uint32_t type,
-                                                      float    x,
-                                                      float    y);
 WE_RENDERER_API int32_t we_session_send_input_event(we_session_t* session,
                                                     const we_input_event_v2* event);
 

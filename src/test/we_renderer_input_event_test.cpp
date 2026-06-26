@@ -75,11 +75,29 @@ int main() {
            || focus_result == static_cast<std::int32_t>(wallpaper::ResultCode::InternalError) + 1
            || focus_result == 0);
 
-    const auto pointer_result =
-        we_session_send_pointer_event(session, WE_POINTER_MOVE, 0.5f, 0.5f);
+    we_input_event_v2 pointer {};
+    pointer.size = sizeof(pointer);
+    pointer.version = 2;
+    pointer.type = WE_INPUT_POINTER_MOVE;
+    pointer.pointer_x = 0.5f;
+    pointer.pointer_y = 0.5f;
+    const auto pointer_result = we_session_send_input_event(session, &pointer);
     assert(pointer_result == 0
            || pointer_result == static_cast<std::int32_t>(wallpaper::ResultCode::InvalidState) + 1
            || pointer_result == static_cast<std::int32_t>(wallpaper::ResultCode::InternalError) + 1);
+
+    pointer.type = WE_INPUT_POINTER_DOWN;
+    pointer.button = 1;
+    const auto pointer_down_result = we_session_send_input_event(session, &pointer);
+    assert(pointer_down_result == 0
+           || pointer_down_result == static_cast<std::int32_t>(wallpaper::ResultCode::InvalidState) + 1
+           || pointer_down_result == static_cast<std::int32_t>(wallpaper::ResultCode::InternalError) + 1);
+
+    pointer.type = WE_INPUT_POINTER_UP;
+    const auto pointer_up_result = we_session_send_input_event(session, &pointer);
+    assert(pointer_up_result == 0
+           || pointer_up_result == static_cast<std::int32_t>(wallpaper::ResultCode::InvalidState) + 1
+           || pointer_up_result == static_cast<std::int32_t>(wallpaper::ResultCode::InternalError) + 1);
 
     we_session_destroy(session);
     return 0;

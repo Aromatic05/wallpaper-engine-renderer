@@ -93,10 +93,13 @@ void onPointerMotion(void* data,
 
     state->pointer_x = wl_fixed_to_double(sx);
     state->pointer_y = wl_fixed_to_double(sy);
-    we_session_send_pointer_event(state->session,
-                                  WE_POINTER_MOVE,
-                                  static_cast<float>(state->pointer_x / state->surface_width),
-                                  static_cast<float>(state->pointer_y / state->surface_height));
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = WE_INPUT_POINTER_MOVE;
+    event.pointer_x = static_cast<float>(state->pointer_x / state->surface_width);
+    event.pointer_y = static_cast<float>(state->pointer_y / state->surface_height);
+    we_session_send_input_event(state->session, &event);
 }
 
 void onPointerButton(void* data,
@@ -109,12 +112,16 @@ void onPointerButton(void* data,
     if (! state || ! state->session || state->surface_width == 0 || state->surface_height == 0) return;
     if (button != BTN_LEFT) return;
 
-    const std::uint32_t event_type =
-        button_state == WL_POINTER_BUTTON_STATE_PRESSED ? WE_POINTER_DOWN : WE_POINTER_UP;
-    we_session_send_pointer_event(state->session,
-                                  event_type,
-                                  static_cast<float>(state->pointer_x / state->surface_width),
-                                  static_cast<float>(state->pointer_y / state->surface_height));
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = button_state == WL_POINTER_BUTTON_STATE_PRESSED
+        ? WE_INPUT_POINTER_DOWN
+        : WE_INPUT_POINTER_UP;
+    event.pointer_x = static_cast<float>(state->pointer_x / state->surface_width);
+    event.pointer_y = static_cast<float>(state->pointer_y / state->surface_height);
+    event.button = 1;
+    we_session_send_input_event(state->session, &event);
 }
 
 void onPointerAxis(void* /*data*/,

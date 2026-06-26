@@ -394,23 +394,6 @@ void we_frame_release(we_frame_v1* frame) {
     }
 }
 
-int32_t we_session_send_pointer_event(we_session_t* session, uint32_t type, float x, float y) {
-    auto* state = as_state(session);
-    if (!state || !state->session) return -1;
-    wallpaper::InputEventType event_type;
-    switch (type) {
-    case WE_POINTER_DOWN: event_type = wallpaper::InputEventType::PointerDown; break;
-    case WE_POINTER_UP:   event_type = wallpaper::InputEventType::PointerUp;   break;
-    case WE_POINTER_MOVE: event_type = wallpaper::InputEventType::PointerMove; break;
-    default: return -1;
-    }
-    wallpaper::InputEvent event;
-    event.type     = event_type;
-    event.pointerX = x;
-    event.pointerY = y;
-    return to_error(state->session->sendInput(event));
-}
-
 int32_t we_session_send_input_event(we_session_t* session, const we_input_event_v2* event) {
     auto* state = as_state(session);
     if (! state || ! state->session || ! event) return -1;
