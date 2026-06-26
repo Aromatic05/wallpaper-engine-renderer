@@ -17,6 +17,8 @@ link_libraries(Eigen3::Eigen)
 
 option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" ON)
 option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" ON)
+option(BUILD_WEWEB
+    "Build the CEF-based web backend (requires system CEF via CEF_ROOT)" OFF)
 
 set(HANABI_DXC_ROOT "" CACHE PATH "Path to Hanabi staged DirectXShaderCompiler SDK")
 set(HANABI_DXC_SOURCE_DIR
@@ -145,6 +147,63 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
         target_link_libraries(wpquickjs PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
     endif()
     set_property(TARGET wpquickjs PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
+
+# ---------------------------------------------------------------------------
+# System CEF detection (optional; enabled by -DBUILD_WEWEB=ON)
+# ---------------------------------------------------------------------------
+# CEF's binary distribution is unpacked into a directory whose layout matches
+# what Chromium's `cefclient` / `cefsimple` builds ship: a `cmake/FindCEF.cmake`
+# module, a `libcef_dll/` subdirectory, and Release/ + Debug/ folders under
+# either the root or a build-type-named subdirectory. The build invokes
+# `find_package(CEF)` against that root.
+#
+# The CEF variable contract used here (CEF_ROOT, CEF_LIB_*,
+# CEF_LIBCEF_DLL_WRAPPER_PATH, CEF_INCLUDE) is what upstream's
+# `cef_variables.cmake` and `FindCEF.cmake` define; consumers should not need
+# to re-discover these names. See `cmake/CEF.cmake` for the wrapper that the
+# web backend uses to link CefWrapper + WebCef::Core.
+set(CEF_ROOT "" CACHE PATH "Path to the CEF binary distribution root")
+if(BUILD_WEWEB)
+    if(NOT CEF_ROOT)
+        if(DEFINED ENV{CEF_ROOT})
+            set(CEF_ROOT $ENV{CEF_ROOT})
+        else()
+            message(FATAL_ERROR
+                "BUILD_WEWEB=ON requires CEF_ROOT to point to the CEF binary "
+                "distribution root (the directory containing cmake/FindCEF.cmake "
+                "and a libcef_dll/ subdirectory). Set -DCEF_ROOT=/path/to/cef or "
+                "export CEF_ROOT in the environment.")
+        endif()
+    endif()
+    if(NOT EXISTS "${CEF_ROOT}/cmake/FindCEF.cmake")
+        message(FATAL_ERROR
+            "CEF_ROOT='${CEF_ROOT}' does not contain cmake/FindCEF.cmake. "
+            "Set CEF_ROOT to the CEF binary distribution root (e.g. the "
+            "directory created by extracting cef_binary_*_linux64.tar.bz2).")
+    endif()
+    list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+    find_package(CEF REQUIRED)
+    # CEF's variables.cmake derives CEF_BINARY_DIR from CMAKE_BUILD_TYPE
+    # (${CEF_ROOT}/${CMAKE_BUILD_TYPE}). The 'minimal' linux64 distribution
+    # ships only Release/, so a Debug configure would point at a non-existent
+    # Debug/ folder. Pin both to Release — the prebuilt libcef.so is the same
+    # regardless of our build type, only the wrapper compile around it differs.
+    if(DEFINED CEF_BINARY_DIR_RELEASE)
+        set(CEF_BINARY_DIR "${CEF_BINARY_DIR_RELEASE}")
+    endif()
+    if(DEFINED CEF_LIB_RELEASE)
+        set(CEF_LIB "${CEF_LIB_RELEASE}")
+        set(CEF_LIB_DEBUG "${CEF_LIB_RELEASE}")
+    endif()
+    if(NOT TARGET WebCef::Core)
+        add_library(WebCef::Core SHARED IMPORTED GLOBAL)
+        set_target_properties(WebCef::Core PROPERTIES
+            IMPORTED_LOCATION "${CEF_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CEF_INCLUDE}")
+    endif()
+    message(STATUS "CEF binary distribution: ${CEF_ROOT}")
+    message(STATUS "CEF library: ${CEF_LIB}")
 endif()
 
 add_subdirectory(third_party)
