@@ -5,6 +5,7 @@
 #include <linux/input-event-codes.h>
 #include <poll.h>
 #include <sys/mman.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 #include <wayland-client.h>
 
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +28,21 @@
 #include "xdg-shell-client-protocol.h"
 
 namespace {
+
+bool envVarEnabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+bool envVarEquals(const char* name, const char* expected) {
+    const char* value = std::getenv(name);
+    return value != nullptr && std::strcmp(value, expected) == 0;
+}
+
+bool shouldForceShmForPrimeRunNvidia() {
+    return envVarEnabled("__NV_PRIME_RENDER_OFFLOAD") ||
+           envVarEquals("__VK_LAYER_NV_optimus", "NVIDIA_only");
+}
 
 std::uint32_t toOpaqueDrmFourcc(std::uint32_t drm_fourcc) {
     switch (drm_fourcc) {
@@ -39,6 +56,19 @@ struct WaylandBuffer {
     wl_buffer* buffer { nullptr };
     bool       released { false };
     std::vector<int> pending_send_fds;
+};
+
+struct DmabufFormatModifierEntry {
+    std::uint32_t format { 0 };
+    std::uint64_t modifier { 0 };
+};
+
+struct DmabufFeedbackState {
+    zwp_linux_dmabuf_feedback_v1* feedback { nullptr };
+    void* mapped_table { nullptr };
+    std::size_t mapped_table_size { 0 };
+    std::vector<DmabufFormatModifierEntry> format_table;
+    std::vector<DmabufFormatModifierEntry> preferred_formats;
 };
 
 struct WaylandState {
@@ -63,9 +93,94 @@ struct WaylandState {
     double                  pointer_y { 0.0 };
     we_session_t*           session { nullptr };
     std::vector<std::unique_ptr<WaylandBuffer>> in_flight_buffers;
+    DmabufFeedbackState     surface_feedback;
 };
 
 void destroyWayland(WaylandState& state);
+
+void destroyDmabufFeedback(DmabufFeedbackState& feedback) {
+    if (feedback.mapped_table != nullptr && feedback.mapped_table_size != 0) {
+        ::munmap(feedback.mapped_table, feedback.mapped_table_size);
+        feedback.mapped_table = nullptr;
+        feedback.mapped_table_size = 0;
+    }
+    if (feedback.feedback != nullptr) {
+        zwp_linux_dmabuf_feedback_v1_destroy(feedback.feedback);
+        feedback.feedback = nullptr;
+    }
+    feedback.format_table.clear();
+    feedback.preferred_formats.clear();
+}
+
+void onDmabufFeedbackDone(void*, zwp_linux_dmabuf_feedback_v1*) {}
+
+void onDmabufFeedbackFormatTable(void* data,
+                                 zwp_linux_dmabuf_feedback_v1*,
+                                 int32_t fd,
+                                 uint32_t size) {
+    auto* feedback = static_cast<DmabufFeedbackState*>(data);
+    if (! feedback) {
+        if (fd >= 0) ::close(fd);
+        return;
+    }
+    if (feedback->mapped_table != nullptr && feedback->mapped_table_size != 0) {
+        ::munmap(feedback->mapped_table, feedback->mapped_table_size);
+        feedback->mapped_table = nullptr;
+        feedback->mapped_table_size = 0;
+    }
+    feedback->format_table.clear();
+    if (fd < 0 || size == 0) {
+        if (fd >= 0) ::close(fd);
+        return;
+    }
+
+    void* mapped = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (mapped == MAP_FAILED) return;
+
+    feedback->mapped_table = mapped;
+    feedback->mapped_table_size = size;
+
+    const auto* bytes = static_cast<const std::uint8_t*>(mapped);
+    for (std::size_t offset = 0; offset + 16 <= size; offset += 16) {
+        std::uint32_t format { 0 };
+        std::uint64_t modifier { 0 };
+        std::memcpy(&format, bytes + offset, sizeof(format));
+        std::memcpy(&modifier, bytes + offset + 8, sizeof(modifier));
+        feedback->format_table.push_back({ format, modifier });
+    }
+}
+
+void onDmabufFeedbackMainDevice(void*, zwp_linux_dmabuf_feedback_v1*, wl_array*) {}
+void onDmabufFeedbackTrancheDone(void*, zwp_linux_dmabuf_feedback_v1*) {}
+void onDmabufFeedbackTrancheTargetDevice(void*, zwp_linux_dmabuf_feedback_v1*, wl_array*) {}
+
+void onDmabufFeedbackTrancheFormats(void* data,
+                                    zwp_linux_dmabuf_feedback_v1*,
+                                    wl_array* indices) {
+    auto* feedback = static_cast<DmabufFeedbackState*>(data);
+    if (! feedback || ! indices) return;
+    const auto count = indices->size / sizeof(std::uint16_t);
+    auto* index_data = static_cast<const std::uint16_t*>(indices->data);
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto index = static_cast<std::size_t>(index_data[i]);
+        if (index < feedback->format_table.size()) {
+            feedback->preferred_formats.push_back(feedback->format_table[index]);
+        }
+    }
+}
+
+void onDmabufFeedbackTrancheFlags(void*, zwp_linux_dmabuf_feedback_v1*, std::uint32_t) {}
+
+constexpr zwp_linux_dmabuf_feedback_v1_listener kDmabufFeedbackListener {
+    .done = onDmabufFeedbackDone,
+    .format_table = onDmabufFeedbackFormatTable,
+    .main_device = onDmabufFeedbackMainDevice,
+    .tranche_done = onDmabufFeedbackTrancheDone,
+    .tranche_target_device = onDmabufFeedbackTrancheTargetDevice,
+    .tranche_formats = onDmabufFeedbackTrancheFormats,
+    .tranche_flags = onDmabufFeedbackTrancheFlags,
+};
 
 void onWlBufferRelease(void* data, wl_buffer* /*buffer*/) {
     auto* entry = static_cast<WaylandBuffer*>(data);
@@ -369,6 +484,15 @@ bool initWayland(WaylandState& state, std::uint32_t width, std::uint32_t height)
         state.xdg_toplevel_obj, static_cast<std::int32_t>(width), static_cast<std::int32_t>(height));
     xdg_toplevel_set_max_size(
         state.xdg_toplevel_obj, static_cast<std::int32_t>(width), static_cast<std::int32_t>(height));
+    if (state.dmabuf && state.dmabuf_version >= 4) {
+        state.surface_feedback.feedback =
+            zwp_linux_dmabuf_v1_get_surface_feedback(state.dmabuf, state.surface);
+        if (state.surface_feedback.feedback) {
+            zwp_linux_dmabuf_feedback_v1_add_listener(state.surface_feedback.feedback,
+                                                      &kDmabufFeedbackListener,
+                                                      &state.surface_feedback);
+        }
+    }
 
     wl_surface_commit(state.surface);
     if (wl_display_roundtrip(state.display) < 0 || ! state.configured) {
@@ -495,6 +619,7 @@ void destroyWayland(WaylandState& state) {
         zwp_linux_dmabuf_v1_destroy(state.dmabuf);
         state.dmabuf = nullptr;
     }
+    destroyDmabufFeedback(state.surface_feedback);
     if (state.shm) {
         wl_shm_destroy(state.shm);
         state.shm = nullptr;
@@ -563,6 +688,28 @@ int main(int argc, char** argv) {
     config.height        = static_cast<std::uint32_t>(args.height);
     config.prefer_dmabuf = !args.force_shm;
     config.allow_shm_fallback = true;
+    if (config.prefer_dmabuf) {
+        if (shouldForceShmForPrimeRunNvidia()) {
+            std::fprintf(stderr,
+                         "sceneviewer: detected prime-run/NVIDIA offload environment, forcing SHM fallback\n");
+            config.prefer_dmabuf = false;
+        } else {
+            bool found_supported_modifier { false };
+            for (const auto& entry : wayland.surface_feedback.preferred_formats) {
+                if (entry.format == DRM_FORMAT_ABGR8888 &&
+                    entry.modifier != 0 &&
+                    entry.modifier != 0x00ffffffffffffffULL) {
+                    found_supported_modifier = true;
+                    break;
+                }
+            }
+            if (! found_supported_modifier) {
+            std::fprintf(stderr,
+                         "sceneviewer: no explicit dmabuf modifiers from feedback for ABGR8888, forcing SHM fallback\n");
+                config.prefer_dmabuf = false;
+            }
+        }
+    }
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
         std::cerr << "we_session_set_render_config failed: " << r << "\n";
         we_session_destroy(session);
