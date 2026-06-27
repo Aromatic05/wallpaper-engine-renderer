@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -435,6 +436,18 @@ static Eigen::Matrix4d ResolveRouteModel(SceneNode* node,
 
     node->UpdateTrans();
     return node->ModelTrans();
+}
+
+static std::string DebugRouteMatrixSummary(const Eigen::Matrix4d& matrix) {
+    char buffer[256];
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "tx=%.3f ty=%.3f sx=%.3f sy=%.3f",
+                  matrix(0, 3),
+                  matrix(1, 3),
+                  Eigen::Vector3d(matrix(0, 0), matrix(1, 0), matrix(2, 0)).norm(),
+                  Eigen::Vector3d(matrix(0, 1), matrix(1, 1), matrix(2, 1)).norm());
+    return std::string(buffer);
 }
 
 static std::optional<Eigen::Matrix4d> BuildChildRouteModel(
@@ -954,6 +967,13 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
                  keep_final_output_private ? "true" : "false",
                  route.compose_source ? "true" : "false",
                  source_route.active_compose_source_camera.c_str());
+        if (WallpaperDebugLayerEnabled(imgId)) {
+            LOG_INFO("DebugLayerEffectRouteModel: layer=%d name='%s' route=%s compose-source=%s",
+                     imgId,
+                     node != nullptr ? node->Name().c_str() : "",
+                     DebugRouteMatrixSummary(resolved_route_model).c_str(),
+                     route.compose_source ? "true" : "false");
+        }
         imgeff->ResolveEffect(scene.default_effect_mesh,
                               "effect",
                               node != nullptr ? std::string_view(node->Camera()) : std::string_view(),

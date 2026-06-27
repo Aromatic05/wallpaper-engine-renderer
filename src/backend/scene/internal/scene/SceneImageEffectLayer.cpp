@@ -32,6 +32,30 @@ std::string_view ResolveTemplateOrCurrent(const std::string& authored_value,
     return authored_value.empty() ? std::string_view(current_value)
                                   : std::string_view(authored_value);
 }
+
+std::string DebugMatrixSummary(const Eigen::Matrix4f& matrix) {
+    char buffer[256];
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "tx=%.3f ty=%.3f sx=%.3f sy=%.3f",
+                  matrix(0, 3),
+                  matrix(1, 3),
+                  Eigen::Vector3f(matrix(0, 0), matrix(1, 0), matrix(2, 0)).norm(),
+                  Eigen::Vector3f(matrix(0, 1), matrix(1, 1), matrix(2, 1)).norm());
+    return std::string(buffer);
+}
+
+Eigen::Affine3f StripAffineScalePreserveAxes(const Eigen::Affine3f& affine) {
+    Eigen::Affine3f stripped = affine;
+    for (int axis = 0; axis < 3; axis++) {
+        auto column = stripped.linear().col(axis);
+        const float norm = column.norm();
+        if (norm > 1e-6f) {
+            stripped.linear().col(axis) = column / norm;
+        }
+    }
+    return stripped;
+}
 } // namespace
 
 // The width and height parameters remain in the public constructor to preserve the existing parser
@@ -380,6 +404,17 @@ void SceneImageEffectLayer::ResolveFinalCompositeNode(
     }
 
     SyncResolvedNodeForRoute(resolved_world_affine);
+    if (m_final_composite.publishes_visible_output) {
+        // Temporary stopgap: source-less compose helpers currently leak the source/world scale into
+        // the detached final publisher, which shrinks visible outputs such as audio bars to roughly
+        // one third of their expected size. Keep the routed translation/axes, but strip the scale
+        // component before publishing until the composelayer source/writer split is repaired to
+        // match Wallpaper Engine semantics.
+        const auto stripped_affine =
+            StripAffineScalePreserveAxes(Eigen::Affine3f(m_final_node->GetLocalTrans().cast<float>()));
+        m_final_node->SetLocalAffine(stripped_affine);
+        m_final_node->UpdateTrans();
+    }
     material.blenmode = m_final_blend;
     m_final_node->SetCamera(std::string());
     mesh.ChangeMeshDataFrom(m_final_composite.uses_source_mesh ? *m_source_mesh
@@ -408,6 +443,16 @@ void SceneImageEffectLayer::ResolveFinalCompositeNode(
                  m_final_composite.publishes_private_output ? "true" : "false",
                  m_final_composite.uses_source_mesh ? "true" : "false",
                  static_cast<int>(m_final_composite.hidden_policy));
+        LOG_INFO("DebugLayerFinalCompositeTransform: layer=%d final-node=%s world-node=%s "
+                 "resolved-affine=%s",
+                 m_worldNode != nullptr ? m_worldNode->ID() : -1,
+                 DebugMatrixSummary(m_final_node->GetLocalTrans().cast<float>()).c_str(),
+                 m_worldNode != nullptr
+                     ? DebugMatrixSummary(m_worldNode->GetLocalTrans().cast<float>()).c_str()
+                     : "<null>",
+                 resolved_world_affine != nullptr
+                     ? DebugMatrixSummary(resolved_world_affine->matrix()).c_str()
+                     : "<null>");
     }
 }
 
