@@ -15,6 +15,7 @@ struct Args {
     int32_t     fps    { 15 };
     int32_t     width  { 1280 };
     int32_t     height { 720 };
+    bool        force_shm { false };
 };
 
 inline void printUsage(const char* prog) {
@@ -37,6 +38,8 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
         std::string a = argv[i];
         if (a == "-h" || a == "--help") {
             return false;
+        } else if (a == "--shm") {
+            args.force_shm = true;
         } else if (a == "--cache-path") {
             if (! needValue(i, args.cache_path)) return false;
         } else if (a == "--fps") {
@@ -79,6 +82,7 @@ inline void printHelp(const char* prog) {
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"
+                 "  --shm                force SHM output instead of DMA-BUF\n"
                  "  -h, --help           show this help\n",
                  prog,
                  prog);

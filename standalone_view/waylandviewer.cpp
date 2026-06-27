@@ -561,7 +561,7 @@ int main(int argc, char** argv) {
     config.version       = 1;
     config.width         = static_cast<std::uint32_t>(args.width);
     config.height        = static_cast<std::uint32_t>(args.height);
-    config.prefer_dmabuf = true;
+    config.prefer_dmabuf = !args.force_shm;
     config.allow_shm_fallback = true;
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
         std::cerr << "we_session_set_render_config failed: " << r << "\n";
