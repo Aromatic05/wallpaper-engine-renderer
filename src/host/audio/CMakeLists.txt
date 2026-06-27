@@ -2,6 +2,8 @@ set(LIB_NAME wpAudio)
 
 add_library(${LIB_NAME}
     STATIC
+    miniaudio-wrapper.cpp
+    SoundCapturer.cpp
     SoundManager.cpp
 )
 

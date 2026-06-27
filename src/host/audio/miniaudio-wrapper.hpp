@@ -22,11 +22,18 @@
 #define MA_NO_ENCODING
 #define STB_VORBIS_HEADER_ONLY
 #include <miniaudio/extras/stb_vorbis.c> /* Enables Vorbis decoding. */
+#ifdef WP_MINIAUDIO_IMPLEMENTATION
 #define MINIAUDIO_IMPLEMENTATION
+#endif
 #include <miniaudio/miniaudio.h>
+#ifdef WP_MINIAUDIO_IMPLEMENTATION
+#undef MINIAUDIO_IMPLEMENTATION
+#endif
 /* stb_vorbis implementation must come after the implementation of miniaudio. */
+#ifdef WP_MINIAUDIO_IMPLEMENTATION
 #undef STB_VORBIS_HEADER_ONLY
 #include <miniaudio/extras/stb_vorbis.c> /* Enables Vorbis decoding. */
+#endif
 
 namespace miniaudio
 {
@@ -280,8 +287,6 @@ private:
                                             }),
                              m_channels.end());
         }
-        AnalyzeSpectrum(
-            static_cast<const float*>(pOutput), frameCount, phyChannels, m_device.sampleRate);
     }
     ma_device_config GenMaDeviceConfig(const DeviceDesc& d) {
         ma_device_config config  = ma_device_config_init(ma_device_type_playback);
