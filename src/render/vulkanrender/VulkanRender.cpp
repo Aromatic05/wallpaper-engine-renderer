@@ -1285,7 +1285,7 @@ bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image
     bgra->resize(pixel_bytes);
     auto* src = static_cast<const std::uint8_t*>(mapped);
     for (uint32_t row = 0; row < height; ++row) {
-        const std::size_t src_offset = static_cast<std::size_t>(height - 1 - row) * row_bytes;
+        const std::size_t src_offset = static_cast<std::size_t>(row) * row_bytes;
         const std::size_t dst_offset = static_cast<std::size_t>(row) * row_bytes;
         std::memcpy(bgra->data() + dst_offset, src + src_offset, row_bytes);
         for (std::size_t pixel = dst_offset; pixel < dst_offset + row_bytes; pixel += 4u) {
