@@ -1019,6 +1019,9 @@ static void ToGraphPass(SceneNode* node, std::string_view inherited_output, i32 
             // ordinary stable publisher or only as a hidden-effect bypass fallback. Keeping that
             // policy inside SceneImageEffectLayer avoids shader/name special cases in the graph
             // traversal while still preserving direct authored final writers for static chains.
+            const bool should_run_final_composite =
+                imgeff != nullptr && imgeff->ShouldRunFinalComposite();
+            imgeff->FinalNode().SetLocalVisible(should_run_final_composite);
             auto final_composite_gate = [imgeff]() {
                 return imgeff != nullptr && imgeff->ShouldRunFinalComposite();
             };
