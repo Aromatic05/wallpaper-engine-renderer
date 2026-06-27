@@ -144,6 +144,18 @@ void ApplyLayerVisibilityRecursive(Scene& scene, int32_t layer_id, std::unordere
     std::unordered_set<int32_t> visiting;
     const bool effective_visible = IsLayerVisibleImpl(scene, layer_id, visiting);
 
+    if (WallpaperDebugLayerEnabled(layer_id) || WallpaperDebugModuleEnabled("layer-activation")) {
+        SceneNode* node = nullptr;
+        if (auto it = scene.layerNodes.find(layer_id); it != scene.layerNodes.end()) node = it->second;
+        LOG_DEBUG_MODULE("layer-activation",
+                         "layer-activation layer=%d node='%s' effective_visible=%s local_visible=%s parent=%d",
+                         layer_id,
+                         node != nullptr ? node->Name().c_str() : "",
+                         effective_visible ? "true" : "false",
+                         scene.GetLayerLocalVisibility(layer_id) ? "true" : "false",
+                         scene.GetLayerParentBinding(layer_id).parent_id);
+    }
+
     if (auto runtime_nodes_it = scene.objectRuntimeNodes.find(layer_id);
         runtime_nodes_it != scene.objectRuntimeNodes.end()) {
         for (auto* node : runtime_nodes_it->second) {

@@ -21,6 +21,7 @@
 #include <limits>
 #include <numeric>
 #include <vector>
+#include <sstream>
 
 using namespace wallpaper;
 using namespace Eigen;
@@ -46,6 +47,19 @@ struct MeshBounds2D {
     Vector3d center { Vector3d::Zero() };
     Vector2d halfExtent { Vector2d::Ones() };
 };
+
+std::string NodeDebugLabel(const SceneNode* node) {
+    if (node == nullptr) return "<null>";
+    std::ostringstream oss;
+    oss << "name='" << node->Name() << "'"
+        << " localVisible=" << (node->LocalVisible() ? "true" : "false")
+        << " layerVisible=" << (node->LayerVisible() ? "true" : "false")
+        << " visible=" << (node->Visible() ? "true" : "false");
+    if (node->Parent() != nullptr) {
+        oss << " parent='" << node->Parent()->Name() << "'";
+    }
+    return oss.str();
+}
 
 float SanitizeMouseCoord(double value) {
     if (! std::isfinite(value)) return kDefaultMouseCoord;
@@ -648,6 +662,24 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
         if (!has_audio) {
             continue;
         }
+
+        LOG_INFO("spectrum node=%s resolution=%u source=%s left.size=%zu right.size=%zu "
+                 "left0=%g left1=%g left2=%g left3=%g right0=%g right1=%g right2=%g right3=%g",
+                 NodeDebugLabel(pNode).c_str(),
+                 kAudioSpectrumResolutions[index],
+                 m_scene->scriptHost != nullptr ? "scriptHost"
+                 : m_scene->soundManager != nullptr ? "soundManager"
+                                                    : "none",
+                 left.size(),
+                 right.size(),
+                 left.size() > 0 ? left[0] : 0.0f,
+                 left.size() > 1 ? left[1] : 0.0f,
+                 left.size() > 2 ? left[2] : 0.0f,
+                 left.size() > 3 ? left[3] : 0.0f,
+                 right.size() > 0 ? right[0] : 0.0f,
+                 right.size() > 1 ? right[1] : 0.0f,
+                 right.size() > 2 ? right[2] : 0.0f,
+                 right.size() > 3 ? right[3] : 0.0f);
 
         if (info.has_audio_spectrum_left[index]) {
             updateOp(kAudioSpectrumLeftUniforms[index],

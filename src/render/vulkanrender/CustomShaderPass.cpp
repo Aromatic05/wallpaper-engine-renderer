@@ -14,6 +14,7 @@
 #include "interface/IImageParser.h"
 
 #include "core/ArrayHelper.hpp"
+#include "core/StringHelper.hpp"
 
 #include <cassert>
 #include <algorithm>

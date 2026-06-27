@@ -539,8 +539,17 @@ private:
                       path.c_str(),
                       frame_number,
                       error_message.c_str());
+            LOG_DEBUG_MODULE("render-result",
+                             "render-result capture rejected path='%s' frame=%d error='%s'",
+                             path.c_str(),
+                             frame_number,
+                             error_message.c_str());
         } else {
             LOG_INFO("frame capture requested: path=%s frame=%d", path.c_str(), frame_number);
+            LOG_DEBUG_MODULE("render-result",
+                             "render-result capture requested path='%s' frame=%d",
+                             path.c_str(),
+                             frame_number);
         }
     }
     MHANDLER_CMD(APPLY_USER_PROPERTIES) {
@@ -840,6 +849,14 @@ void MainHandler::loadScene() {
     std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").native();
     std::string pkgDir   = pkgPath_fs.parent_path().native();
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
+    LOG_DEBUG_MODULE("input-data",
+                     "input-data source='%s' assets='%s' pkg='%s' pkg_entry='%s' scene_id='%s' cache='%s'",
+                     m_source.c_str(),
+                     m_assets.c_str(),
+                     pkgPath.c_str(),
+                     pkgEntry.c_str(),
+                     scene_id.c_str(),
+                     m_cache_path.c_str());
 
     // Wallpaper Engine keeps a default user-property snapshot from project.json and overlays the
     // current runtime/user-selected values on top of it. Do the same here so partial property
@@ -852,6 +869,10 @@ void MainHandler::loadScene() {
         LOG_INFO("seed user-properties from project.json: defaults=%zu merged=%zu",
                  m_default_user_properties.size(),
                  m_user_properties.size());
+        LOG_DEBUG_MODULE("input-data",
+                         "input-data user-properties defaults=%zu merged=%zu",
+                         m_default_user_properties.size(),
+                         m_user_properties.size());
     }
 
     // load pkgfile
