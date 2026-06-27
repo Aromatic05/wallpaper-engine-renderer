@@ -11,6 +11,7 @@
 #include "SpecTexs.hpp"
 #include "core/ArrayHelper.hpp"
 #include "utils/Algorism.h"
+#include "utils/Logging.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -316,6 +317,27 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, const ExistsUniformOp&
         value.has_mipmap     = existsOp(WE_GLTEX_MIPMAPINFO_NAMES[index]);
         return index + 1;
     });
+
+    if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
+        std::ostringstream oss;
+        oss << "left=[";
+        for (size_t index = 0; index < kAudioSpectrumResolutions.size(); index++) {
+            if (index != 0) oss << ",";
+            oss << kAudioSpectrumResolutions[index] << ":"
+                << (info.has_audio_spectrum_left[index] ? "1" : "0");
+        }
+        oss << "] right=[";
+        for (size_t index = 0; index < kAudioSpectrumResolutions.size(); index++) {
+            if (index != 0) oss << ",";
+            oss << kAudioSpectrumResolutions[index] << ":"
+                << (info.has_audio_spectrum_right[index] ? "1" : "0");
+        }
+        oss << "]";
+        LOG_INFO("DebugSpectrumUniformInit: layer=%d node=%s %s",
+                 pNode->ID(),
+                 NodeDebugLabel(pNode).c_str(),
+                 oss.str().c_str());
+    }
 }
 
 void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprites,
@@ -660,26 +682,44 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
             has_audio = !left.empty() || !right.empty() || !average.empty();
         }
         if (!has_audio) {
+            if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
+                LOG_INFO("DebugSpectrumUniformUpdate: layer=%d node=%s resolution=%u has-audio=false "
+                         "source=%s left-uniform=%s right-uniform=%s",
+                         pNode->ID(),
+                         NodeDebugLabel(pNode).c_str(),
+                         kAudioSpectrumResolutions[index],
+                         m_scene->scriptHost != nullptr ? "scriptHost"
+                         : m_scene->soundManager != nullptr ? "soundManager"
+                                                            : "none",
+                         info.has_audio_spectrum_left[index] ? "true" : "false",
+                         info.has_audio_spectrum_right[index] ? "true" : "false");
+            }
             continue;
         }
 
-        LOG_INFO("spectrum node=%s resolution=%u source=%s left.size=%zu right.size=%zu "
-                 "left0=%g left1=%g left2=%g left3=%g right0=%g right1=%g right2=%g right3=%g",
-                 NodeDebugLabel(pNode).c_str(),
-                 kAudioSpectrumResolutions[index],
-                 m_scene->scriptHost != nullptr ? "scriptHost"
-                 : m_scene->soundManager != nullptr ? "soundManager"
-                                                    : "none",
-                 left.size(),
-                 right.size(),
-                 left.size() > 0 ? left[0] : 0.0f,
-                 left.size() > 1 ? left[1] : 0.0f,
-                 left.size() > 2 ? left[2] : 0.0f,
-                 left.size() > 3 ? left[3] : 0.0f,
-                 right.size() > 0 ? right[0] : 0.0f,
-                 right.size() > 1 ? right[1] : 0.0f,
-                 right.size() > 2 ? right[2] : 0.0f,
-                 right.size() > 3 ? right[3] : 0.0f);
+        if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
+            LOG_INFO("DebugSpectrumUniformUpdate: layer=%d node=%s resolution=%u has-audio=true "
+                     "source=%s left-uniform=%s right-uniform=%s left.size=%zu right.size=%zu "
+                     "left0=%g left1=%g left2=%g left3=%g right0=%g right1=%g right2=%g right3=%g",
+                     pNode->ID(),
+                     NodeDebugLabel(pNode).c_str(),
+                     kAudioSpectrumResolutions[index],
+                     m_scene->scriptHost != nullptr ? "scriptHost"
+                     : m_scene->soundManager != nullptr ? "soundManager"
+                                                        : "none",
+                     info.has_audio_spectrum_left[index] ? "true" : "false",
+                     info.has_audio_spectrum_right[index] ? "true" : "false",
+                     left.size(),
+                     right.size(),
+                     left.size() > 0 ? left[0] : 0.0f,
+                     left.size() > 1 ? left[1] : 0.0f,
+                     left.size() > 2 ? left[2] : 0.0f,
+                     left.size() > 3 ? left[3] : 0.0f,
+                     right.size() > 0 ? right[0] : 0.0f,
+                     right.size() > 1 ? right[1] : 0.0f,
+                     right.size() > 2 ? right[2] : 0.0f,
+                     right.size() > 3 ? right[3] : 0.0f);
+        }
 
         if (info.has_audio_spectrum_left[index]) {
             updateOp(kAudioSpectrumLeftUniforms[index],

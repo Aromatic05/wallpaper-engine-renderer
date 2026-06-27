@@ -1066,6 +1066,25 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
 
     if (! ref.blocks.empty()) {
         auto& block = ref.blocks.front();
+        if (WallpaperDebugLayerEnabled(m_desc.layer_id)) {
+            std::ostringstream audio_members_oss;
+            bool               first_audio_member = true;
+            for (const auto& [member_name, member] : block.member_map) {
+                (void)member;
+                if (member_name.find("AudioSpectrum") == std::string::npos) continue;
+                if (! first_audio_member) audio_members_oss << ", ";
+                first_audio_member = false;
+                audio_members_oss << member_name;
+            }
+            LOG_INFO("DebugSpectrumReflectedMembers: layer=%d shader='%s' block-size=%zu "
+                     "audio-members=[%s]",
+                     m_desc.layer_id,
+                     mesh.Material() != nullptr && mesh.Material()->customShader.shader != nullptr
+                         ? mesh.Material()->customShader.shader->name.c_str()
+                         : "<null>",
+                     block.size,
+                     audio_members_oss.str().c_str());
+        }
         if (block.size >= 1024 * 1024) {
             LogStagingAllocRequest("ubo", m_desc, block.size);
         }
@@ -1561,6 +1580,12 @@ void CustomShaderPass::execute(const Device& device, RenderingResources& rr) {
         // Runtime-gated helper passes stay in the render graph so visibility flips do not rebuild
         // framebuffer topology. Returning before uniform updates and draw submission makes the pass
         // a true no-op on frames where its fallback branch is not active.
+        if (WallpaperDebugLayerEnabled(m_desc.layer_id)) {
+            LOG_INFO("DebugSpectrumPassSkip: layer=%d node='%s' output='%s' reason='should_execute'",
+                     m_desc.layer_id,
+                     m_desc.node != nullptr ? m_desc.node->Name().c_str() : "",
+                     m_desc.output.c_str());
+        }
         releaseFinalReadTexs(device);
         return;
     }
@@ -1571,6 +1596,12 @@ void CustomShaderPass::execute(const Device& device, RenderingResources& rr) {
         // Effect-local visibility is a stricter contract: a hidden effect must not run its shader
         // pass, otherwise the hidden branch would still overwrite the ping-pong output that the
         // bypass copy is responsible for preserving.
+        if (WallpaperDebugLayerEnabled(m_desc.layer_id)) {
+            LOG_INFO("DebugSpectrumPassSkip: layer=%d node='%s' output='%s' reason='local_visible'",
+                     m_desc.layer_id,
+                     m_desc.node != nullptr ? m_desc.node->Name().c_str() : "",
+                     m_desc.output.c_str());
+        }
         releaseFinalReadTexs(device);
         return;
     }
@@ -1580,8 +1611,24 @@ void CustomShaderPass::execute(const Device& device, RenderingResources& rr) {
         // The render graph has still reached this pass's ordering point even when authored
         // visibility turns the shader into a no-op for the frame. Releasing final-read keys here
         // prevents temporary render targets from staying pinned only because no draw was recorded.
+        if (WallpaperDebugLayerEnabled(m_desc.layer_id)) {
+            LOG_INFO("DebugSpectrumPassSkip: layer=%d node='%s' output='%s' reason='visible' "
+                     "execute-when-hidden=%s",
+                     m_desc.layer_id,
+                     m_desc.node != nullptr ? m_desc.node->Name().c_str() : "",
+                     m_desc.output.c_str(),
+                     m_desc.execute_when_hidden ? "true" : "false");
+        }
         releaseFinalReadTexs(device);
         return;
+    }
+
+    if (WallpaperDebugLayerEnabled(m_desc.layer_id)) {
+        LOG_INFO("DebugSpectrumPassExecute: layer=%d node='%s' output='%s' execute-when-hidden=%s",
+                 m_desc.layer_id,
+                 m_desc.node != nullptr ? m_desc.node->Name().c_str() : "",
+                 m_desc.output.c_str(),
+                 m_desc.execute_when_hidden ? "true" : "false");
     }
 
     if (m_desc.update_op) m_desc.update_op();

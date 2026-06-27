@@ -4583,6 +4583,23 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             imgEffect->SetIdentity(
                 wpimgobj.id, wpeffobj.id, static_cast<uint32_t>(i_eff), wpeffobj.name);
             imgEffect->SetRuntimeVisibilityContract(effect_visibility.requires_runtime_contract);
+            if (WallpaperDebugLayerEnabled(wpimgobj.id)) {
+                LOG_INFO("DebugSpectrumEffectParse: layer=%d name='%s' effect-id=%d effect-index=%d "
+                         "effect-name='%s' materials=%zu initial-visible=%s authored-visible=%s "
+                         "runtime-contract=%s compose=%s project-layer=%s solid-layer=%s",
+                         wpimgobj.id,
+                         wpimgobj.name.c_str(),
+                         wpeffobj.id,
+                         i_eff,
+                         wpeffobj.name.c_str(),
+                         wpeffobj.materials.size(),
+                         effect_visibility.initial_visible ? "true" : "false",
+                         effect_visibility.authored_visible ? "true" : "false",
+                         effect_visibility.requires_runtime_contract ? "true" : "false",
+                         isCompose ? "true" : "false",
+                         isProjectLayer ? "true" : "false",
+                         isSolidLayer ? "true" : "false");
+            }
             if (effect_visibility.requires_runtime_contract) {
                 LOG_VERBOSE("SceneVisibilityEffectMaterialize: layer=%d effect-id=%d effect-index=%d "
                          "name='%s' initial-visible=%s authored-visible=%s",
