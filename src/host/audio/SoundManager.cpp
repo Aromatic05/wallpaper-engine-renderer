@@ -1,4 +1,5 @@
 #include "audio/SoundManager.h"
+#include "SoundCapturer.hpp"
 #include "miniaudio-wrapper.hpp"
 #include "fs/IBinaryStream.h"
 #include "core/Literals.hpp"
@@ -142,6 +143,7 @@ public:
     impl() = default;
     ~impl() = default;
 
+    SoundCapturer                                           capturer {};
     miniaudio::Device                                      device {};
     SoundHandle                                            next_handle { 1 };
     std::unordered_map<SoundHandle, std::shared_ptr<Channel_Impl>> channels;
@@ -169,7 +171,7 @@ void SoundManager::Test(std::shared_ptr<fs::IBinaryStream> stream) {
 
 bool SoundManager::Init() {
     if (Muted()) {
-        LOG_INFO("muted, not init sound device");
+        LOG_INFO("muted, skip playback device init");
         return false;
     }
     return pImpl->device.Init({});
@@ -239,7 +241,9 @@ bool SoundManager::Muted() const { return pImpl->device.Muted(); }
 void SoundManager::SetMuted(bool v) {
     pImpl->device.SetMuted(v);
     if (! Muted() && ! pImpl->device.IsInited()) {
-        Init();
+        if (!pImpl->device.Init({})) {
+            LOG_ERROR("SoundManager: failed to init playback device while unmuting");
+        }
     }
 }
 
@@ -249,5 +253,5 @@ void SoundManager::GetSpectrum(uint32_t resolution,
                                std::vector<float>* left,
                                std::vector<float>* right,
                                std::vector<float>* average) const {
-    pImpl->device.GetSpectrum(resolution, left, right, average);
+    pImpl->capturer.GetSpectrum(resolution, left, right, average);
 }
