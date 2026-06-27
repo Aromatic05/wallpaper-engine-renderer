@@ -45,5 +45,11 @@ void WallpaperLog(int level, const char* file, int line, const char* fmt, ...);
 bool WallpaperVerboseLogEnabled();
 bool WallpaperDebugLogEnabled();
 bool WallpaperDebugLayerEnabled(int32_t layer_id);
+bool WallpaperDebugModuleEnabled(const char* module);
 
 std::string logToTmpfileWithSha1(std::span<const char>, const char* fmt, ...);
+
+#define LOG_DEBUG_MODULE(module, ...) \
+    do { \
+        if (WallpaperDebugModuleEnabled(module)) WallpaperLog(LOGLEVEL_INFO, "", 0, __VA_ARGS__); \
+    } while (false)

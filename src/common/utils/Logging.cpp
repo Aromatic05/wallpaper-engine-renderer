@@ -7,6 +7,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <string_view>
+#include <mutex>
 
 #include "Sha.hpp"
 
@@ -26,6 +27,20 @@ bool WallpaperVerboseLogEnabled() {
 
 namespace
 {
+std::FILE* DebugLogFile() {
+    static std::FILE* file = []() -> std::FILE* {
+        const char* path = std::getenv("HANABI_LOG_FILE");
+        if (path == nullptr || path[0] == '\0') return nullptr;
+        return std::fopen(path, "a");
+    }();
+    return file;
+}
+
+std::FILE* LogOutput() {
+    if (auto* file = DebugLogFile(); file != nullptr) return file;
+    return stderr;
+}
+
 bool EnvFlagEnabled(const char* name) {
     const char* value = std::getenv(name);
     if (value == nullptr) return false;
@@ -53,6 +68,23 @@ const std::optional<std::unordered_set<int32_t>>& DebugLayerFilter() {
     }();
     return filter;
 }
+
+const std::optional<std::unordered_set<std::string>>& DebugModuleFilter() {
+    static const std::optional<std::unordered_set<std::string>> filter = []() -> std::optional<std::unordered_set<std::string>> {
+        const char* value = std::getenv("HANABI_DEBUG_MODULES");
+        if (value == nullptr || value[0] == '\0') return std::nullopt;
+
+        std::unordered_set<std::string> modules;
+        std::stringstream               ss(value);
+        std::string                     token;
+        while (std::getline(ss, token, ',')) {
+            if (token.empty()) continue;
+            modules.insert(token);
+        }
+        return modules;
+    }();
+    return filter;
+}
 } // namespace
 
 bool WallpaperDebugLogEnabled() { return EnvFlagEnabled("HANABI_DEBUG_LOG"); }
@@ -64,16 +96,28 @@ bool WallpaperDebugLayerEnabled(int32_t layer_id) {
     return filter->count(layer_id) != 0;
 }
 
+bool WallpaperDebugModuleEnabled(const char* module) {
+    if (!WallpaperDebugLogEnabled()) return false;
+    const auto& filter = DebugModuleFilter();
+    if (!filter.has_value()) return true;
+    if (module == nullptr) return false;
+    return filter->count(module) != 0;
+}
+
 void WallpaperLog(int level, const char* file, int line, const char* fmt, ...) {
+    static std::mutex log_mutex;
+    std::lock_guard<std::mutex> lock(log_mutex);
+
+    auto* out = LogOutput();
     std::va_list args;
-    std::fprintf(stderr, level_fmt[level], level_names[level], file, line);
+    std::fprintf(out, level_fmt[level], level_names[level], file, line);
     {
         va_start(args, fmt);
-        std::vfprintf(stderr, fmt, args);
+        std::vfprintf(out, fmt, args);
         va_end(args);
     }
-    std::fprintf(stderr, "\n");
-    std::fflush(stderr);
+    std::fprintf(out, "\n");
+    std::fflush(out);
 }
 
 std::string logToTmpfileWithSha1(std::span<const char> in, const char* fmt, ...) {
