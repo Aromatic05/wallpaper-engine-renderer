@@ -31,6 +31,16 @@
 
 namespace {
 
+bool envVarEnabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+bool envVarEquals(const char* name, const char* expected) {
+    const char* value = std::getenv(name);
+    return value != nullptr && std::strcmp(value, expected) == 0;
+}
+
 std::uint32_t toOpaqueDrmFourcc(std::uint32_t drm_fourcc) {
     switch (drm_fourcc) {
     case DRM_FORMAT_ABGR8888: return DRM_FORMAT_XBGR8888;
@@ -765,8 +775,20 @@ int main(int argc, char** argv) {
     config.version = 1;
     config.width = wayland.render_width;
     config.height = wayland.render_height;
+    // NVIDIA GPUs render using a hardware-specific pixel layout that AMD/Intel
+    // GPUs do not understand.  vkGetMemoryFdKHR on NVIDIA produces dmabufs that
+    // are tied to the nvidia-drm device; the compositor (running on the iGPU)
+    // cannot import them via PRIME because NVIDIA's Vulkan driver does not
+    // implement the linear-layout conversion path for Wayland applications.
+    // This is acknowledged by NVIDIA as a known limitation:
+    //   https://github.com/NVIDIA/egl-wayland/issues/72
+    // When prime-render-offload is detected, always use SHM instead of dmabuf.
     config.prefer_dmabuf = true;
     config.allow_shm_fallback = true;
+    if (envVarEnabled("__NV_PRIME_RENDER_OFFLOAD") ||
+        envVarEquals("__VK_LAYER_NV_optimus", "NVIDIA_only")) {
+        config.prefer_dmabuf = false;
+    }
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
         std::cerr << "we_session_set_render_config failed: " << r << "\n";
         we_session_destroy(session);
