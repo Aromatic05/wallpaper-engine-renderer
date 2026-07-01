@@ -7,6 +7,7 @@
 #include "wallpaper/scene/WEScene.hpp"
 #include "wallpaper/scene/WESceneContract.hpp"
 #include "wallpaper/web/WebOutputBinding.hpp"
+#include "backend/video/internal/VideoOutputBinding.hpp"
 #include "wallpaper/OutputTargetBinding.hpp"
 #include "wallpaper/OutputTarget.hpp"
 
@@ -28,7 +29,7 @@
 namespace
 {
 // Owns the saved binding polymorphically; the concrete type
-// (WESceneOutputBinding or WebOutputBinding) is chosen in
+// (WESceneOutputBinding, WebOutputBinding, or VideoOutputBinding) is chosen in
 // we_session_set_render_config from state->sourceKind.
 struct WeSessionState {
     wallpaper::WallpaperRuntime runtime;
@@ -153,6 +154,19 @@ wallpaper::Result<ProjectSourceInfo> parse_project_source(const char* uri) {
         }
     } else if (type == "video") {
         info.type = wallpaper::BackendType::Video;
+        auto file_it = j.find("file");
+        if (file_it == j.end() || ! file_it->is_string()) {
+            return wallpaper::Result<ProjectSourceInfo>::failure(
+                wallpaper::ResultCode::InvalidArgument,
+                "video project.json is missing a string file field: " + info.projectJson.string());
+        }
+        const auto file_value = trim_copy(file_it->get<std::string>());
+        if (file_value.empty()) {
+            return wallpaper::Result<ProjectSourceInfo>::failure(
+                wallpaper::ResultCode::InvalidArgument,
+                "video project.json file field is empty: " + info.projectJson.string());
+        }
+        info.backendUri = (info.projectJson.parent_path() / std::filesystem::path(file_value)).string();
     } else {
         return wallpaper::Result<ProjectSourceInfo>::failure(
             wallpaper::ResultCode::NotSupported,
@@ -239,6 +253,10 @@ wallpaper::WESceneOutputBinding* asSceneBinding(const std::shared_ptr<wallpaper:
 wallpaper::WebOutputBinding* asWebBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
     return std::dynamic_pointer_cast<wallpaper::WebOutputBinding>(b).get();
 }
+
+wallpaper::VideoOutputBinding* asVideoBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
+    return std::dynamic_pointer_cast<wallpaper::VideoOutputBinding>(b).get();
+}
 } // namespace
 
 extern "C" {
@@ -322,7 +340,18 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
         state->binding = std::move(binding);
         return 0;
     }
-    case wallpaper::BackendType::Video:
+    case wallpaper::BackendType::Video: {
+        auto binding = wallpaper::MakeVideoOutputBinding(state->renderInitInfo);
+        wallpaper::OutputTarget target {};
+        target.type = wallpaper::OutputTargetType::Offscreen;
+        target.binding = binding;
+        target.width = state->renderInitInfo.width;
+        target.height = state->renderInitInfo.height;
+        auto bindResult = state->session->bindOutput(target);
+        if (! bindResult) return 1;
+        state->binding = std::move(binding);
+        return 0;
+    }
     default:
         return 1;
     }
@@ -374,6 +403,10 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
         auto* webBinding = asWebBinding(state->binding);
         if (! webBinding) return -1;
         ex_swapchain = webBinding->swapchain();
+    } else if (state->sourceType == wallpaper::BackendType::Video) {
+        auto* videoBinding = asVideoBinding(state->binding);
+        if (! videoBinding) return -1;
+        ex_swapchain = videoBinding->swapchain();
     } else {
         return -1;
     }

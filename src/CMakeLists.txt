@@ -24,6 +24,7 @@ set(warn_opts
 add_subdirectory(common)
 add_subdirectory(host)
 add_subdirectory(backend/scene)
+add_subdirectory(backend/video)
 add_subdirectory(backend/web)
 add_subdirectory(render)
 
@@ -46,6 +47,9 @@ set(InteralLib
 )
 if(TARGET wpWebBackend)
     list(APPEND InteralLib wpWebBackend)
+endif()
+if(TARGET wpVideoBackend)
+    list(APPEND InteralLib wpVideoBackend)
 endif()
 
 add_library(${PROJECT_NAME}_obj OBJECT ${wallpaper_renderer_sources})

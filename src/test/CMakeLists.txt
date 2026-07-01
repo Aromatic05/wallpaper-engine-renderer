@@ -37,6 +37,17 @@ target_compile_options(shm-frame-swapchain-test PRIVATE ${warn_opts})
 
 add_test(NAME shm-frame-swapchain-test COMMAND shm-frame-swapchain-test)
 
+add_executable(
+  we-renderer-video-source-test
+  we_renderer_video_source_test.cpp
+  ../abi/WeRenderer.cpp)
+
+target_link_libraries(we-renderer-video-source-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-video-source-test PRIVATE ..)
+target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts})
+
+add_test(NAME we-renderer-video-source-test COMMAND we-renderer-video-source-test)
+
 if(BUILD_WEWEB)
     add_executable(
       web-backend-contract-test

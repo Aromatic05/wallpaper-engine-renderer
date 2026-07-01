@@ -1,6 +1,7 @@
 #include "backend/BuiltinBackendFactory.hpp"
 
 #include "backend/scene/CreateWESceneBackend.hpp"
+#include "backend/video/CreateVideoBackend.hpp"
 
 #if BUILD_WEWEB
 #include "backend/web/CreateWebBackend.hpp"
@@ -25,8 +26,9 @@ public:
                 ResultCode::NotSupported,
                 "web backend is not built in this configuration (rebuild with -DBUILD_WEWEB=ON)");
 #endif
-        case BackendType::Image:
         case BackendType::Video:
+            return CreateVideoBackend(context);
+        case BackendType::Image:
             return Result<std::unique_ptr<ContentBackend>>::failure(
                 ResultCode::NotSupported,
                 "requested backend is not registered in builtin backend factory");
