@@ -95,6 +95,7 @@ struct WaylandState {
     double                  pointer_y { 0.0 };
     bool                    running { true };
     bool                    configured { false };
+    bool                    extent_mismatch_reported { false };
     we_session_t*           session { nullptr };
     std::vector<std::unique_ptr<WaylandBuffer>> in_flight_buffers;
 };
@@ -645,13 +646,15 @@ bool presentFrame(WaylandState& state, const we_frame_v1& frame) {
     auto entry = createBufferForFrame(state, frame);
     if (! entry) return false;
 
-    if (frame.width != state.render_width || frame.height != state.render_height) {
+    if (! state.extent_mismatch_reported
+        && (frame.width != state.render_width || frame.height != state.render_height)) {
         std::fprintf(stderr,
                      "sceneviewer-layer: frame extent %ux%u differs from configured render extent %ux%u\n",
                      frame.width,
                      frame.height,
                      state.render_width,
                      state.render_height);
+        state.extent_mismatch_reported = true;
     }
 
     updateViewportDestination(state);
