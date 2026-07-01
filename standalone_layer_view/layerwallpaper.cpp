@@ -164,6 +164,12 @@ std::uint32_t scaledExtent(std::uint32_t logical_extent, double scale_factor) {
 }
 
 void updateRenderExtent(WaylandState& state) {
+    if (state.output_mode_width > 0 && state.output_mode_height > 0) {
+        state.render_width = state.output_mode_width;
+        state.render_height = state.output_mode_height;
+        return;
+    }
+
     const std::uint32_t logical_width =
         state.logical_width > 0 ? state.logical_width : state.fallback_width;
     const std::uint32_t logical_height =
