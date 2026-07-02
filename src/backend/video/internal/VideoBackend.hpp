@@ -82,6 +82,7 @@ private:
     PipelineMode                       m_preferredPipelineMode { PipelineMode::Dmabuf };
     PipelineMode                       m_pipelineMode { PipelineMode::Dmabuf };
     std::optional<std::string>         m_selectedDmabufDrmFormat;
+    std::optional<std::string>         m_lastLoggedDmabufSampleSignature;
     bool                               m_paused { false };
     bool                               m_muted { false };
     bool                               m_started { false };

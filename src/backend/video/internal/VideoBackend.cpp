@@ -174,6 +174,27 @@ bool GetPlaneLayout(const GstVideoInfoDmaDrm& drm_info,
     return plane_stride > 0;
 }
 
+std::string BuildDmabufSampleLogSignature(GstCaps* caps,
+                                          const GstVideoInfoDmaDrm& drm_info,
+                                          guint plane_count,
+                                          guint memory_count,
+                                          const VideoDmabufFrame& frame) {
+    gchar* caps_text = caps != nullptr ? gst_caps_to_string(caps) : nullptr;
+    std::string signature = caps_text != nullptr ? caps_text : "<null>";
+    if (caps_text != nullptr) g_free(caps_text);
+
+    signature += "|fourcc=" + std::to_string(drm_info.drm_fourcc);
+    signature += "|modifier=" + std::to_string(frame.modifier);
+    signature += "|planes=" + std::to_string(plane_count);
+    signature += "|memories=" + std::to_string(memory_count);
+    for (guint i = 0; i < plane_count && i < frame.plane_count; ++i) {
+        signature += "|p" + std::to_string(i);
+        signature += ":stride=" + std::to_string(frame.planes[i].stride);
+        signature += ",offset=" + std::to_string(frame.planes[i].offset);
+    }
+    return signature;
+}
+
 void LogDmabufSampleDiagnostics(GstCaps* caps,
                                 const GstVideoInfoDmaDrm& drm_info,
                                 guint plane_count,
@@ -201,7 +222,9 @@ void LogDmabufSampleDiagnostics(GstCaps* caps,
     }
 }
 
-bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
+bool ParseDmabufSample(GstSample* sample,
+                       VideoDmabufFrame& frame,
+                       std::optional<std::string>& last_logged_signature) {
     if (sample == nullptr) return false;
 
     GstCaps* caps = gst_sample_get_caps(sample);
@@ -303,7 +326,12 @@ bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
         }
     }
 
-    LogDmabufSampleDiagnostics(caps, drm_info, plane_count, memory_count, &frame);
+    const std::string signature =
+        BuildDmabufSampleLogSignature(caps, drm_info, plane_count, memory_count, frame);
+    if (! last_logged_signature.has_value() || last_logged_signature.value() != signature) {
+        LogDmabufSampleDiagnostics(caps, drm_info, plane_count, memory_count, &frame);
+        last_logged_signature = std::move(signature);
+    }
     return true;
 }
 
@@ -399,6 +427,7 @@ Result<void> VideoBackend::load(const WallpaperSource& source) {
     m_diagnostics.entries.clear();
     m_sourcePath = source.uri;
     m_selectedDmabufDrmFormat.reset();
+    m_lastLoggedDmabufSampleSignature.reset();
     m_preferredPipelineMode = PipelineMode::Dmabuf;
     m_paused = false;
     m_started = false;
@@ -568,6 +597,7 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
 
     m_pipelineMode = mode;
     m_selectedDmabufDrmFormat.reset();
+    m_lastLoggedDmabufSampleSignature.reset();
     m_eos = false;
     if (mode == PipelineMode::Dmabuf) {
         GstElementFactory* factory = gst_element_factory_find("vah264dec");
@@ -712,7 +742,7 @@ Result<void> VideoBackend::publishSample(GstSample* sample) {
 
     if (m_pipelineMode == PipelineMode::Dmabuf) {
         VideoDmabufFrame frame;
-        if (! ParseDmabufSample(sample, frame)) {
+        if (! ParseDmabufSample(sample, frame, m_lastLoggedDmabufSampleSignature)) {
             return Result<void>::failure(ResultCode::NotSupported,
                                          "video backend could not translate DMA-BUF sample");
         }
