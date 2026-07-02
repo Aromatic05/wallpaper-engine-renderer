@@ -1,5 +1,13 @@
 set(LIB_NAME wpVideoBackend)
 
+pkg_check_modules(GSTREAMER REQUIRED
+    gstreamer-1.0
+    gstreamer-app-1.0
+    gstreamer-allocators-1.0
+    gstreamer-video-1.0
+    gstreamer-va-1.0
+    libdrm)
+
 add_library(${LIB_NAME} STATIC
     CreateVideoBackend.cpp
     internal/VideoBackend.cpp
