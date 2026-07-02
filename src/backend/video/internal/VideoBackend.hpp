@@ -8,6 +8,7 @@
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 typedef struct _GstElement GstElement;
@@ -75,12 +76,12 @@ private:
     std::unique_ptr<VideoFrameSwapchain> m_frameSwapchain;
     DiagnosticsSnapshot                m_diagnostics;
     std::filesystem::path              m_sourcePath;
-    std::string                        m_sourceUri;
     GstElement*                        m_pipeline { nullptr };
     GstElement*                        m_appsink { nullptr };
     GstBus*                            m_bus { nullptr };
     PipelineMode                       m_preferredPipelineMode { PipelineMode::Dmabuf };
     PipelineMode                       m_pipelineMode { PipelineMode::Dmabuf };
+    std::optional<std::string>         m_selectedDmabufDrmFormat;
     bool                               m_paused { false };
     bool                               m_muted { false };
     bool                               m_started { false };

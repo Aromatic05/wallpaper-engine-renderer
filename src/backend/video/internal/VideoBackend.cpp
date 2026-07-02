@@ -6,8 +6,12 @@
 #include "wallpaper/scene/WESceneContract.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cinttypes>
 #include <cstring>
 #include <optional>
+#include <string_view>
+#include <vector>
 #include <drm/drm_fourcc.h>
 #include <gst/app/gstappsink.h>
 #include <gst/allocators/gstdmabuf.h>
@@ -21,11 +25,15 @@ namespace wallpaper
 {
 namespace
 {
-constexpr const char* kFallbackVaDmabufDrmFormat = "NV12:0x0200000000401b03";
-
 Result<void> unsupportedInput() {
     return Result<void>::failure(ResultCode::NotSupported,
                                  "video backend does not support input events");
+}
+
+Result<void> unsupportedVaH264Dmabuf(std::string_view reason) {
+    return Result<void>::failure(ResultCode::NotSupported,
+                                 "DMA-BUF mode currently requires MP4/H.264/vah264dec: "
+                                     + std::string(reason));
 }
 
 std::string EscapeGstPropertyString(std::string_view value) {
@@ -38,7 +46,38 @@ std::string EscapeGstPropertyString(std::string_view value) {
     return escaped;
 }
 
-std::optional<std::string> QueryVaDmabufDrmFormatString() {
+std::vector<std::string> CollectDrmFormatStrings(const GValue* drm_value) {
+    std::vector<std::string> drm_formats;
+    if (drm_value == nullptr) return drm_formats;
+
+    auto append_if_present = [&drm_formats](const GValue* value) {
+        if (value == nullptr || ! G_VALUE_HOLDS_STRING(value)) return;
+        const char* text = g_value_get_string(value);
+        if (text == nullptr || *text == '\0') return;
+        drm_formats.emplace_back(text);
+    };
+
+    if (G_VALUE_HOLDS_STRING(drm_value)) {
+        append_if_present(drm_value);
+        return drm_formats;
+    }
+
+    if (GST_VALUE_HOLDS_LIST(drm_value)) {
+        const guint item_count = gst_value_list_get_size(drm_value);
+        drm_formats.reserve(item_count);
+        for (guint i = 0; i < item_count; ++i) {
+            append_if_present(gst_value_list_get_value(drm_value, i));
+        }
+    }
+    return drm_formats;
+}
+
+struct DecoderDmabufCapsInfo {
+    std::vector<std::string> drm_formats;
+    std::string              caps_string;
+};
+
+std::optional<DecoderDmabufCapsInfo> QueryVaDmabufDecoderCaps() {
     GstElementFactory* factory = gst_element_factory_find("vah264dec");
     if (factory == nullptr) return std::nullopt;
 
@@ -53,38 +92,113 @@ std::optional<std::string> QueryVaDmabufDrmFormatString() {
     gst_object_unref(factory);
     if (caps == nullptr) return std::nullopt;
 
-    std::optional<std::string> drm_format;
-    for (guint i = 0; i < gst_caps_get_size(caps) && !drm_format.has_value(); ++i) {
+    DecoderDmabufCapsInfo info;
+    gchar* caps_text = gst_caps_to_string(caps);
+    if (caps_text != nullptr) {
+        info.caps_string = caps_text;
+        g_free(caps_text);
+    }
+
+    for (guint i = 0; i < gst_caps_get_size(caps); ++i) {
         const GstCapsFeatures* features = gst_caps_get_features(caps, i);
-        if (features == nullptr || !gst_caps_features_contains(features, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
+        if (features == nullptr ||
+            ! gst_caps_features_contains(features, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
             continue;
         }
 
         const GstStructure* structure = gst_caps_get_structure(caps, i);
         if (structure == nullptr) continue;
         const GValue* drm_value = gst_structure_get_value(structure, "drm-format");
-        if (drm_value == nullptr) continue;
+        auto drm_formats = CollectDrmFormatStrings(drm_value);
+        info.drm_formats.insert(info.drm_formats.end(), drm_formats.begin(), drm_formats.end());
+    }
 
-        if (G_VALUE_HOLDS_STRING(drm_value)) {
-            const char* text = g_value_get_string(drm_value);
-            if (text != nullptr && *text != '\0') drm_format = text;
-        } else if (GST_VALUE_HOLDS_LIST(drm_value)) {
-            for (guint j = 0; j < gst_value_list_get_size(drm_value); ++j) {
-                const GValue* item = gst_value_list_get_value(drm_value, j);
-                if (item != nullptr && G_VALUE_HOLDS_STRING(item)) {
-                    const char* text = g_value_get_string(item);
-                    if (text != nullptr && *text != '\0') {
-                        drm_format = text;
-                        break;
-                    }
-                }
+    gst_caps_unref(caps);
+    return info;
+}
+
+std::optional<std::string> SelectedLinearDrmFormatFromCaps(GstCaps* caps, guint32 drm_fourcc) {
+    if (caps == nullptr) return std::nullopt;
+
+    gchar* linear_text = gst_video_dma_drm_fourcc_to_string(drm_fourcc, DRM_FORMAT_MOD_LINEAR);
+    if (linear_text == nullptr) return std::nullopt;
+
+    const std::string linear_format = linear_text;
+    g_free(linear_text);
+    const std::string base_linear_format =
+        linear_format.substr(0, linear_format.find(':'));
+
+    for (guint i = 0; i < gst_caps_get_size(caps); ++i) {
+        const GstStructure* structure = gst_caps_get_structure(caps, i);
+        if (structure == nullptr) continue;
+        auto drm_formats = CollectDrmFormatStrings(gst_structure_get_value(structure, "drm-format"));
+        for (const auto& drm_format : drm_formats) {
+            if (drm_format == linear_format || drm_format == base_linear_format) {
+                return drm_format;
             }
         }
     }
 
-    gst_caps_unref(caps);
-    if (drm_format.has_value()) return drm_format;
-    return std::string(kFallbackVaDmabufDrmFormat);
+    return std::nullopt;
+}
+
+bool ResolveDmabufModifier(GstCaps* caps,
+                           guint32 drm_fourcc,
+                           guint64 drm_modifier,
+                           std::uint64_t& resolved_modifier) {
+    if (drm_modifier != DRM_FORMAT_MOD_INVALID) {
+        resolved_modifier = drm_modifier;
+        return true;
+    }
+
+    const auto linear_format = SelectedLinearDrmFormatFromCaps(caps, drm_fourcc);
+    if (! linear_format.has_value()) return false;
+
+    resolved_modifier = static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR);
+    return true;
+}
+
+bool GetPlaneLayout(const GstVideoInfoDmaDrm& drm_info,
+                    GstVideoMeta* meta,
+                    guint plane_index,
+                    gsize& plane_offset,
+                    gint& plane_stride) {
+    if (meta != nullptr && plane_index < meta->n_planes) {
+        plane_offset = static_cast<gsize>(meta->offset[plane_index]);
+        plane_stride = meta->stride[plane_index];
+        return plane_stride > 0;
+    }
+
+    plane_offset = static_cast<gsize>(GST_VIDEO_INFO_PLANE_OFFSET(&drm_info.vinfo, plane_index));
+    plane_stride = GST_VIDEO_INFO_PLANE_STRIDE(&drm_info.vinfo, plane_index);
+    return plane_stride > 0;
+}
+
+void LogDmabufSampleDiagnostics(GstCaps* caps,
+                                const GstVideoInfoDmaDrm& drm_info,
+                                guint plane_count,
+                                guint memory_count,
+                                const VideoDmabufFrame* frame) {
+    gchar* caps_text = caps != nullptr ? gst_caps_to_string(caps) : nullptr;
+    std::fprintf(stderr,
+                 "video-backend[debug]: pipeline-mode=dmabuf sample-caps=%s drm-fourcc=0x%08x "
+                 "modifier=0x%016" PRIx64 " n-planes=%u memory-count=%u\n",
+                 caps_text != nullptr ? caps_text : "<null>",
+                 drm_info.drm_fourcc,
+                 frame != nullptr ? frame->modifier : static_cast<std::uint64_t>(drm_info.drm_modifier),
+                 plane_count,
+                 memory_count);
+    if (caps_text != nullptr) g_free(caps_text);
+
+    if (frame == nullptr) return;
+    for (guint i = 0; i < plane_count && i < frame->plane_count; ++i) {
+        std::fprintf(stderr,
+                     "video-backend[debug]: plane=%u fd=%d stride=%u offset=%u\n",
+                     i,
+                     frame->planes[i].fd,
+                     frame->planes[i].stride,
+                     frame->planes[i].offset);
+    }
 }
 
 bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
@@ -130,24 +244,41 @@ bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
     frame.height = static_cast<std::uint32_t>(height);
     frame.plane_count = plane_count;
     frame.drm_fourcc = drm_info.drm_fourcc;
-    frame.modifier = drm_info.drm_modifier == DRM_FORMAT_MOD_INVALID
-        ? static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR)
-        : drm_info.drm_modifier;
+    if (! ResolveDmabufModifier(caps, drm_info.drm_fourcc, drm_info.drm_modifier, frame.modifier)) {
+        std::fprintf(stderr,
+                     "video-backend: DRM_FORMAT_MOD_INVALID without explicit linear caps for "
+                     "fourcc=0x%08x\n",
+                     drm_info.drm_fourcc);
+        return false;
+    }
 
     for (guint i = 0; i < plane_count; ++i) {
-        const guint memory_index = memory_count == 1 ? 0u : i;
-        if (memory_index >= memory_count) {
-            std::fprintf(stderr,
-                         "video-backend: plane %u maps outside memory_count=%u\n",
-                         i,
-                         memory_count);
+        gsize plane_offset = 0;
+        gint plane_stride = 0;
+        if (! GetPlaneLayout(drm_info, meta, i, plane_offset, plane_stride)) {
+            std::fprintf(stderr, "video-backend: plane %u missing valid layout metadata\n", i);
             return false;
         }
+
+        guint memory_index = 0;
+        guint memory_span = 0;
+        gsize memory_skip = 0;
+        if (! gst_buffer_find_memory(buffer, plane_offset, 1, &memory_index, &memory_span, &memory_skip) ||
+            memory_span == 0 || memory_index >= memory_count) {
+            std::fprintf(stderr,
+                         "video-backend: plane %u offset=%zu could not map into buffer memory\n",
+                         i,
+                         plane_offset);
+            return false;
+        }
+
         GstMemory* memory = gst_buffer_peek_memory(buffer, memory_index);
         if (memory == nullptr || ! gst_is_dmabuf_memory(memory)) {
             std::fprintf(stderr,
-                         "video-backend: plane %u memory is not dmabuf (memory_count=%u)\n",
+                         "video-backend: plane %u memory_index=%u is not dmabuf "
+                         "(memory_count=%u)\n",
                          i,
+                         memory_index,
                          memory_count);
             return false;
         }
@@ -158,13 +289,9 @@ bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
         (void)memory_size;
 
         frame.planes[i].fd = gst_dmabuf_memory_get_fd(memory);
-        frame.planes[i].stride = static_cast<std::uint32_t>(
-            meta != nullptr ? meta->stride[i] : GST_VIDEO_INFO_PLANE_STRIDE(&drm_info.vinfo, i));
-        const std::uint32_t plane_offset = static_cast<std::uint32_t>(
-            meta != nullptr
-                ? (memory_count == 1 ? meta->offset[i] : 0)
-                : (memory_count == 1 ? GST_VIDEO_INFO_PLANE_OFFSET(&drm_info.vinfo, i) : 0));
-        frame.planes[i].offset = static_cast<std::uint32_t>(memory_offset) + plane_offset;
+        frame.planes[i].stride = static_cast<std::uint32_t>(plane_stride);
+        frame.planes[i].offset =
+            static_cast<std::uint32_t>(memory_offset + memory_skip);
         if (frame.planes[i].fd < 0 || frame.planes[i].stride == 0) {
             std::fprintf(stderr,
                          "video-backend: plane %u invalid fd=%d stride=%u offset=%u\n",
@@ -176,6 +303,7 @@ bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame) {
         }
     }
 
+    LogDmabufSampleDiagnostics(caps, drm_info, plane_count, memory_count, &frame);
     return true;
 }
 
@@ -270,7 +398,7 @@ Result<void> VideoBackend::load(const WallpaperSource& source) {
     destroyPipeline();
     m_diagnostics.entries.clear();
     m_sourcePath = source.uri;
-    m_sourceUri.clear();
+    m_selectedDmabufDrmFormat.reset();
     m_preferredPipelineMode = PipelineMode::Dmabuf;
     m_paused = false;
     m_started = false;
@@ -285,15 +413,6 @@ Result<void> VideoBackend::load(const WallpaperSource& source) {
         return Result<void>::failure(ResultCode::NotFound,
                                      "video backend source file does not exist: " + source.uri);
     }
-
-    gchar* gst_uri = gst_filename_to_uri(m_sourcePath.c_str(), nullptr);
-    if (gst_uri == nullptr) {
-        m_sharedState->readyState.store(BackendReadyState::Error);
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "video backend could not convert source path to URI: " + source.uri);
-    }
-    m_sourceUri = gst_uri;
-    g_free(gst_uri);
 
     for (const auto& [name, value] : source.initialProperties) {
         auto propertyResult = setProperty(name, value);
@@ -349,18 +468,15 @@ Result<void> VideoBackend::setProperty(std::string_view name, PropertyValue valu
     if (name == WE_SCENE_PROPERTY_VOLUME) {
         if (const auto* volume = std::get_if<float>(&value)) {
             m_volume = *volume;
-            if (m_pipeline != nullptr) g_object_set(m_pipeline, "volume", static_cast<gdouble>(m_volume), nullptr);
             return Result<void>::success();
         }
         if (const auto* volume = std::get_if<double>(&value)) {
             m_volume = static_cast<float>(*volume);
-            if (m_pipeline != nullptr) g_object_set(m_pipeline, "volume", static_cast<gdouble>(m_volume), nullptr);
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_MUTED) {
         if (const auto* muted = std::get_if<bool>(&value)) {
             m_muted = *muted;
-            if (m_pipeline != nullptr) g_object_set(m_pipeline, "mute", static_cast<gboolean>(m_muted), nullptr);
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_SPEED) {
@@ -451,23 +567,40 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
     destroyPipeline();
 
     m_pipelineMode = mode;
+    m_selectedDmabufDrmFormat.reset();
     m_eos = false;
-    if (mode == PipelineMode::Dmabuf && gst_element_factory_find("vah264dec") == nullptr) {
-        std::fprintf(stderr, "video-backend: vah264dec not found\n");
-        return Result<void>::failure(ResultCode::NotSupported,
-                                     "video backend DMA-BUF mode requires vah264dec");
+    if (mode == PipelineMode::Dmabuf) {
+        GstElementFactory* factory = gst_element_factory_find("vah264dec");
+        if (factory == nullptr) {
+            std::fprintf(stderr, "video-backend: vah264dec not found\n");
+            return unsupportedVaH264Dmabuf("missing vah264dec decoder");
+        }
+        gst_object_unref(factory);
     }
 
     const std::string escapedPath = EscapeGstPropertyString(m_sourcePath.string());
     std::string pipelineDescription;
     if (mode == PipelineMode::Dmabuf) {
-        const auto drm_format = QueryVaDmabufDrmFormatString();
-        if (!drm_format.has_value()) {
-            std::fprintf(stderr, "video-backend: failed to query drm-format\n");
-            return Result<void>::failure(ResultCode::NotSupported,
-                                         "video backend DMA-BUF mode could not query decoder drm-format");
+        const auto decoder_caps = QueryVaDmabufDecoderCaps();
+        if (! decoder_caps.has_value()) {
+            std::fprintf(stderr, "video-backend: failed to query vah264dec caps\n");
+            return unsupportedVaH264Dmabuf("failed to query vah264dec DMA-BUF caps");
         }
-        std::fprintf(stderr, "video-backend: selected drm-format=%s\n", drm_format->c_str());
+        if (decoder_caps->drm_formats.empty()) {
+            std::fprintf(stderr, "video-backend: vah264dec exposes no DMA-BUF drm-format\n");
+            return unsupportedVaH264Dmabuf("decoder exposed no DMA-BUF drm-format");
+        }
+
+        m_selectedDmabufDrmFormat = decoder_caps->drm_formats.front();
+        appendDiagnostic(DiagnosticSeverity::Warning,
+                         "video backend DMA-BUF path currently requires MP4/H.264/vah264dec; "
+                         "importer drm-format intersection is not implemented yet (TODO), so "
+                         "selection currently uses decoder-advertised drm-format only");
+        std::fprintf(stderr,
+                     "video-backend[debug]: pipeline-mode=dmabuf decoder-caps=%s selected-drm-format=%s\n",
+                     decoder_caps->caps_string.empty() ? "<unavailable>"
+                                                       : decoder_caps->caps_string.c_str(),
+                     m_selectedDmabufDrmFormat->c_str());
         pipelineDescription =
             "filesrc location=\"" + escapedPath + "\" "
             "! qtdemux name=demux "
@@ -475,10 +608,11 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
             "! h264parse "
             "! vah264dec "
             "! capsfilter caps=\"video/x-raw(memory:DMABuf),format=(string)DMA_DRM,drm-format=(string)"
-            + EscapeGstPropertyString(*drm_format)
+            + EscapeGstPropertyString(*m_selectedDmabufDrmFormat)
             + "\" "
             "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false";
     } else {
+        std::fprintf(stderr, "video-backend[debug]: pipeline-mode=shm\n");
         pipelineDescription =
             "filesrc location=\"" + escapedPath + "\" "
             "! qtdemux name=demux "
@@ -496,6 +630,9 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
         const std::string message = error != nullptr ? error->message : "unknown parse error";
         if (error != nullptr) g_error_free(error);
         destroyPipeline();
+        if (mode == PipelineMode::Dmabuf) {
+            return unsupportedVaH264Dmabuf("could not create pipeline: " + message);
+        }
         return Result<void>::failure(ResultCode::InternalError,
                                      "video backend could not create pipeline: " + message);
     }
@@ -526,6 +663,9 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
 
     if (gst_element_set_state(m_pipeline, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
         destroyPipeline();
+        if (mode == PipelineMode::Dmabuf) {
+            return unsupportedVaH264Dmabuf("failed to preroll MP4/H.264/vah264dec pipeline");
+        }
         return Result<void>::failure(ResultCode::InternalError,
                                      std::string("video backend failed to preroll ")
                                          + (mode == PipelineMode::Dmabuf ? "DMA-BUF" : "SHM")
@@ -536,6 +676,9 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
         gst_element_get_state(m_pipeline, nullptr, nullptr, GST_SECOND);
     if (stateResult == GST_STATE_CHANGE_FAILURE) {
         destroyPipeline();
+        if (mode == PipelineMode::Dmabuf) {
+            return unsupportedVaH264Dmabuf("preroll did not complete for MP4/H.264/vah264dec pipeline");
+        }
         return Result<void>::failure(ResultCode::InternalError,
                                      "video backend preroll did not complete");
     }
