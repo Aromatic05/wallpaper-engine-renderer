@@ -48,6 +48,17 @@ target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts})
 
 add_test(NAME we-renderer-video-source-test COMMAND we-renderer-video-source-test)
 
+add_executable(
+  we-renderer-video-pipeline-test
+  we_renderer_video_pipeline_test.cpp
+  ../abi/WeRenderer.cpp)
+
+target_link_libraries(we-renderer-video-pipeline-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-video-pipeline-test PRIVATE ..)
+target_compile_options(we-renderer-video-pipeline-test PRIVATE ${warn_opts})
+
+add_test(NAME we-renderer-video-pipeline-test COMMAND we-renderer-video-pipeline-test)
+
 if(BUILD_WEWEB)
     add_executable(
       web-backend-contract-test

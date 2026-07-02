@@ -8,11 +8,7 @@
 
 namespace
 {
-constexpr const char* kProjectJson = R"({
-  "type": "video",
-  "file": "clip.mp4",
-  "title": "ABI Video Source Test"
-})";
+constexpr const char* kProjectJson = R"({"type":"video","file":"clip.mp4","title":"ABI Video Source Test"})";
 
 struct WorkshopFixture {
     std::filesystem::path dir;
@@ -21,10 +17,14 @@ struct WorkshopFixture {
         dir = std::filesystem::temp_directory_path()
             / ("we-renderer-video-source-test-" + std::to_string(::getpid()));
         std::filesystem::create_directories(dir);
-        std::ofstream project(dir / "project.json");
-        project << kProjectJson;
-        std::ofstream clip(dir / "clip.mp4", std::ios::binary);
-        clip << "not-a-real-video";
+        {
+            std::ofstream project(dir / "project.json");
+            project << kProjectJson;
+        }
+        {
+            std::ofstream clip(dir / "clip.mp4", std::ios::binary);
+            clip << "not-a-real-video";
+        }
     }
 
     ~WorkshopFixture() {
