@@ -6,12 +6,12 @@ if(BUILD_WEWEB)
     set(LIB_NAME wpWebBackend)
     add_library(${LIB_NAME} STATIC
         CreateWebBackend.cpp
+        internal/BrowserHostLoader.cpp
         internal/Manifest.cpp
         internal/WebRenderPlan.cpp
         internal/WebBackend.cpp)
     target_link_libraries(${LIB_NAME} PUBLIC
         wpUtils
-        wpWebBrowserHost
         nlohmann_json::nlohmann_json)
     target_include_directories(${LIB_NAME} PRIVATE
         ../..    # src/ — for runtime/, output/, common/, host/ includes
@@ -20,7 +20,8 @@ if(BUILD_WEWEB)
     set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
     set(CEF_LIB_NAME wpWebBrowserHost)
-    add_library(${CEF_LIB_NAME} STATIC
+    add_library(${CEF_LIB_NAME} SHARED
+        WebBrowserHost.cpp
         internal/cef/AppHandler.cpp
         internal/cef/BrowserHost.cpp
         internal/cef/ClientHandler.cpp

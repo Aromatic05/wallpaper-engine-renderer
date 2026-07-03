@@ -17,6 +17,7 @@ public:
     DynamicLibrary& operator=(DynamicLibrary&& o) noexcept;
 
     bool IsOpen() const;
+    bool Open(const char* filename, int flags);
     bool Open(const char* filename);
     void Close();
 

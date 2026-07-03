@@ -1,6 +1,7 @@
 #include "backend/web/internal/WebBackend.hpp"
 
 #include "backend/web/internal/Manifest.hpp"
+#include "backend/web/internal/BrowserHostLoader.hpp"
 #include "backend/web/internal/WebFrameSwapchain.hpp"
 #include "backend/web/internal/WebRenderPlan.hpp"
 
@@ -117,7 +118,12 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
 
 bool WebBackend::ensureBrowserHostReady() {
     if (m_browserHost) return true;
-    m_browserHost = std::make_shared<WebBrowserHost>();
+    auto browserHostResult = CreateWebBrowserHostRuntime();
+    if (! browserHostResult) {
+        appendDiagnostic(DiagnosticSeverity::Error, browserHostResult.error().message);
+        return false;
+    }
+    m_browserHost = std::move(browserHostResult.value());
     return m_browserHost != nullptr;
 }
 

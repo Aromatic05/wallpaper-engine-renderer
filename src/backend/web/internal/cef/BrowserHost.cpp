@@ -82,11 +82,17 @@ void releaseCefRuntime() {
 }
 } // namespace
 
-WebBrowserHost::WebBrowserHost(): impl_(std::make_unique<Impl>()) { impl_->app = new AppHandler(); }
+extern "C" std::shared_ptr<WebBrowserHost> wallpaper_create_web_browser_host() {
+    return std::make_shared<CefWebBrowserHost>();
+}
 
-WebBrowserHost::~WebBrowserHost() { Shutdown(); }
+CefWebBrowserHost::~CefWebBrowserHost() { Shutdown(); }
 
-bool WebBrowserHost::Init(const InitOptions& opts) {
+bool CefWebBrowserHost::Init(const InitOptions& opts) {
+    if (! impl_) {
+        impl_ = std::make_shared<Impl>();
+        impl_->app = new AppHandler();
+    }
     if (impl_->initialised) {
         std::fprintf(stderr, "web: WebBrowserHost::Init called twice\n");
         return false;
@@ -103,10 +109,11 @@ bool WebBrowserHost::Init(const InitOptions& opts) {
     return true;
 }
 
-bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
-                                   const std::filesystem::path&    workshop_dir,
-                                   int                              width,
-                                   int                              height) {
+bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&        manifest,
+                                      const std::filesystem::path& workshop_dir,
+                                      int                           width,
+                                      int                           height) {
+    if (! impl_) return false;
     if (! impl_->initialised) {
         std::fprintf(stderr, "web: OpenWallpaper before Init\n");
         return false;
@@ -114,11 +121,11 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
 
     impl_->osr = new OsrRenderHandler();
     impl_->osr->SetViewSize(width, height);
-    if (impl_->accel_cb) {
-        impl_->osr->SetAcceleratedPaintCallback(impl_->accel_cb);
+    if (accelerated_paint_callback_) {
+        impl_->osr->SetAcceleratedPaintCallback(accelerated_paint_callback_);
     }
-    if (impl_->software_cb) {
-        impl_->osr->SetSoftwarePaintCallback(impl_->software_cb);
+    if (software_paint_callback_) {
+        impl_->osr->SetSoftwarePaintCallback(software_paint_callback_);
     }
 
     impl_->client = new ClientHandler(manifest.user_props_json, manifest.has_user_props, impl_->osr);
@@ -146,23 +153,15 @@ bool WebBrowserHost::OpenWallpaper(const WebManifestData&           manifest,
     return true;
 }
 
-void WebBrowserHost::SetAcceleratedPaintCallback(AcceleratedPaintCallback cb) {
-    impl_->accel_cb = std::move(cb);
-    if (impl_->osr) impl_->osr->SetAcceleratedPaintCallback(impl_->accel_cb);
-}
-
-void WebBrowserHost::SetSoftwarePaintCallback(SoftwarePaintCallback cb) {
-    impl_->software_cb = std::move(cb);
-    if (impl_->osr) impl_->osr->SetSoftwarePaintCallback(impl_->software_cb);
-}
-
-void WebBrowserHost::Invalidate() {
+void CefWebBrowserHost::Invalidate() {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (b && b->GetHost()) b->GetHost()->Invalidate(PET_VIEW);
 }
 
-void WebBrowserHost::OnResize(int width, int height) {
+void CefWebBrowserHost::OnResize(int width, int height) {
+    if (! impl_) return;
     if (width <= 0 || height <= 0) return;
     if (! impl_->osr) return;
     impl_->osr->SetViewSize(width, height);
@@ -172,7 +171,8 @@ void WebBrowserHost::OnResize(int width, int height) {
     }
 }
 
-void WebBrowserHost::OnMouseMove(int x, int y, bool left_down) {
+void CefWebBrowserHost::OnMouseMove(int x, int y, bool left_down) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b || ! b->GetHost()) return;
@@ -183,7 +183,8 @@ void WebBrowserHost::OnMouseMove(int x, int y, bool left_down) {
     b->GetHost()->SendMouseMoveEvent(ev, /*mouseLeave=*/false);
 }
 
-void WebBrowserHost::OnMouseButton(int x, int y, int cef_button, bool down, int click_count) {
+void CefWebBrowserHost::OnMouseButton(int x, int y, int cef_button, bool down, int click_count) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b || ! b->GetHost()) return;
@@ -196,7 +197,8 @@ void WebBrowserHost::OnMouseButton(int x, int y, int cef_button, bool down, int 
                                       click_count);
 }
 
-void WebBrowserHost::OnMouseWheel(int x, int y, int delta_x, int delta_y) {
+void CefWebBrowserHost::OnMouseWheel(int x, int y, int delta_x, int delta_y) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b || ! b->GetHost()) return;
@@ -206,8 +208,9 @@ void WebBrowserHost::OnMouseWheel(int x, int y, int delta_x, int delta_y) {
     b->GetHost()->SendMouseWheelEvent(ev, delta_x, delta_y);
 }
 
-void WebBrowserHost::OnKey(int cef_key_event_type, int native_key_code, int windows_key_code,
-                           int modifiers, unsigned int unicode_char) {
+void CefWebBrowserHost::OnKey(int cef_key_event_type, int native_key_code, int windows_key_code,
+                              int modifiers, unsigned int unicode_char) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b || ! b->GetHost()) return;
@@ -221,18 +224,20 @@ void WebBrowserHost::OnKey(int cef_key_event_type, int native_key_code, int wind
     b->GetHost()->SendKeyEvent(ev);
 }
 
-void WebBrowserHost::OnFocus(bool gained) {
+void CefWebBrowserHost::OnFocus(bool gained) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b || ! b->GetHost()) return;
     b->GetHost()->SetFocus(gained);
 }
 
-void WebBrowserHost::Pump() {
+void CefWebBrowserHost::Pump() {
+    if (! impl_) return;
     if (impl_->initialised) CefDoMessageLoopWork();
 }
 
-void WebBrowserHost::ApplyVolume(float volume) {
+void CefWebBrowserHost::ApplyVolume(float volume) {
     // Wallpaper Engine's web convention: pack into the standard
     // applyUserProperties envelope under the `audio` key. The page's
     // wallpaperPropertyListener is expected to map this onto the
@@ -246,19 +251,22 @@ void WebBrowserHost::ApplyVolume(float volume) {
     ApplyUserProperty("audio", value_json);
 }
 
-void WebBrowserHost::SetFrameRate(int fps) {
+void CefWebBrowserHost::SetFrameRate(int fps) {
+    if (! impl_) return;
     if (fps <= 0 || ! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (b && b->GetHost()) b->GetHost()->SetWindowlessFrameRate(fps);
 }
 
-void WebBrowserHost::SetPaused(bool paused) {
+void CefWebBrowserHost::SetPaused(bool paused) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (b && b->GetHost()) b->GetHost()->WasHidden(paused);
 }
 
-void WebBrowserHost::ApplyUserProperty(std::string_view key, std::string_view value_json) {
+void CefWebBrowserHost::ApplyUserProperty(std::string_view key, std::string_view value_json) {
+    if (! impl_) return;
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (! b) return;
@@ -269,7 +277,8 @@ void WebBrowserHost::ApplyUserProperty(std::string_view key, std::string_view va
     frame->ExecuteJavaScript(snippet, "wallpaper://internal/apply_user_property.js", 0);
 }
 
-void WebBrowserHost::PushAudioData(const float* data, std::size_t count) {
+void CefWebBrowserHost::PushAudioData(const float* data, std::size_t count) {
+    if (! impl_) return;
     if (! impl_->client || ! data || count == 0) return;
     auto b = impl_->client->GetBrowser();
     if (! b) return;
@@ -289,9 +298,10 @@ void WebBrowserHost::PushAudioData(const float* data, std::size_t count) {
     frame->ExecuteJavaScript(snippet, "wallpaper://internal/push_audio.js", 0);
 }
 
-bool WebBrowserHost::ShouldExit() const { return impl_->should_exit.load(); }
+bool CefWebBrowserHost::ShouldExit() const { return impl_ ? impl_->should_exit.load() : false; }
 
-void WebBrowserHost::RequestClose() {
+void CefWebBrowserHost::RequestClose() {
+    if (! impl_) return;
     if (impl_->close_requested.exchange(true)) return;
     if (! impl_->client) {
         impl_->should_exit.store(true);
@@ -305,7 +315,8 @@ void WebBrowserHost::RequestClose() {
     browser->GetHost()->CloseBrowser(true);
 }
 
-void WebBrowserHost::Shutdown() {
+void CefWebBrowserHost::Shutdown() {
+    if (! impl_) return;
     if (! impl_->initialised) return;
 
     RequestClose();
@@ -317,7 +328,8 @@ void WebBrowserHost::Shutdown() {
 
     impl_->client = nullptr;
     impl_->osr = nullptr;
-    impl_->accel_cb = {};
+    accelerated_paint_callback_ = {};
+    software_paint_callback_ = {};
     impl_->should_exit.store(true);
     impl_->close_requested.store(false);
     impl_->initialised = false;

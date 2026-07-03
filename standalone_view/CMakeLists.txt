@@ -84,10 +84,6 @@ target_link_libraries(${PROJECT_NAME}
         wallpaper-engine-renderer
 )
 
-if(BUILD_WEWEB)
-    target_link_libraries(${PROJECT_NAME} PUBLIC WebCef::Core)
-endif()
-
 if(BUILD_QML)
     find_package(QT NAMES Qt6 Qt5 COMPONENTS Gui Quick Qml REQUIRED)
     find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Gui Quick Qml REQUIRED)

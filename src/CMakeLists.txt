@@ -37,6 +37,7 @@ set(wallpaper_renderer_sources
   api/scene/WESceneOutput.cpp
   api/scene/WESceneSource.cpp
   api/web/Web.cpp
+  backend/web/WebBrowserHost.cpp
   host/HostServices.cpp
   output/OutputController.cpp
   runtime/WallpaperRuntime.cpp

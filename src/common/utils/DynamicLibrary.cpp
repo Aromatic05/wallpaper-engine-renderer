@@ -21,7 +21,11 @@ DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary&& o) noexcept {
 }
 
 bool DynamicLibrary::Open(const char* filename) {
-    handle = dlopen(filename, RTLD_NOW);
+    return Open(filename, RTLD_NOW);
+}
+
+bool DynamicLibrary::Open(const char* filename, int flags) {
+    handle = dlopen(filename, flags);
     return IsOpen();
 }
 
