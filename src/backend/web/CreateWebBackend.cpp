@@ -70,6 +70,13 @@ std::filesystem::path helperPathFromEnv() {
     return {};
 }
 
+std::filesystem::path userLocalLibDir() {
+    if (const char* home = std::getenv("HOME")) {
+        if (*home) return std::filesystem::path(home) / ".local" / "lib";
+    }
+    return {};
+}
+
 std::filesystem::path resolveDefaultCefHelperPath();
 
 std::filesystem::path currentExecutableDir() {
@@ -110,20 +117,14 @@ std::filesystem::path resolveBundledCefResourcesDir() {
     const auto helperPath = resolveDefaultCefHelperPath();
     if (helperPath.empty()) return {};
     const auto helperDir = helperPath.parent_path();
-    return firstExistingDirectory({
-        helperDir / "cef",
-        helperDir / ".." / "share" / "wallpaper-engine-renderer" / "cef",
-    });
+    return firstExistingDirectory({ helperDir / "cef" });
 }
 
 std::filesystem::path resolveBundledCefLocalesDir() {
     const auto helperPath = resolveDefaultCefHelperPath();
     if (helperPath.empty()) return {};
     const auto helperDir = helperPath.parent_path();
-    return firstExistingDirectory({
-        helperDir / "cef" / "locales",
-        helperDir / ".." / "share" / "wallpaper-engine-renderer" / "cef" / "locales",
-    });
+    return firstExistingDirectory({ helperDir / "cef" / "locales" });
 }
 
 std::filesystem::path resolveDefaultCefResourcesDir() {
@@ -140,10 +141,10 @@ std::filesystem::path resolveDefaultCefResourcesDir() {
     }
 
     return firstExistingDirectory({
+        userLocalLibDir() / "cef" / "Resources",
+        userLocalLibDir() / "cef",
         "/usr/lib/cef/Resources",
         "/usr/lib/cef",
-        "/usr/local/lib/cef/Resources",
-        "/usr/local/lib/cef",
     });
 }
 
@@ -161,10 +162,10 @@ std::filesystem::path resolveDefaultCefLocalesDir() {
     }
 
     return firstExistingDirectory({
+        userLocalLibDir() / "cef" / "Resources" / "locales",
+        userLocalLibDir() / "cef" / "locales",
         "/usr/lib/cef/Resources/locales",
         "/usr/lib/cef/locales",
-        "/usr/local/lib/cef/Resources/locales",
-        "/usr/local/lib/cef/locales",
     });
 }
 
@@ -183,8 +184,11 @@ std::filesystem::path resolveDefaultCefHelperPath() {
         }
     }
 
-    candidates.push_back(std::filesystem::path("/usr/libexec/wallpaper-engine-renderer/we-cef-helper"));
-    candidates.push_back(std::filesystem::path("/usr/local/libexec/wallpaper-engine-renderer/we-cef-helper"));
+    candidates.push_back(executableDir / ".." / "lib" / "we-cef-helper");
+    if (const auto localLibDir = userLocalLibDir(); ! localLibDir.empty()) {
+        candidates.push_back(localLibDir / "we-cef-helper");
+    }
+    candidates.push_back(std::filesystem::path("/usr/lib/we-cef-helper"));
     candidates.push_back(executableDir / "we-cef-helper");
     candidates.push_back(executableDir / ".." / "backend" / "web" / "we-cef-helper");
     candidates.push_back(executableDir / ".." / ".." / "backend" / "web" / "we-cef-helper");

@@ -20,7 +20,7 @@ if(BUILD_WEWEB)
     set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
     set(CEF_LIB_NAME wpWebBrowserHost)
-    add_library(${CEF_LIB_NAME} SHARED
+    add_library(${CEF_LIB_NAME} STATIC
         WebBrowserHost.cpp
         internal/cef/AppHandler.cpp
         internal/cef/BrowserHost.cpp
@@ -39,7 +39,6 @@ if(BUILD_WEWEB)
         # CEF's libcef_dll wrapper is built without exceptions.
         -fno-exceptions)
     set_property(TARGET ${CEF_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-
     add_executable(we-cef-helper
         internal/cef/helper/main.cpp
         internal/cef/AppHandler.cpp
@@ -53,11 +52,11 @@ if(BUILD_WEWEB)
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
 
     install(TARGETS we-cef-helper
-        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/wallpaper-engine-renderer)
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
     if(CEF_ROOT)
         install(DIRECTORY "${CEF_ROOT}/Release/Resources/"
-            DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/wallpaper-engine-renderer/cef
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cef
             OPTIONAL)
     endif()
 endif()

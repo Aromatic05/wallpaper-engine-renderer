@@ -12,6 +12,10 @@
 
 namespace wallpaper
 {
+std::shared_ptr<WebBrowserHost> CreateCefWebBrowserHost() {
+    return std::make_shared<CefWebBrowserHost>();
+}
+
 namespace
 {
 struct CefRuntimeState {
@@ -81,10 +85,6 @@ void releaseCefRuntime() {
     }
 }
 } // namespace
-
-extern "C" std::shared_ptr<WebBrowserHost> wallpaper_create_web_browser_host() {
-    return std::make_shared<CefWebBrowserHost>();
-}
 
 CefWebBrowserHost::~CefWebBrowserHost() { Shutdown(); }
 

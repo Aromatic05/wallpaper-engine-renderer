@@ -49,6 +49,9 @@ set(InteralLib
 if(TARGET wpWebBackend)
     list(APPEND InteralLib wpWebBackend)
 endif()
+if(TARGET wpWebBrowserHost)
+    list(APPEND InteralLib wpWebBrowserHost)
+endif()
 if(TARGET wpVideoBackend)
     list(APPEND InteralLib wpVideoBackend)
 endif()
@@ -94,6 +97,9 @@ target_link_options(
   PRIVATE
     -Wl,--exclude-libs=ALL)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+install(TARGETS ${PROJECT_NAME}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 add_library(${PROJECT_NAME}-internal STATIC $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 target_compile_definitions(
