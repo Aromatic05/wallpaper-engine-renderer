@@ -3,6 +3,8 @@
 # no CEF; the main library's BuiltinBackendFactory returns "not
 # built" for BackendType::Web in that configuration (see commit 9).
 if(BUILD_WEWEB)
+    enable_language(ASM)
+
     set(LIB_NAME wpWebBackend)
     add_library(${LIB_NAME} STATIC
         CreateWebBackend.cpp
@@ -25,39 +27,57 @@ if(BUILD_WEWEB)
     set(CEF_LIB_NAME wpWebBrowserHost)
     add_library(${CEF_LIB_NAME} STATIC
         WebBrowserHost.cpp
-        internal/cef/AppHandler.cpp
-        internal/cef/BrowserHost.cpp
-        internal/cef/ClientHandler.cpp
-        internal/cef/OsrRenderHandler.cpp
-        internal/cef/UserProperties.cpp)
+        internal/DlopenCefBrowserHost.cpp)
     target_link_libraries(${CEF_LIB_NAME} PUBLIC
         wpUtils
-        WebCef::Core
-        libcef_dll_wrapper)
+        ${CMAKE_DL_LIBS})
     target_include_directories(${CEF_LIB_NAME} PRIVATE
         ../..    # src/ — for backend/... and runtime/... includes
         ../../../include)  # include/ — for wallpaper/web/WebTypes.hpp
     target_compile_options(${CEF_LIB_NAME} PRIVATE ${warn_opts})
-    target_compile_options(${CEF_LIB_NAME} PRIVATE
-        # CEF's libcef_dll wrapper is built without exceptions.
-        -fno-exceptions)
     set_property(TARGET ${CEF_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-    add_executable(we-cef-helper
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
+       NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        message(FATAL_ERROR "we-cef-helper DSO-executable is implemented only for Linux x86_64")
+    endif()
+
+    add_library(we-cef-helper SHARED
+        WebBrowserHost.cpp
+        internal/cef/PropertyBridge.cpp
+        internal/cef/helper/dso_start_x86_64.S
         internal/cef/helper/main.cpp
-        internal/cef/AppHandler.cpp
-        internal/cef/UserProperties.cpp)
+        internal/cef/helper/CefHostExports.cpp
+        internal/cef/helper/AppHandler.cpp
+        internal/cef/helper/BrowserHost.cpp
+        internal/cef/helper/ClientHandler.cpp
+        internal/cef/helper/OsrRenderHandler.cpp
+        internal/cef/helper/UserProperties.cpp)
+    set_target_properties(we-cef-helper PROPERTIES
+        PREFIX ""
+        SUFFIX ""
+        OUTPUT_NAME "we-cef-helper"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src"
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        POSITION_INDEPENDENT_CODE ON
+        BUILD_RPATH "${WP_CEF_LIBRARY_DIR}"
+        INSTALL_RPATH "${WP_CEF_LIBRARY_DIR}")
     target_link_libraries(we-cef-helper PRIVATE
+        wpUtils
         WebCef::Core
         libcef_dll_wrapper)
     target_include_directories(we-cef-helper PRIVATE
         ../..
         ../../../include)
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
-    set_property(TARGET we-cef-helper PROPERTY BUILD_RPATH "${WP_CEF_LIBRARY_DIR}")
-    set_property(TARGET we-cef-helper PROPERTY INSTALL_RPATH "${WP_CEF_LIBRARY_DIR}")
+    target_link_options(we-cef-helper PRIVATE
+        -Wl,-e,_start
+        -Wl,-export-dynamic)
+    add_custom_command(TARGET we-cef-helper POST_BUILD
+        COMMAND chmod +x $<TARGET_FILE:we-cef-helper>)
 
     install(TARGETS we-cef-helper
-        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
     if(CEF_ROOT)
         install(DIRECTORY "${CEF_ROOT}/Release/Resources/"
