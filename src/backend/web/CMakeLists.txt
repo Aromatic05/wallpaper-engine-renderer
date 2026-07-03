@@ -16,6 +16,9 @@ if(BUILD_WEWEB)
     target_include_directories(${LIB_NAME} PRIVATE
         ../..    # src/ — for runtime/, output/, common/, host/ includes
         ../../../include)  # project include/ — for wallpaper/ public headers
+    target_compile_definitions(${LIB_NAME} PRIVATE
+        WP_DEFAULT_CEF_RESOURCES_DIR="${WP_CEF_RESOURCES_DIR}"
+        WP_DEFAULT_CEF_LOCALES_DIR="${WP_CEF_LOCALES_DIR}")
     target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
     set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
@@ -50,6 +53,8 @@ if(BUILD_WEWEB)
         ../..
         ../../../include)
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
+    set_property(TARGET we-cef-helper PROPERTY BUILD_RPATH "${WP_CEF_LIBRARY_DIR}")
+    set_property(TARGET we-cef-helper PROPERTY INSTALL_RPATH "${WP_CEF_LIBRARY_DIR}")
 
     install(TARGETS we-cef-helper
         RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})

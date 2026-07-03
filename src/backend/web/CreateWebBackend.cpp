@@ -16,6 +16,19 @@ namespace wallpaper
 {
 namespace
 {
+#ifndef WP_DEFAULT_CEF_RESOURCES_DIR
+#define WP_DEFAULT_CEF_RESOURCES_DIR ""
+#endif
+
+#ifndef WP_DEFAULT_CEF_LOCALES_DIR
+#define WP_DEFAULT_CEF_LOCALES_DIR ""
+#endif
+
+std::filesystem::path pathFromCompileTime(const char* value) {
+    if (value && *value) return std::filesystem::path(value);
+    return {};
+}
+
 WebCefRuntimeProfile runtimeProfileFromEnv() {
     if (const char* value = std::getenv("WE_CEF_PROFILE")) {
         const std::string profile { value };
@@ -128,6 +141,10 @@ std::filesystem::path resolveBundledCefLocalesDir() {
 }
 
 std::filesystem::path resolveDefaultCefResourcesDir() {
+    if (const char* value = std::getenv("WE_CEF_RESOURCES_DIR")) {
+        if (*value) return value;
+    }
+
     if (auto bundled = resolveBundledCefResourcesDir(); ! bundled.empty()) {
         return bundled;
     }
@@ -140,15 +157,14 @@ std::filesystem::path resolveDefaultCefResourcesDir() {
         }
     }
 
-    return firstExistingDirectory({
-        userLocalLibDir() / "cef" / "Resources",
-        userLocalLibDir() / "cef",
-        "/usr/lib/cef/Resources",
-        "/usr/lib/cef",
-    });
+    return pathFromCompileTime(WP_DEFAULT_CEF_RESOURCES_DIR);
 }
 
 std::filesystem::path resolveDefaultCefLocalesDir() {
+    if (const char* value = std::getenv("WE_CEF_LOCALES_DIR")) {
+        if (*value) return value;
+    }
+
     if (auto bundled = resolveBundledCefLocalesDir(); ! bundled.empty()) {
         return bundled;
     }
@@ -161,12 +177,7 @@ std::filesystem::path resolveDefaultCefLocalesDir() {
         }
     }
 
-    return firstExistingDirectory({
-        userLocalLibDir() / "cef" / "Resources" / "locales",
-        userLocalLibDir() / "cef" / "locales",
-        "/usr/lib/cef/Resources/locales",
-        "/usr/lib/cef/locales",
-    });
+    return pathFromCompileTime(WP_DEFAULT_CEF_LOCALES_DIR);
 }
 
 std::filesystem::path resolveDefaultCefHelperPath() {
