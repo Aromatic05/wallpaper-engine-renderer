@@ -9,7 +9,7 @@
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 
-#include "backend/web/internal/cef/OsrRenderHandler.hpp"
+#include "backend/web/internal/cef/helper/OsrRenderHandler.hpp"
 
 namespace wallpaper
 {

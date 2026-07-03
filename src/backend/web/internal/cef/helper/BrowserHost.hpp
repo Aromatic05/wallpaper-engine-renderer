@@ -5,9 +5,9 @@
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 
-#include "backend/web/internal/cef/AppHandler.hpp"
-#include "backend/web/internal/cef/ClientHandler.hpp"
-#include "backend/web/internal/cef/OsrRenderHandler.hpp"
+#include "backend/web/internal/cef/helper/AppHandler.hpp"
+#include "backend/web/internal/cef/helper/ClientHandler.hpp"
+#include "backend/web/internal/cef/helper/OsrRenderHandler.hpp"
 
 #include <atomic>
 

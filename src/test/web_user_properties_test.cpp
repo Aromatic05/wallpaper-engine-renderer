@@ -1,4 +1,4 @@
-#include "backend/web/internal/cef/UserProperties.hpp"
+#include "backend/web/internal/cef/PropertyBridge.hpp"
 
 #include <cassert>
 #include <string>

@@ -16,7 +16,7 @@ namespace wallpaper
 // ---------------------------------------------------------------------------
 // Wallpaper Engine *web* browser host, CEF-free public interface.
 // ---------------------------------------------------------------------------
-// The implementation in src/backend/web/internal/cef/BrowserHost.cpp
+// The implementation in src/backend/web/internal/cef/helper/BrowserHost.cpp
 // owns the CefApp / CefClient / CefBrowser / CefBrowserProcessHandler
 // lifecycles. The pImpl keeps CEF's libcef_dll headers off the public
 // include surface — the architecture-guard test requires that any

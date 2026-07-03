@@ -1,4 +1,4 @@
-#include "backend/web/internal/cef/BrowserHost.hpp"
+#include "backend/web/internal/cef/helper/BrowserHost.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -8,14 +8,10 @@
 #include <mutex>
 #include <thread>
 
-#include "backend/web/internal/cef/UserProperties.hpp"
+#include "backend/web/internal/cef/PropertyBridge.hpp"
 
 namespace wallpaper
 {
-std::shared_ptr<WebBrowserHost> CreateCefWebBrowserHost() {
-    return std::make_shared<CefWebBrowserHost>();
-}
-
 namespace
 {
 struct CefRuntimeState {

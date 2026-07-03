@@ -1,10 +1,10 @@
-#include "backend/web/internal/cef/ClientHandler.hpp"
+#include "backend/web/internal/cef/helper/ClientHandler.hpp"
 
 #include <cstdio>
 
 #include "include/cef_frame.h"
 
-#include "backend/web/internal/cef/UserProperties.hpp"
+#include "backend/web/internal/cef/helper/UserProperties.hpp"
 
 namespace wallpaper
 {

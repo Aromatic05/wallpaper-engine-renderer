@@ -86,13 +86,25 @@ if(BUILD_WEWEB)
 
     add_executable(
       web-user-properties-test
-      web_user_properties_test.cpp)
+      web_user_properties_test.cpp
+      ../backend/web/internal/cef/PropertyBridge.cpp)
 
-    target_link_libraries(web-user-properties-test PRIVATE wpWebBrowserHost)
-    target_include_directories(web-user-properties-test PRIVATE .. ${CEF_INCLUDE} ${CEF_INCLUDE_DIRS})
+    target_include_directories(web-user-properties-test PRIVATE ..)
     target_compile_options(web-user-properties-test PRIVATE ${warn_opts})
 
     add_test(NAME web-user-properties-test COMMAND web-user-properties-test)
+
+    add_executable(
+      we-cef-helper-dlopen-test
+      we_cef_helper_dlopen_test.cpp)
+
+    target_link_libraries(we-cef-helper-dlopen-test PRIVATE ${CMAKE_DL_LIBS})
+    target_include_directories(we-cef-helper-dlopen-test PRIVATE ..)
+    target_compile_options(we-cef-helper-dlopen-test PRIVATE ${warn_opts})
+
+    add_test(
+      NAME we-cef-helper-dlopen-test
+      COMMAND we-cef-helper-dlopen-test $<TARGET_FILE:we-cef-helper>)
 
     add_executable(
       we-renderer-input-event-test

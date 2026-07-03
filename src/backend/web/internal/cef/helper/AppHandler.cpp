@@ -1,8 +1,8 @@
-#include "backend/web/internal/cef/AppHandler.hpp"
+#include "backend/web/internal/cef/helper/AppHandler.hpp"
 
 #include "include/cef_command_line.h"
 
-#include "backend/web/internal/cef/UserProperties.hpp"
+#include "backend/web/internal/cef/PropertyBridge.hpp"
 
 namespace wallpaper
 {
