@@ -1,7 +1,10 @@
 #include "backend/BuiltinBackendFactory.hpp"
 
 #include "backend/scene/CreateWESceneBackend.hpp"
+
+#if BUILD_WEVIDEO
 #include "backend/video/CreateVideoBackend.hpp"
+#endif
 
 #if BUILD_WEWEB
 #include "backend/web/CreateWebBackend.hpp"
@@ -27,7 +30,13 @@ public:
                 "web backend is not built in this configuration (rebuild with -DBUILD_WEWEB=ON)");
 #endif
         case BackendType::Video:
+#if BUILD_WEVIDEO
             return CreateVideoBackend(context);
+#else
+            return Result<std::unique_ptr<ContentBackend>>::failure(
+                ResultCode::NotSupported,
+                "video backend is not built in this configuration (rebuild with -DBUILD_WEVIDEO=ON)");
+#endif
         case BackendType::Image:
             return Result<std::unique_ptr<ContentBackend>>::failure(
                 ResultCode::NotSupported,

@@ -56,7 +56,8 @@ add_library(${PROJECT_NAME}_obj OBJECT ${wallpaper_renderer_sources})
 target_compile_definitions(
   ${PROJECT_NAME}_obj
   PRIVATE
-    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>
+    BUILD_WEVIDEO=$<BOOL:${BUILD_WEVIDEO}>)
 target_include_directories(
   ${PROJECT_NAME}_obj
   PUBLIC ../include common/utils/include
@@ -76,7 +77,8 @@ add_library(${PROJECT_NAME} SHARED $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE
-    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>
+    BUILD_WEVIDEO=$<BOOL:${BUILD_WEVIDEO}>)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC wpUtils
@@ -91,19 +93,13 @@ target_link_options(
   PRIVATE
     -Wl,--exclude-libs=ALL)
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-if(BUILD_WEWEB AND DEFINED Vulkan_LIBRARY AND DEFINED CEF_LIBRARY)
-  get_filename_component(_wp_vulkan_libdir "${Vulkan_LIBRARY}" DIRECTORY)
-  get_filename_component(_wp_cef_libdir "${CEF_LIBRARY}" DIRECTORY)
-  set_property(TARGET ${PROJECT_NAME} PROPERTY BUILD_RPATH "${_wp_vulkan_libdir};${_wp_cef_libdir}")
-  set_property(TARGET ${PROJECT_NAME} PROPERTY INSTALL_RPATH "${_wp_vulkan_libdir};${_wp_cef_libdir}")
-  set_property(TARGET ${PROJECT_NAME} PROPERTY BUILD_RPATH_USE_ORIGIN FALSE)
-endif()
 
 add_library(${PROJECT_NAME}-internal STATIC $<TARGET_OBJECTS:${PROJECT_NAME}_obj>)
 target_compile_definitions(
   ${PROJECT_NAME}-internal
   PRIVATE
-    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>)
+    BUILD_WEWEB=$<BOOL:${BUILD_WEWEB}>
+    BUILD_WEVIDEO=$<BOOL:${BUILD_WEVIDEO}>)
 target_link_libraries(
   ${PROJECT_NAME}-internal
   PUBLIC wpUtils

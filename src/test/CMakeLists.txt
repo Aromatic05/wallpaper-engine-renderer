@@ -37,27 +37,29 @@ target_compile_options(shm-frame-swapchain-test PRIVATE ${warn_opts})
 
 add_test(NAME shm-frame-swapchain-test COMMAND shm-frame-swapchain-test)
 
-add_executable(
-  we-renderer-video-source-test
-  we_renderer_video_source_test.cpp
-  ../abi/WeRenderer.cpp)
+if(BUILD_WEVIDEO)
+    add_executable(
+      we-renderer-video-source-test
+      we_renderer_video_source_test.cpp
+      ../abi/WeRenderer.cpp)
 
-target_link_libraries(we-renderer-video-source-test PRIVATE wallpaper-engine-renderer-internal)
-target_include_directories(we-renderer-video-source-test PRIVATE ..)
-target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts})
+    target_link_libraries(we-renderer-video-source-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(we-renderer-video-source-test PRIVATE ..)
+    target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts})
 
-add_test(NAME we-renderer-video-source-test COMMAND we-renderer-video-source-test)
+    add_test(NAME we-renderer-video-source-test COMMAND we-renderer-video-source-test)
 
-add_executable(
-  we-renderer-video-pipeline-test
-  we_renderer_video_pipeline_test.cpp
-  ../abi/WeRenderer.cpp)
+    add_executable(
+      we-renderer-video-pipeline-test
+      we_renderer_video_pipeline_test.cpp
+      ../abi/WeRenderer.cpp)
 
-target_link_libraries(we-renderer-video-pipeline-test PRIVATE wallpaper-engine-renderer-internal)
-target_include_directories(we-renderer-video-pipeline-test PRIVATE ..)
-target_compile_options(we-renderer-video-pipeline-test PRIVATE ${warn_opts})
+    target_link_libraries(we-renderer-video-pipeline-test PRIVATE wallpaper-engine-renderer-internal)
+    target_include_directories(we-renderer-video-pipeline-test PRIVATE ..)
+    target_compile_options(we-renderer-video-pipeline-test PRIVATE ${warn_opts})
 
-add_test(NAME we-renderer-video-pipeline-test COMMAND we-renderer-video-pipeline-test)
+    add_test(NAME we-renderer-video-pipeline-test COMMAND we-renderer-video-pipeline-test)
+endif()
 
 if(BUILD_WEWEB)
     add_executable(
@@ -86,8 +88,8 @@ if(BUILD_WEWEB)
       web-user-properties-test
       web_user_properties_test.cpp)
 
-    target_link_libraries(web-user-properties-test PRIVATE wallpaper-engine-renderer-internal)
-    target_include_directories(web-user-properties-test PRIVATE ..)
+    target_link_libraries(web-user-properties-test PRIVATE wpWebBrowserHost)
+    target_include_directories(web-user-properties-test PRIVATE .. ${CEF_INCLUDE} ${CEF_INCLUDE_DIRS})
     target_compile_options(web-user-properties-test PRIVATE ${warn_opts})
 
     add_test(NAME web-user-properties-test COMMAND web-user-properties-test)

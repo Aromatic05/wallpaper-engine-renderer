@@ -19,8 +19,31 @@ link_libraries(Eigen3::Eigen)
 
 option(WP_ENABLE_SCENESCRIPT_RUNTIME "Enable SceneScript runtime build dependencies" ON)
 option(WP_ENABLE_TEXT_RENDERING "Enable text rendering build dependencies" ON)
+
+set(_default_build_weweb OFF)
+if((DEFINED ENV{CEF_ROOT} AND EXISTS "$ENV{CEF_ROOT}/cmake/FindCEF.cmake")
+   OR (EXISTS "/usr/share/cmake/Modules/FindCEF.cmake"
+       AND EXISTS "/usr/include/cef/include/cef_version.h"
+       AND EXISTS "/usr/lib/cef/libcef.so"
+       AND EXISTS "/usr/src/cef/libcef_dll/CMakeLists.txt"))
+    set(_default_build_weweb ON)
+endif()
+pkg_check_modules(WEVIDEO_GSTREAMER QUIET
+    gstreamer-1.0
+    gstreamer-app-1.0
+    gstreamer-allocators-1.0
+    gstreamer-video-1.0
+    gstreamer-va-1.0
+    libdrm)
+set(_default_build_wevideo OFF)
+if(WEVIDEO_GSTREAMER_FOUND)
+    set(_default_build_wevideo ON)
+endif()
 option(BUILD_WEWEB
-    "Build the CEF-based web backend (requires system CEF via CEF_ROOT)" OFF)
+    "Build the CEF-based web backend (requires system CEF via CEF_ROOT)" ${_default_build_weweb})
+option(BUILD_WEVIDEO
+    "Build the GStreamer-based video backend when its system dependencies are available"
+    ${_default_build_wevideo})
 
 set(HANABI_DXC_ROOT "" CACHE PATH "Path to Hanabi staged DirectXShaderCompiler SDK")
 set(HANABI_DXC_SOURCE_DIR
