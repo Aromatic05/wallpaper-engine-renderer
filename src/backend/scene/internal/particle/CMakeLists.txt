@@ -8,7 +8,7 @@ ParticleEmitter.cpp
 WPParticleRawGener.cpp
 )
 
-target_link_libraries(${LIB_NAME} PUBLIC wpUtils PRIVATE wpScene)
+target_link_libraries(${LIB_NAME} PUBLIC wpUtils PRIVATE wpScene nlohmann_json)
 target_include_directories(
   ${LIB_NAME}
   PUBLIC include
