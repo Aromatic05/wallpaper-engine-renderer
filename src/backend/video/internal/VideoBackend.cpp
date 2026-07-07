@@ -643,12 +643,34 @@ Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
             "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false";
     } else {
         std::fprintf(stderr, "video-backend[debug]: pipeline-mode=shm\n");
+        // The compositor negotiates a fixed presentation buffer size (m_renderBinding's
+        // width/height) and assumes every published SHM frame matches it exactly (see
+        // we-layerd's update_viewport_destination(), which always sets the wp_viewport
+        // source rectangle to render_width x render_height). Without an explicit
+        // videoscale here, decodebin/videoconvert emit frames at the source video's
+        // native resolution, which triggers a wp_viewport protocol error whenever the
+        // video isn't already exactly render_width x render_height (e.g. a 1080p video
+        // wallpaper on a 4K output). Force-scale to the negotiated render size so the
+        // published SHM buffer always matches what the compositor expects.
+        std::uint32_t targetWidth = 0;
+        std::uint32_t targetHeight = 0;
+        if (m_renderBinding) {
+            const auto& renderInfo = m_renderBinding->renderInitInfo();
+            targetWidth = renderInfo.width;
+            targetHeight = renderInfo.height;
+        }
+        std::string scaleCaps;
+        if (targetWidth > 0 && targetHeight > 0) {
+            scaleCaps = "! videoscale ! video/x-raw,width=(int)" + std::to_string(targetWidth)
+                       + ",height=(int)" + std::to_string(targetHeight) + " ";
+        }
         pipelineDescription =
             "filesrc location=\"" + escapedPath + "\" "
             "! qtdemux name=demux "
             "demux.video_0 ! queue "
             "! decodebin "
-            "! videoconvert "
+            + scaleCaps
+            + "! videoconvert "
             "! video/x-raw,format=(string)BGRA "
             "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false";
     }
