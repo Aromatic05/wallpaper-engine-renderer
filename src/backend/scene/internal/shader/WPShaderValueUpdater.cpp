@@ -43,6 +43,37 @@ constexpr std::array<const char*, 3> kAudioSpectrumRightUniforms {
     "g_AudioSpectrum64Right",
 };
 
+std::vector<float> PeakResampleSpectrum(std::span<const float> values, uint32_t resolution) {
+    const size_t       target_size = static_cast<size_t>(resolution);
+    std::vector<float> result(target_size, 0.0f);
+    if (target_size == 0 || values.empty()) return result;
+
+    const size_t source_size = values.size();
+    if (target_size == source_size) {
+        std::copy(values.begin(), values.end(), result.begin());
+        return result;
+    }
+
+    if (target_size > source_size) {
+        for (size_t i = 0; i < target_size; ++i) {
+            const size_t source_index = std::min(source_size - 1, (i * source_size) / target_size);
+            result[i]                 = values[source_index];
+        }
+        return result;
+    }
+
+    for (size_t i = 0; i < target_size; ++i) {
+        const size_t begin = (i * source_size) / target_size;
+        const size_t end   = std::max(begin + 1, ((i + 1) * source_size) / target_size);
+        float        peak  = 0.0f;
+        for (size_t j = begin; j < std::min(end, source_size); ++j) {
+            peak = std::max(peak, values[j]);
+        }
+        result[i] = peak;
+    }
+    return result;
+}
+
 struct MeshBounds2D {
     bool     valid { false };
     Vector3d center { Vector3d::Zero() };
@@ -665,71 +696,82 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
         updateOp(G_PARALLAXPOSITION, std::array { para[0], para[1] });
     }
 
-    for (size_t index = 0; index < kAudioSpectrumResolutions.size(); index++) {
-        if (!info.has_audio_spectrum_left[index] && !info.has_audio_spectrum_right[index]) continue;
-
-        std::vector<float> left;
-        std::vector<float> right;
-        std::vector<float> average;
+    const bool requests_audio =
+        std::any_of(info.has_audio_spectrum_left.begin(),
+                    info.has_audio_spectrum_left.end(),
+                    [](bool value) { return value; }) ||
+        std::any_of(info.has_audio_spectrum_right.begin(),
+                    info.has_audio_spectrum_right.end(),
+                    [](bool value) { return value; });
+    if (requests_audio) {
+        std::vector<float> source_left;
+        std::vector<float> source_right;
+        std::vector<float> source_average;
         bool has_audio = false;
         if (m_scene->scriptHost != nullptr) {
-            has_audio = m_scene->scriptHost->GetAudioSpectrum(kAudioSpectrumResolutions[index],
-                                                              &left,
-                                                              &right,
-                                                              &average);
+            has_audio = m_scene->scriptHost->GetAudioSpectrum(
+                kAudioSpectrumResolutions.back(), &source_left, &source_right, &source_average);
         } else if (m_scene->soundManager != nullptr) {
-            m_scene->soundManager->GetSpectrum(kAudioSpectrumResolutions[index], &left, &right, &average);
-            has_audio = !left.empty() || !right.empty() || !average.empty();
+            m_scene->soundManager->GetSpectrum(
+                kAudioSpectrumResolutions.back(), &source_left, &source_right, &source_average);
+            has_audio = !source_left.empty() || !source_right.empty() || !source_average.empty();
         }
-        if (!has_audio) {
+        if (! has_audio) {
             if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
                 LOG_INFO("DebugSpectrumUniformUpdate: layer=%d node=%s resolution=%u has-audio=false "
                          "source=%s left-uniform=%s right-uniform=%s",
                          pNode->ID(),
                          NodeDebugLabel(pNode).c_str(),
-                         kAudioSpectrumResolutions[index],
+                         kAudioSpectrumResolutions.back(),
                          m_scene->scriptHost != nullptr ? "scriptHost"
                          : m_scene->soundManager != nullptr ? "soundManager"
                                                             : "none",
-                         info.has_audio_spectrum_left[index] ? "true" : "false",
-                         info.has_audio_spectrum_right[index] ? "true" : "false");
+                         requests_audio ? "true" : "false",
+                         requests_audio ? "true" : "false");
             }
-            continue;
-        }
+        } else {
+            for (size_t index = 0; index < kAudioSpectrumResolutions.size(); index++) {
+                if (! info.has_audio_spectrum_left[index] && ! info.has_audio_spectrum_right[index])
+                    continue;
 
-        if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
-            LOG_INFO("DebugSpectrumUniformUpdate: layer=%d node=%s resolution=%u has-audio=true "
-                     "source=%s left-uniform=%s right-uniform=%s left.size=%zu right.size=%zu "
-                     "left0=%g left1=%g left2=%g left3=%g right0=%g right1=%g right2=%g right3=%g",
-                     pNode->ID(),
-                     NodeDebugLabel(pNode).c_str(),
-                     kAudioSpectrumResolutions[index],
-                     m_scene->scriptHost != nullptr ? "scriptHost"
-                     : m_scene->soundManager != nullptr ? "soundManager"
-                                                        : "none",
-                     info.has_audio_spectrum_left[index] ? "true" : "false",
-                     info.has_audio_spectrum_right[index] ? "true" : "false",
-                     left.size(),
-                     right.size(),
-                     left.size() > 0 ? left[0] : 0.0f,
-                     left.size() > 1 ? left[1] : 0.0f,
-                     left.size() > 2 ? left[2] : 0.0f,
-                     left.size() > 3 ? left[3] : 0.0f,
-                     right.size() > 0 ? right[0] : 0.0f,
-                     right.size() > 1 ? right[1] : 0.0f,
-                     right.size() > 2 ? right[2] : 0.0f,
-                     right.size() > 3 ? right[3] : 0.0f);
-        }
+                const auto resolution = kAudioSpectrumResolutions[index];
+                auto       left       = PeakResampleSpectrum(source_left, resolution);
+                auto       right      = PeakResampleSpectrum(source_right, resolution);
 
-        if (info.has_audio_spectrum_left[index]) {
-            updateOp(kAudioSpectrumLeftUniforms[index],
-                     std::span<const float> { left.data(), left.size() });
-        }
-        if (info.has_audio_spectrum_right[index]) {
-            updateOp(kAudioSpectrumRightUniforms[index],
-                     std::span<const float> { right.data(), right.size() });
-        }
+                if (pNode != nullptr && WallpaperDebugLayerEnabled(pNode->ID())) {
+                    LOG_INFO("DebugSpectrumUniformUpdate: layer=%d node=%s resolution=%u has-audio=true "
+                             "source=%s left-uniform=%s right-uniform=%s left.size=%zu right.size=%zu "
+                             "left0=%g left1=%g left2=%g left3=%g right0=%g right1=%g right2=%g right3=%g",
+                             pNode->ID(),
+                             NodeDebugLabel(pNode).c_str(),
+                             resolution,
+                             m_scene->scriptHost != nullptr ? "scriptHost"
+                             : m_scene->soundManager != nullptr ? "soundManager"
+                                                                : "none",
+                             info.has_audio_spectrum_left[index] ? "true" : "false",
+                             info.has_audio_spectrum_right[index] ? "true" : "false",
+                             left.size(),
+                             right.size(),
+                             left.size() > 0 ? left[0] : 0.0f,
+                             left.size() > 1 ? left[1] : 0.0f,
+                             left.size() > 2 ? left[2] : 0.0f,
+                             left.size() > 3 ? left[3] : 0.0f,
+                             right.size() > 0 ? right[0] : 0.0f,
+                             right.size() > 1 ? right[1] : 0.0f,
+                             right.size() > 2 ? right[2] : 0.0f,
+                             right.size() > 3 ? right[3] : 0.0f);
+                }
 
+                if (info.has_audio_spectrum_left[index]) {
+                    updateOp(kAudioSpectrumLeftUniforms[index],
+                             std::span<const float> { left.data(), left.size() });
+                }
+                if (info.has_audio_spectrum_right[index]) {
+                    updateOp(kAudioSpectrumRightUniforms[index],
+                             std::span<const float> { right.data(), right.size() });
+                }
+            }
+        }
     }
 
     if (m_scene->scriptHost) {

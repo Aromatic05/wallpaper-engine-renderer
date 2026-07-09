@@ -988,6 +988,80 @@ int main() {
 
     {
         wallpaper::Scene scene;
+        auto node = std::make_shared<wallpaper::SceneNode>();
+        node->ID() = 332;
+        auto mesh = std::make_shared<wallpaper::SceneMesh>();
+        wallpaper::SceneMaterial material;
+        material.customShader.shader = std::make_shared<wallpaper::SceneShader>();
+        mesh->AddMaterial(std::move(material));
+        node->AddMesh(mesh);
+        scene.sceneGraph->AppendChild(node);
+
+        auto camera_node = std::make_shared<wallpaper::SceneNode>(
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            Eigen::Vector3f::Ones(),
+            Eigen::Vector3f::Zero(),
+            "GlobalCamera");
+        auto camera = std::make_shared<wallpaper::SceneCamera>(1920.0f, 1080.0f, -1.0f, 1.0f);
+        camera->AttatchNode(camera_node);
+        camera_node->UpdateTrans();
+        camera->Update();
+        scene.cameras["global"] = camera;
+        scene.activeCamera      = camera.get();
+        scene.sceneGraph->AppendChild(camera_node);
+
+        scene.scriptHost = std::make_shared<wallpaper::WPSceneScriptHost>(&scene);
+        assert(scene.scriptHost->Ready());
+        scene.scriptHost->Initialize();
+
+        std::vector<float> audio_samples(128, 0.0f);
+        audio_samples[3]      = 0.90f;
+        audio_samples[4]      = 0.20f;
+        audio_samples[7]      = 0.60f;
+        audio_samples[64 + 2] = 0.75f;
+        audio_samples[64 + 5] = 0.40f;
+        scene.scriptHost->ApplyAudioSamples(audio_samples);
+
+        auto updater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        updater->InitUniforms(node.get(), [](std::string_view name) {
+            return name == "g_AudioSpectrum16Left" || name == "g_AudioSpectrum16Right" ||
+                   name == "g_AudioSpectrum32Left" || name == "g_AudioSpectrum64Left";
+        });
+
+        wallpaper::sprite_map_t sprites;
+        wallpaper::ShaderValue  audio16_left;
+        wallpaper::ShaderValue  audio16_right;
+        wallpaper::ShaderValue  audio32_left;
+        wallpaper::ShaderValue  audio64_left;
+        updater->UpdateUniforms(
+            node.get(),
+            sprites,
+            [&](std::string_view name, wallpaper::ShaderValue value) {
+                if (name == "g_AudioSpectrum16Left") audio16_left = std::move(value);
+                if (name == "g_AudioSpectrum16Right") audio16_right = std::move(value);
+                if (name == "g_AudioSpectrum32Left") audio32_left = std::move(value);
+                if (name == "g_AudioSpectrum64Left") audio64_left = std::move(value);
+            });
+
+        assert(audio16_left.size() == 16);
+        assert(audio16_right.size() == 16);
+        assert(audio32_left.size() == 32);
+        assert(audio64_left.size() == 64);
+
+        assert(NearlyEqual(audio16_left[0], 0.90));
+        assert(NearlyEqual(audio16_left[1], 0.60));
+        assert(NearlyEqual(audio16_right[0], 0.75));
+        assert(NearlyEqual(audio16_right[1], 0.40));
+        assert(NearlyEqual(audio32_left[1], 0.90));
+        assert(NearlyEqual(audio32_left[2], 0.20));
+        assert(NearlyEqual(audio32_left[3], 0.60));
+        assert(NearlyEqual(audio64_left[3], 0.90));
+        assert(NearlyEqual(audio64_left[4], 0.20));
+        assert(NearlyEqual(audio64_left[7], 0.60));
+    }
+
+    {
+        wallpaper::Scene scene;
         scene.ortho[0] = 1000;
         scene.ortho[1] = 800;
 
