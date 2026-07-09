@@ -9,6 +9,13 @@
 using namespace wallpaper;
 using namespace Eigen;
 
+namespace
+{
+bool IsZeroParallaxDepth(const std::array<float, 2>& depth) {
+    return std::abs(depth[0]) <= 0.0001f && std::abs(depth[1]) <= 0.0001f;
+}
+} // namespace
+
 WPNodeTransformResolver::WPNodeTransformResolver(
     Scene& scene, const WPCameraParallax& parallax,
     Map<void*, WPShaderValueData>& node_data_map,
@@ -119,11 +126,29 @@ Vector3f WPNodeTransformResolver::ComputeParallaxOffset(SceneNode* node,
             offset = ComputeParallaxOffset(node_data.parallax_anchor, parent_data, camera);
         }
     } else {
-        const auto model_trans = ResolveModelTransform(node, &node_data);
+        SceneNode*                parallax_source_node = node;
+        const WPShaderValueData*  parallax_source_data = &node_data;
+        std::array<float, 2>      effective_depth      = node_data.parallaxDepth;
+        if (node_data.effect_projection_node != nullptr &&
+            node_data.effect_projection_node != node &&
+            exists(m_node_data_map, node_data.effect_projection_node)) {
+            parallax_source_node = node_data.effect_projection_node;
+            parallax_source_data = &m_node_data_map.at(node_data.effect_projection_node);
+            if (IsZeroParallaxDepth(effective_depth) &&
+                ! IsZeroParallaxDepth(parallax_source_data->parallaxDepth)) {
+                // Effect-only helper nodes often live at an identity local transform while their
+                // real screen-space parallax source is the owning world/final node. Falling back
+                // to that node's authored depth preserves the same drift as the visible layer when
+                // the helper itself carries no explicit parallaxDepth.
+                effective_depth = parallax_source_data->parallaxDepth;
+            }
+        }
+
+        const auto model_trans = ResolveModelTransform(parallax_source_node, parallax_source_data);
         Vector3f   node_pos((float)model_trans(0, 3),
                           (float)model_trans(1, 3),
                           (float)model_trans(2, 3));
-        Vector2f depth(node_data.parallaxDepth[0], node_data.parallaxDepth[1]);
+        Vector2f depth(effective_depth[0], effective_depth[1]);
 
         Vector2f ortho { (float)m_scene.ortho[0], (float)m_scene.ortho[1] };
         Vector2f mouse_vec =

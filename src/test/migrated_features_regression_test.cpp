@@ -2,6 +2,7 @@
 #include "backend/scene/internal/parser/WPShaderParser.hpp"
 #include "backend/scene/internal/animation/WPPuppet.hpp"
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
+#include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
 #include "backend/scene/internal/text/WPTextLayer.hpp"
 #include "backend/scene/internal/SpecTexs.hpp"
 #include "backend/scene/internal/engine/WESceneRenderPlanBuilder.hpp"
@@ -712,6 +713,75 @@ int main() {
         assert(NearlyEqual(mono[0], 0.5));
         assert(NearlyEqual(mono[1], 0.5));
         assert(NearlyEqual(mono[2], 0.5));
+    }
+
+    {
+        wallpaper::Scene scene;
+        scene.ortho[0] = 1000;
+        scene.ortho[1] = 800;
+
+        auto camera_node = std::make_shared<wallpaper::SceneNode>(
+            Eigen::Vector3f(500.0f, 400.0f, 0.0f),
+            Eigen::Vector3f::Ones(),
+            Eigen::Vector3f::Zero(),
+            "GlobalCamera");
+        auto camera = std::make_shared<wallpaper::SceneCamera>(1000, 800, -1.0f, 1.0f);
+        camera->AttatchNode(camera_node);
+        camera_node->UpdateTrans();
+        camera->Update();
+        scene.cameras["global"] = camera;
+        scene.activeCamera      = camera.get();
+        scene.sceneGraph->AppendChild(camera_node);
+
+        auto world_node = std::make_shared<wallpaper::SceneNode>(
+            Eigen::Vector3f(700.0f, 500.0f, 0.0f),
+            Eigen::Vector3f::Ones(),
+            Eigen::Vector3f::Zero(),
+            "EffectWorld");
+        auto effect_node = std::make_shared<wallpaper::SceneNode>(
+            Eigen::Vector3f::Zero(),
+            Eigen::Vector3f::Ones(),
+            Eigen::Vector3f::Zero(),
+            "EffectHelper");
+        scene.sceneGraph->AppendChild(world_node);
+        scene.sceneGraph->AppendChild(effect_node);
+
+        wallpaper::WPShaderValueData world_data;
+        world_data.parallaxDepth = { 0.5f, 0.25f };
+
+        wallpaper::WPShaderValueData effect_data;
+        effect_data.parallaxDepth          = { 0.0f, 0.0f };
+        effect_data.effect_projection_node = world_node.get();
+
+        auto updater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        wallpaper::WPCameraParallax parallax;
+        parallax.enable         = true;
+        parallax.amount         = 1.0f;
+        parallax.delay          = 0.0f;
+        parallax.mouseinfluence = 0.0f;
+        updater->SetCameraParallax(parallax);
+        updater->SetNodeData(world_node.get(), world_data);
+        updater->SetNodeData(effect_node.get(), effect_data);
+        updater->InitUniforms(effect_node.get(), [](std::string_view name) {
+            return name == "g_ModelMatrix";
+        });
+
+        wallpaper::sprite_map_t sprites;
+        wallpaper::ShaderValue  model_uniform;
+        bool                    saw_model = false;
+        updater->UpdateUniforms(
+            effect_node.get(),
+            sprites,
+            [&](std::string_view name, wallpaper::ShaderValue value) {
+                if (name != "g_ModelMatrix") return;
+                model_uniform = std::move(value);
+                saw_model     = true;
+            });
+        assert(saw_model);
+        assert(model_uniform.size() == 16);
+        assert(NearlyEqual(model_uniform[12], 100.0));
+        assert(NearlyEqual(model_uniform[13], 25.0));
+        assert(NearlyEqual(model_uniform[14], 0.0));
     }
 
     wallpaper::Scene scene;
