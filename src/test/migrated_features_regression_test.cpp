@@ -1,5 +1,6 @@
 #include "backend/scene/internal/parser/WPSceneParser.hpp"
 #include "backend/scene/internal/parser/WPShaderParser.hpp"
+#include "backend/scene/internal/animation/WPPuppet.hpp"
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
 #include "backend/scene/internal/text/WPTextLayer.hpp"
 #include "backend/scene/internal/SpecTexs.hpp"
@@ -133,6 +134,43 @@ const wallpaper::vulkan::CustomShaderPass::Desc* FindCustomShaderPassByMaterial(
 } // namespace
 
 int main() {
+    {
+        auto puppet = std::make_shared<wallpaper::WPPuppet>();
+        puppet->bones.resize(1);
+        puppet->bones[0].name = "root";
+        puppet->bones[0].transform.pretranslate(Eigen::Vector3f(10.0f, 0.0f, 0.0f));
+
+        wallpaper::WPPuppet::Animation animation;
+        animation.id     = 1;
+        animation.fps    = 30.0;
+        animation.length = 2;
+        animation.mode   = wallpaper::WPPuppet::PlayMode::Loop;
+        animation.name   = "replace-base-pose";
+        animation.bframes_array.resize(1);
+        animation.bframes_array[0].frames.resize(2);
+        for (auto& frame : animation.bframes_array[0].frames) {
+            frame.position   = Eigen::Vector3f::Zero();
+            frame.angle      = Eigen::Vector3f::Zero();
+            frame.scale      = Eigen::Vector3f::Ones();
+            frame.quaternion = Eigen::Quaterniond::Identity();
+        }
+        puppet->anims.push_back(animation);
+        puppet->prepared();
+
+        wallpaper::WPPuppetLayer puppet_layer(puppet);
+        wallpaper::WPPuppetLayer::AnimationLayer runtime_layer;
+        runtime_layer.id      = 1;
+        runtime_layer.blend   = 1.0;
+        runtime_layer.visible = true;
+        puppet_layer.prepared(std::span<wallpaper::WPPuppetLayer::AnimationLayer>(&runtime_layer, 1));
+
+        const auto skinning = puppet_layer.genFrame(0.0);
+        assert(!skinning.empty());
+        assert(NearlyEqual(skinning[0].translation().x(), 0.0));
+        assert(NearlyEqual(skinning[0].translation().y(), 0.0));
+        assert(NearlyEqual(skinning[0].translation().z(), 0.0));
+    }
+
     {
         wallpaper::fs::VFS vfs;
         wallpaper::WPShaderInfo shader_info;

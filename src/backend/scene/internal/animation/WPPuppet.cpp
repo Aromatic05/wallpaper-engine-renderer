@@ -13,6 +13,25 @@ static Quaterniond ToQuaternion(Vector3f euler) {
            AngleAxis<double>(euler.x(), axis[0]);
 };
 
+static bool HasAuthoredTrack(const WPPuppet::Animation::BoneFrames& track) {
+    constexpr float kEpsilon = 1e-6f;
+    auto            non_zero = [](const Eigen::Vector3f& value) {
+        return value.cwiseAbs().maxCoeff() > kEpsilon;
+    };
+    auto non_default_scale = [](const Eigen::Vector3f& value) {
+        const bool zero = value.cwiseAbs().maxCoeff() <= kEpsilon;
+        const bool one  = (value - Eigen::Vector3f::Ones()).cwiseAbs().maxCoeff() <= kEpsilon;
+        return ! zero && ! one;
+    };
+
+    for (const auto& frame : track.frames) {
+        if (non_zero(frame.position) || non_zero(frame.angle) || non_default_scale(frame.scale)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void WPPuppet::prepared() {
     std::vector<Affine3f> combined_tran(bones.size());
     for (uint i = 0; i < bones.size(); i++) {
@@ -50,7 +69,6 @@ void WPPuppet::prepared() {
 std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
                                                     double         time) noexcept {
     double global_blend = puppet_layer.m_global_blend;
-    double total_blend = puppet_layer.m_total_blend;
 
     puppet_layer.updateInterpolation(time);
 
@@ -62,12 +80,24 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
         const Affine3f parent =
             (bone.noParent() || bone.parent >= i) ? Affine3f::Identity() : m_final_affines[bone.parent];
 
-        Vector3f    trans { bone.transform.translation() * global_blend };
-        Vector3f    scale { Vector3f::Ones() * global_blend };
-        Quaterniond quat { Quaterniond::Identity() };
-        Quaterniond ident { Quaterniond::Identity() };
+        const WPPuppet::BoneFrame* replace_base_frame { nullptr };
+        for (const auto& layer : puppet_layer.m_layers) {
+            if (layer.anim == nullptr || ! layer.anim_layer.visible) continue;
+            if (i >= layer.anim->bframes_array.size()) continue;
+            const auto& track = layer.anim->bframes_array[i];
+            if (! HasAuthoredTrack(track)) continue;
+            replace_base_frame = std::addressof(track.frames[(usize)0]);
+            break;
+        }
 
-        // double cur_blend { 0.0f };
+        const Quaterniond bind_quat { Quaterniond(bone.transform.linear().cast<double>()) };
+        Vector3f          trans { replace_base_frame != nullptr ? replace_base_frame->position
+                                                                : bone.transform.translation() };
+        Vector3f          scale { replace_base_frame != nullptr ? replace_base_frame->scale
+                                                                : Vector3f::Ones() };
+        Quaterniond       quat { replace_base_frame != nullptr ? replace_base_frame->quaternion
+                                                               : bind_quat };
+        Quaterniond ident { Quaterniond::Identity() };
 
         for (auto& layer : puppet_layer.m_layers) {
             auto& alayer = layer.anim_layer;
@@ -76,37 +106,31 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
             if (i >= layer.anim->bframes_array.size()) continue;
 
             auto&  info    = layer.interp_info;
-            auto&  frame_base = layer.anim->bframes_array[i].frames[(usize)0];
-            auto&  frame_a = layer.anim->bframes_array[i].frames[(usize)info.frame_a];
-            auto&  frame_b = layer.anim->bframes_array[i].frames[(usize)info.frame_b];
+            auto&  track      = layer.anim->bframes_array[i];
+            if (! HasAuthoredTrack(track)) continue;
+            auto&  frame_base = track.frames[(usize)0];
+            auto&  frame_a    = track.frames[(usize)info.frame_a];
+            auto&  frame_b    = track.frames[(usize)info.frame_b];
 
             double t = info.t;
             double one_t   = 1.0f - info.t;
 
-            // break up the delta quaternions from the animation start quaternion
-            // blend the starting quaternion using the reduced blending factor
-            // blend the delta using the full blending factor
             auto frame_a_quat_delta = frame_a.quaternion * frame_base.quaternion.conjugate();
             auto frame_b_quat_delta = frame_b.quaternion * frame_base.quaternion.conjugate();
-            quat *= frame_a_quat_delta.slerp(info.t, frame_b_quat_delta).slerp(1.0 - layer.anim_layer.blend, ident) 
-                * frame_base.quaternion.slerp(1.0 - (layer.blend), ident);
-                       
-            // break up the delta positions from the animation start position
-            // blend the starting position using the reduced blending factor
-            // blend the delta using the full blending factor
+            quat *= frame_a_quat_delta.slerp(info.t, frame_b_quat_delta).slerp(
+                1.0 - layer.anim_layer.blend, ident);
+
             auto frame_a_pos_delta = frame_a.position - frame_base.position;
             auto frame_b_pos_delta = frame_b.position - frame_base.position;
-            trans += (layer.blend * frame_base.position) + (layer.anim_layer.blend * (frame_a_pos_delta * one_t + frame_b_pos_delta * t));
+            trans += layer.anim_layer.blend * (frame_a_pos_delta * one_t + frame_b_pos_delta * t);
 
-            // break up the delta scales from the animation start scale
-            // blend the starting scale using the reduced blending factor
-            // blend the delta using the full blending factor
             auto& frame_a_scale_delta = frame_a.scale - frame_base.scale;
             auto& frame_b_scale_delta = frame_b.scale - frame_base.scale;
-            scale += (layer.blend * frame_base.scale) + (layer.anim_layer.blend * (frame_a_scale_delta * one_t + frame_b_scale_delta * info.t));
+            scale +=
+                layer.anim_layer.blend * (frame_a_scale_delta * one_t + frame_b_scale_delta * info.t);
         }
         affine.pretranslate(trans);
-        affine.rotate(quat.slerp(global_blend, ident).cast<float>());
+        affine.rotate(quat.cast<float>());
         affine.scale(scale);
         if (i < puppet_layer.m_bone_overrides.size() && puppet_layer.m_bone_overrides[i].enabled) {
             affine = puppet_layer.m_bone_overrides[i].local_transform;
