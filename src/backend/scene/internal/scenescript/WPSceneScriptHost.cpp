@@ -4613,6 +4613,21 @@ const ShaderValue* FindMaterialUniformValue(const SceneMaterial& material,
     return nullptr;
 }
 
+ShaderValue ShapeScalarShaderUniformValue(const SceneMaterial& material,
+                                          std::string_view     uniform_name,
+                                          const ShaderValue&   value) {
+    if (value.size() != 1) return value;
+
+    size_t target_size = 0;
+    if (const auto* current = FindMaterialUniformValue(material, uniform_name); current != nullptr) {
+        target_size = current->size();
+    }
+    if (target_size <= 1 || target_size > 4) return value;
+
+    std::vector<float> broadcast(target_size, value[0]);
+    return ShaderValue(std::span<const float>(broadcast));
+}
+
 bool MaterialHasUniform(const SceneMaterial& material, std::string_view uniform_name) {
     return FindMaterialUniformValue(material, uniform_name) != nullptr;
 }
@@ -4760,7 +4775,8 @@ bool ApplyMaterialUniformPropertyValue(WPSceneScriptHost::Opaque*       opaque,
     // CustomShaderPass writes material uniforms from SceneMaterial::constValues every frame.
     // Updating this map is therefore enough for live user-property colors to reach the next draw
     // without rebuilding the render graph or reloading the scene package.
-    material->customShader.constValues[registration.property_name] = *shader_value;
+    material->customShader.constValues[registration.property_name] =
+        ShapeScalarShaderUniformValue(*material, registration.property_name, *shader_value);
     (void)opaque;
     return true;
 }
@@ -6616,7 +6632,8 @@ NativeSetEffectMaterialProperty(JSContext* context, JSValueConst, int argc, JSVa
     // resolved uniform here updates the next post-process pass without rebuilding cameras or
     // changing the effect's own visibility state. This is intentionally separate from
     // setEffectProperty(), which remains limited to effect.visible.
-    target->material->customShader.constValues[uniform_name] = *shader_value;
+    target->material->customShader.constValues[uniform_name] =
+        ShapeScalarShaderUniformValue(*target->material, uniform_name, *shader_value);
     LOG_INFO("SceneEffectMaterialUniformApply: layer=%d effect-index=%d effect-id=%d effect='%s' "
              "material-index=%d material='%s' property='%s' uniform='%s' value=%s",
              layer_id,

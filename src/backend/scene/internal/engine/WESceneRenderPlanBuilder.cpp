@@ -128,8 +128,18 @@ struct ExtraInfo {
     std::vector<DelayLinkInfo> link_info {};
     rg::RenderGraph*           rgraph { nullptr };
     Scene*                     scene { nullptr };
-    bool                       use_mipmap_framebuffer { false };
 };
+
+static rg::TexNode* AddMipFramebufferCopy(rg::RenderGraph&        rgraph,
+                                          rg::RenderGraphBuilder& builder) {
+    auto* source = builder.createTexNode(rg::TexNode::Desc { .name = SpecTex_Default.data(),
+                                                             .key  = SpecTex_Default.data(),
+                                                             .type = rg::TexNode::TexType::Temp });
+    auto copy_desc = rg::TexNode::Desc { .name = WE_MIP_MAPPED_FRAME_BUFFER.data(),
+                                         .key  = WE_MIP_MAPPED_FRAME_BUFFER.data(),
+                                         .type = rg::TexNode::TexType::Temp };
+    return rg::addCopyPass(rgraph, source, &copy_desc);
+}
 
 static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, ExtraInfo& extra,
                         const SceneImageEffectNode* effect_node = nullptr,
@@ -315,10 +325,15 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                     desc.type = ! rg::IsRuntimeRenderTarget(&scene, url)
                                     ? rg::TexNode::TexType::Imported
                                     : rg::TexNode::TexType::Temp;
-                    input     = builder.createTexNode(desc);
-                    if (rg::IsRuntimeRenderTarget(&scene, url)) builder.markVirtualWrite(input);
-                    if (sstart_with(url, WE_MIP_MAPPED_FRAME_BUFFER))
-                        extra.use_mipmap_framebuffer = true;
+                    if (sstart_with(url, WE_MIP_MAPPED_FRAME_BUFFER)) {
+                        input = AddMipFramebufferCopy(rgraph, builder);
+                    } else {
+                        input = builder.createTexNode(desc);
+                    }
+                    if (rg::IsRuntimeRenderTarget(&scene, url) &&
+                        ! sstart_with(url, WE_MIP_MAPPED_FRAME_BUFFER)) {
+                        builder.markVirtualWrite(input);
+                    }
                 }
 
                 if (url == output) {
@@ -375,16 +390,6 @@ static std::unique_ptr<rg::RenderGraph> BuildWESceneRenderPlanImpl(Scene& scene,
                 pass.setDescTex((u32)info.tex_index, new_in->key());
                 return true;
             });
-    }
-
-    if (extra.use_mipmap_framebuffer) {
-        rg::addCopyPass(*rgraph,
-                        rg::TexNode::Desc { .name = SpecTex_Default.data(),
-                                            .key  = SpecTex_Default.data(),
-                                            .type = rg::TexNode::TexType::Temp },
-                        rg::TexNode::Desc { .name = WE_MIP_MAPPED_FRAME_BUFFER.data(),
-                                            .key  = WE_MIP_MAPPED_FRAME_BUFFER.data(),
-                                            .type = rg::TexNode::TexType::Temp });
     }
 
     return rgraph;

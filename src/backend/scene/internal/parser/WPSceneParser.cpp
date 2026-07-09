@@ -352,6 +352,29 @@ ShaderValue ClampParserOpacityUniformValue(std::string_view uniform_name,
     return clamped;
 }
 
+ShaderValue ShapeScalarShaderUniformValue(const SceneMaterial& material,
+                                          std::string_view     uniform_name,
+                                          const ShaderValue&   value) {
+    if (value.size() != 1) return value;
+
+    size_t target_size = 0;
+    const auto uniform_key = std::string(uniform_name);
+    if (const auto const_it = material.customShader.constValues.find(uniform_key);
+        const_it != material.customShader.constValues.end()) {
+        target_size = const_it->second.size();
+    }
+    if (target_size <= 1 && material.customShader.shader != nullptr) {
+        if (const auto default_it = material.customShader.shader->default_uniforms.find(uniform_key);
+            default_it != material.customShader.shader->default_uniforms.end()) {
+            target_size = default_it->second.size();
+        }
+    }
+    if (target_size <= 1 || target_size > 4) return value;
+
+    std::vector<float> broadcast(target_size, value[0]);
+    return ShaderValue(std::span<const float>(broadcast));
+}
+
 void LogTextLayerRegistration(const char* event_name, int32_t object_id,
                               const std::string& object_name, std::string_view property_name,
                               WPDynamicValue::Type hint, const WPUserSetting& setting,
@@ -2908,7 +2931,10 @@ void LoadUserShaderValue(SceneMaterial& material, const wpscene::WPMaterial& wpm
                  binding.property != nullptr ? binding.property->size() : 0);
         if (binding.property != nullptr)
             material.customShader.constValues[binding.gl_uniform_name] =
-                ClampParserOpacityUniformValue(binding.gl_uniform_name, *binding.property);
+                ShapeScalarShaderUniformValue(
+                    material,
+                    binding.gl_uniform_name,
+                    ClampParserOpacityUniformValue(binding.gl_uniform_name, *binding.property));
     }
 }
 

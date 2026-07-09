@@ -465,6 +465,50 @@ inline std::string MakeDeclLine(const DeclMatch& match) {
     return match.storage + " " + match.type + " " + match.name + match.array + ";";
 }
 
+inline bool LineDefinesMacro(std::string_view src, std::size_t line_start,
+                             std::string_view macro_name) {
+    const auto line_end = src.find('\n', line_start);
+    const auto line_len = line_end == std::string_view::npos ? src.size() - line_start
+                                                             : line_end - line_start;
+    auto line = src.substr(line_start, line_len);
+    line      = TrimLeadingHorizontalWhitespace(line);
+    if (line.rfind("#define", 0) != 0) return false;
+
+    size_t pos = std::char_traits<char>::length("#define");
+    pos        = SkipWhitespace(line, pos);
+    const auto ident_end = SkipIdentifier(line, pos);
+    if (ident_end == pos) return false;
+    return line.substr(pos, ident_end - pos) == macro_name;
+}
+
+inline std::string UndefBeforeUserMacroDefines(std::string_view src, std::string_view macro_name) {
+    bool changed = false;
+    std::string out;
+    out.reserve(src.size() + 64);
+
+    size_t line_start { 0 };
+    while (line_start < src.size()) {
+        const auto line_end = src.find('\n', line_start);
+        if (LineDefinesMacro(src, line_start, macro_name)) {
+            out += "#ifdef ";
+            out += macro_name;
+            out += "\n#undef ";
+            out += macro_name;
+            out += "\n#endif\n";
+            changed = true;
+        }
+        if (line_end == std::string_view::npos) {
+            out.append(src, line_start, src.size() - line_start);
+            break;
+        }
+        out.append(src, line_start, line_end - line_start);
+        out.push_back('\n');
+        line_start = line_end + 1;
+    }
+
+    return changed ? out : std::string(src);
+}
+
 struct IODecl {
     char        storage { 'v' };
     std::string type;
@@ -1106,6 +1150,7 @@ inline std::string PreprocessDxcWeSource(const std::string& src, ShaderType stag
                                          WPPreprocessorInfo& process_info) {
     std::string source = SanitizeBrokenPreprocessorDirectives(src, stage);
     source             = CommentOutRequireDirectives(source);
+    source             = UndefBeforeUserMacroDefines(source, "M_PI_2");
 
     std::string with_prologue;
     if (UserDefinesMod(source)) with_prologue += "#define WW_USER_MOD 1\n";

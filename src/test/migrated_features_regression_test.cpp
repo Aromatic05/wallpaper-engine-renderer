@@ -18,6 +18,7 @@
 #include "common/fs/include/fs/VFS.h"
 #include "host/audio/include/audio/SoundManager.h"
 #include "render/vulkanrender/ClearPass.hpp"
+#include "render/vulkanrender/CopyPass.hpp"
 #include "render/vulkanrender/CustomShaderPass.hpp"
 #include "render/vulkanrender/TextPass.hpp"
 #include "rendergraph/RenderGraph.hpp"
@@ -131,6 +132,44 @@ const wallpaper::vulkan::CustomShaderPass::Desc* FindCustomShaderPassByMaterial(
     return nullptr;
 }
 
+const wallpaper::vulkan::CopyPass::Desc* FindCopyPass(wallpaper::rg::RenderGraph& graph,
+                                                      const std::string& dst) {
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass = graph.getPass(id);
+        if (auto* copy = dynamic_cast<wallpaper::vulkan::CopyPass*>(pass)) {
+            if (copy->desc().dst == dst) return &copy->desc();
+        }
+    }
+    return nullptr;
+}
+
+size_t FindCopyPassIndex(wallpaper::rg::RenderGraph& graph, const std::string& dst) {
+    const auto order = graph.topologicalOrder();
+    for (size_t index = 0; index < order.size(); index++) {
+        auto* pass = graph.getPass(order[index]);
+        if (auto* copy = dynamic_cast<wallpaper::vulkan::CopyPass*>(pass)) {
+            if (copy->desc().dst == dst) return index;
+        }
+    }
+    return static_cast<size_t>(-1);
+}
+
+size_t FindCustomShaderPassIndexByMaterial(wallpaper::rg::RenderGraph& graph,
+                                           const std::string& material_name) {
+    const auto order = graph.topologicalOrder();
+    for (size_t index = 0; index < order.size(); index++) {
+        auto* pass = graph.getPass(order[index]);
+        if (auto* shader = dynamic_cast<wallpaper::vulkan::CustomShaderPass*>(pass)) {
+            const auto* material =
+                shader->desc().node != nullptr && shader->desc().node->Mesh() != nullptr
+                    ? shader->desc().node->Mesh()->Material()
+                    : nullptr;
+            if (material != nullptr && material->name == material_name) return index;
+        }
+    }
+    return static_cast<size_t>(-1);
+}
+
 } // namespace
 
 int main() {
@@ -218,6 +257,42 @@ int main() {
         if (compiled) {
             assert(codes.size() == units.size());
         }
+    }
+
+    {
+        wallpaper::fs::VFS vfs;
+        wallpaper::WPShaderInfo shader_info;
+        std::array<wallpaper::WPShaderUnit, 2> units {
+            wallpaper::WPShaderUnit {
+                .stage = wallpaper::ShaderType::VERTEX,
+                .src = R"(
+                    attribute vec3 a_Position;
+                    void main() {
+                        gl_Position = vec4(a_Position, 1.0);
+                    }
+                )",
+                .preprocess_info = {},
+            },
+            wallpaper::WPShaderUnit {
+                .stage = wallpaper::ShaderType::FRAGMENT,
+                .src = R"(
+                    #define M_PI_2 1.57079632679
+                    void main() {
+                        gl_FragColor = vec4(M_PI_2, 0.0, 0.0, 1.0);
+                    }
+                )",
+                .preprocess_info = {},
+            },
+        };
+        std::vector<wallpaper::ShaderCode> codes;
+        assert(wallpaper::WPShaderParser::CompileToSpv("migrated-macro-redefine",
+                                                       std::span<wallpaper::WPShaderUnit>(
+                                                           units.data(), units.size()),
+                                                       codes,
+                                                       vfs,
+                                                       &shader_info,
+                                                       std::span<const wallpaper::WPShaderTexInfo>()));
+        assert(codes.size() == units.size());
     }
 
     {
@@ -395,7 +470,8 @@ int main() {
                               "shader": "user_uniform",
                               "textures": [],
                               "usershadervalues": {
-                                  "accent_color": "accent"
+                                  "accent_color": "accent",
+                                  "mono_scalar": "monovec"
                               }
                           }
                       ]
@@ -431,8 +507,9 @@ int main() {
                 { "/shaders/user_uniform.frag",
                   R"(
                       uniform vec3 g_AccentColor; // {"material":"accent","default":"0 0 0"}
+                      uniform vec3 g_MonoVec; // {"material":"monovec","default":"0 0 0"}
                       void main() {
-                          gl_FragColor = vec4(g_AccentColor, 1.0);
+                          gl_FragColor = vec4(g_AccentColor + g_MonoVec, 1.0);
                       }
                   )" },
                 { "/shaders/effect_user_uniform.vert",
@@ -464,6 +541,13 @@ int main() {
             "effect_accent",
             wallpaper::UserProperty {
                 .value = wallpaper::ShaderValue(std::array<float, 3> { 0.2f, 0.7f, 0.5f }),
+                .condition = {},
+                .is_boolean = false,
+            });
+        user_properties.emplace(
+            "mono_scalar",
+            wallpaper::UserProperty {
+                .value = wallpaper::ShaderValue(0.25f),
                 .condition = {},
                 .is_boolean = false,
             });
@@ -526,6 +610,12 @@ int main() {
         assert(NearlyEqual(accent[0], 0.9));
         assert(NearlyEqual(accent[1], 0.4));
         assert(NearlyEqual(accent[2], 0.2));
+        assert(material->customShader.constValues.count("g_MonoVec") == 1);
+        const auto& mono = material->customShader.constValues.at("g_MonoVec");
+        assert(mono.size() == 3);
+        assert(NearlyEqual(mono[0], 0.25));
+        assert(NearlyEqual(mono[1], 0.25));
+        assert(NearlyEqual(mono[2], 0.25));
 
         const auto& effect_registration = scene->bindingRegistrations.back();
         assert(effect_registration.target_kind == wallpaper::WPSceneScriptTargetKind::MaterialUniform);
@@ -543,6 +633,55 @@ int main() {
         assert(NearlyEqual(effect_accent[0], 0.2));
         assert(NearlyEqual(effect_accent[1], 0.7));
         assert(NearlyEqual(effect_accent[2], 0.5));
+    }
+
+    {
+        wallpaper::Scene scene;
+        auto node = std::make_shared<wallpaper::SceneNode>();
+        node->ID() = 88;
+        auto mesh = std::make_shared<wallpaper::SceneMesh>();
+        wallpaper::SceneMaterial material;
+        material.customShader.shader = std::make_shared<wallpaper::SceneShader>();
+        material.customShader.shader->default_uniforms["g_MonoVec"] =
+            wallpaper::ShaderValue(std::array<float, 3> { 0.0f, 0.0f, 0.0f });
+        mesh->AddMaterial(std::move(material));
+        node->AddMesh(mesh);
+        scene.sceneGraph->AppendChild(node);
+
+        wallpaper::WPSceneScriptHost host(&scene);
+        assert(host.Ready());
+
+        wallpaper::WPSceneScriptRegistration registration;
+        registration.object_id = 88;
+        registration.object_name = "ScalarBroadcastLayer";
+        registration.property_name = "g_MonoVec";
+        registration.node = node.get();
+        registration.target_kind = wallpaper::WPSceneScriptTargetKind::MaterialUniform;
+        registration.value_type = wallpaper::WPDynamicValue::Type::Float;
+        registration.base_value = wallpaper::WPDynamicValue(0.0f);
+        registration.setting.value = registration.base_value;
+        registration.setting.property = wallpaper::UserPropertyBinding { .name = "mono_scalar" };
+        assert(host.RegisterPropertyBinding(std::move(registration)));
+        host.Initialize();
+
+        wallpaper::UserPropertyMap properties;
+        properties.emplace(
+            "mono_scalar",
+            wallpaper::UserProperty {
+                .value = wallpaper::ShaderValue(0.5f),
+                .condition = {},
+                .is_boolean = false,
+            });
+        host.ApplyUserProperties(properties, false);
+
+        const auto* updated_material = node->Mesh()->Material();
+        assert(updated_material != nullptr);
+        assert(updated_material->customShader.constValues.count("g_MonoVec") == 1);
+        const auto& mono = updated_material->customShader.constValues.at("g_MonoVec");
+        assert(mono.size() == 3);
+        assert(NearlyEqual(mono[0], 0.5));
+        assert(NearlyEqual(mono[1], 0.5));
+        assert(NearlyEqual(mono[2], 0.5));
     }
 
     wallpaper::Scene scene;
@@ -637,6 +776,37 @@ int main() {
            baseline_primitive->layout.glyph_display_size[0] * 2.5f);
     assert(scaled_primitive->layout.glyph_display_size[1] >
            baseline_primitive->layout.glyph_display_size[1] * 2.5f);
+
+    {
+        wallpaper::Scene scene;
+        scene.renderTargets[wallpaper::SpecTex_Default.data()] = { 64, 64, true };
+
+        auto node = std::make_shared<wallpaper::SceneNode>();
+        node->ID() = 701;
+        auto mesh = std::make_shared<wallpaper::SceneMesh>();
+        wallpaper::SceneMaterial material;
+        material.name = "mip-framebuffer-sample";
+        material.textures.push_back(std::string(wallpaper::WE_MIP_MAPPED_FRAME_BUFFER));
+        material.customShader.shader = std::make_shared<wallpaper::SceneShader>();
+        material.customShader.shader->name = "mip-framebuffer-sample";
+        mesh->AddMaterial(std::move(material));
+        node->AddMesh(mesh);
+        scene.sceneGraph->AppendChild(node);
+        scene.layerNodes[node->ID()] = node.get();
+        scene.nodeOwners[node.get()] = node->ID();
+
+        auto plan_graph = wallpaper::BuildWESceneRenderPlan(scene);
+        assert(FindCopyPass(*plan_graph, std::string(wallpaper::WE_MIP_MAPPED_FRAME_BUFFER)) !=
+               nullptr);
+        const size_t plan_copy_index = FindCopyPassIndex(
+            *plan_graph, std::string(wallpaper::WE_MIP_MAPPED_FRAME_BUFFER));
+        const size_t plan_shader_index =
+            FindCustomShaderPassIndexByMaterial(*plan_graph, "mip-framebuffer-sample");
+        assert(plan_copy_index != static_cast<size_t>(-1));
+        assert(plan_shader_index != static_cast<size_t>(-1));
+        assert(plan_copy_index < plan_shader_index);
+
+    }
 
     return 0;
 }
