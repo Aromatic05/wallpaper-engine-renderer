@@ -13,6 +13,33 @@ static Quaterniond ToQuaternion(Vector3f euler) {
            AngleAxis<double>(euler.x(), axis[0]);
 };
 
+struct BindLinear {
+    Quaterniond rotation;
+    Vector3f    scale;
+};
+
+static BindLinear DecomposeBindLinear(const Matrix3f& linear) {
+    Matrix3f rot = linear;
+    Vector3f scale { rot.col(0).norm(), rot.col(1).norm(), rot.col(2).norm() };
+    for (int i = 0; i < 3; ++i) {
+        if (scale[i] > 0.000001f) {
+            rot.col(i) /= scale[i];
+        } else {
+            rot.col(i).setZero();
+            rot(i, i) = 1.0f;
+            scale[i]  = 1.0f;
+        }
+    }
+    if (rot.determinant() < 0.0f) {
+        scale.x() = -scale.x();
+        rot.col(0) *= -1.0f;
+    }
+
+    Quaterniond q { rot.cast<double>() };
+    q.normalize();
+    return { q, scale };
+}
+
 static bool HasAuthoredTrack(const WPPuppet::Animation::BoneFrames& track) {
     constexpr float kEpsilon = 1e-6f;
     auto            non_zero = [](const Eigen::Vector3f& value) {
@@ -90,13 +117,13 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
             break;
         }
 
-        const Quaterniond bind_quat { Quaterniond(bone.transform.linear().cast<double>()) };
+        const BindLinear  bind_linear = DecomposeBindLinear(bone.transform.linear());
         Vector3f          trans { replace_base_frame != nullptr ? replace_base_frame->position
                                                                 : bone.transform.translation() };
         Vector3f          scale { replace_base_frame != nullptr ? replace_base_frame->scale
-                                                                : Vector3f::Ones() };
+                                                                : bind_linear.scale };
         Quaterniond       quat { replace_base_frame != nullptr ? replace_base_frame->quaternion
-                                                               : bind_quat };
+                                                               : bind_linear.rotation };
         Quaterniond ident { Quaterniond::Identity() };
 
         for (auto& layer : puppet_layer.m_layers) {

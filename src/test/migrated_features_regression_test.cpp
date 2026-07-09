@@ -170,6 +170,15 @@ size_t FindCustomShaderPassIndexByMaterial(wallpaper::rg::RenderGraph& graph,
     return static_cast<size_t>(-1);
 }
 
+std::vector<std::string> TopologicalPassNames(wallpaper::rg::RenderGraph& graph) {
+    std::vector<std::string> names;
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass_node = graph.getPassNode(id);
+        if (pass_node != nullptr) names.emplace_back(pass_node->name());
+    }
+    return names;
+}
+
 } // namespace
 
 int main() {
@@ -208,6 +217,27 @@ int main() {
         assert(NearlyEqual(skinning[0].translation().x(), 0.0));
         assert(NearlyEqual(skinning[0].translation().y(), 0.0));
         assert(NearlyEqual(skinning[0].translation().z(), 0.0));
+    }
+
+    {
+        auto puppet = std::make_shared<wallpaper::WPPuppet>();
+        puppet->bones.resize(1);
+        puppet->bones[0].name = "root";
+        puppet->bones[0].transform = Eigen::Affine3f::Identity();
+        puppet->bones[0].transform.linear() =
+            Eigen::DiagonalMatrix<float, 3>(2.0f, 3.0f, 1.0f).toDenseMatrix();
+        puppet->prepared();
+
+        wallpaper::WPPuppetLayer puppet_layer(puppet);
+        std::array<wallpaper::WPPuppetLayer::AnimationLayer, 0> no_layers {};
+        puppet_layer.prepared(std::span<wallpaper::WPPuppetLayer::AnimationLayer>(
+            no_layers.data(), no_layers.size()));
+        (void)puppet_layer.genFrame(0.0);
+
+        const auto& bone_model = puppet->BoneModelTransform(0);
+        assert(NearlyEqual(bone_model.linear()(0, 0), 2.0));
+        assert(NearlyEqual(bone_model.linear()(1, 1), 3.0));
+        assert(NearlyEqual(bone_model.linear()(2, 2), 1.0));
     }
 
     {
@@ -806,6 +836,52 @@ int main() {
         assert(plan_shader_index != static_cast<size_t>(-1));
         assert(plan_copy_index < plan_shader_index);
 
+    }
+
+    {
+        wallpaper::rg::RenderGraph graph;
+        graph.addPass<wallpaper::vulkan::ClearPass>(
+            "clear-a-1",
+            wallpaper::rg::PassNode::Type::Clear,
+            [](wallpaper::rg::RenderGraphBuilder& builder, auto& desc) {
+                auto* target = builder.createTexNode(
+                    wallpaper::rg::TexNode::Desc { .name = "target-a",
+                                                   .key  = "target-a",
+                                                   .type = wallpaper::rg::TexNode::TexType::Temp },
+                    true);
+                builder.write(target);
+                desc.target = "target-a";
+            });
+        graph.addPass<wallpaper::vulkan::ClearPass>(
+            "clear-b",
+            wallpaper::rg::PassNode::Type::Clear,
+            [](wallpaper::rg::RenderGraphBuilder& builder, auto& desc) {
+                auto* target = builder.createTexNode(
+                    wallpaper::rg::TexNode::Desc { .name = "target-b",
+                                                   .key  = "target-b",
+                                                   .type = wallpaper::rg::TexNode::TexType::Temp },
+                    true);
+                builder.write(target);
+                desc.target = "target-b";
+            });
+        graph.addPass<wallpaper::vulkan::ClearPass>(
+            "clear-a-2",
+            wallpaper::rg::PassNode::Type::Clear,
+            [](wallpaper::rg::RenderGraphBuilder& builder, auto& desc) {
+                auto* target = builder.createTexNode(
+                    wallpaper::rg::TexNode::Desc { .name = "target-a",
+                                                   .key  = "target-a",
+                                                   .type = wallpaper::rg::TexNode::TexType::Temp },
+                    true);
+                builder.write(target);
+                desc.target = "target-a";
+            });
+
+        const auto names = TopologicalPassNames(graph);
+        assert(names.size() == 3);
+        assert(names[0] == "clear-a-1");
+        assert(names[1] == "clear-a-2");
+        assert(names[2] == "clear-b");
     }
 
     return 0;
