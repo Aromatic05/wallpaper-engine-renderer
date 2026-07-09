@@ -395,6 +395,113 @@ int main() {
     {
         wallpaper::WPSceneParser parser;
         wallpaper::fs::VFS vfs;
+        assert(vfs.Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                { "/hidden_source.json",
+                  R"({
+                      "width": 32,
+                      "height": 32,
+                      "material": "materials/hidden_source.json"
+                  })" },
+                { "/visible_consumer.json",
+                  R"({
+                      "width": 32,
+                      "height": 32,
+                      "material": "materials/visible_consumer.json"
+                  })" },
+                { "/materials/hidden_source.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "linked_source_passthrough",
+                              "textures": []
+                          }
+                      ]
+                  })" },
+                { "/materials/visible_consumer.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "linked_source_passthrough",
+                              "textures": []
+                          }
+                      ]
+                  })" },
+                { "/shaders/linked_source_passthrough.vert",
+                  R"(
+                      attribute vec3 a_Position;
+                      attribute vec2 a_TexCoord;
+                      varying vec2 v_TexCoord;
+                      void main() {
+                          gl_Position = vec4(a_Position, 1.0);
+                          v_TexCoord = a_TexCoord;
+                      }
+                  )" },
+                { "/shaders/linked_source_passthrough.frag",
+                  R"(
+                      varying vec2 v_TexCoord;
+                      uniform sampler2D g_Texture0;
+                      void main() {
+                          gl_FragColor = vec4(v_TexCoord, 0.0, 1.0);
+                      }
+                  )" },
+            }),
+            "linked-source-assets"));
+
+        wallpaper::audio::SoundManager sound_manager;
+        auto scene = parser.Parse("migrated-hidden-linked-source",
+                                  R"({
+                                      "camera": {
+                                          "center": [0, 0, 0],
+                                          "eye": [0, 0, 1],
+                                          "up": [0, 1, 0]
+                                      },
+                                      "general": {
+                                          "clearcolor": [0, 0, 0],
+                                          "orthogonalprojection": {
+                                              "width": 64,
+                                              "height": 64
+                                          },
+                                          "zoom": 1
+                                      },
+                                      "objects": [
+                                          {
+                                              "id": 11,
+                                              "name": "HiddenComposeSource",
+                                              "visible": false,
+                                              "image": "hidden_source.json",
+                                              "origin": [16, 16, 0],
+                                              "angles": [0, 0, 0],
+                                              "scale": [1, 1, 1]
+                                          },
+                                          {
+                                              "id": 12,
+                                              "name": "VisibleConsumer",
+                                              "visible": true,
+                                              "image": "visible_consumer.json",
+                                              "origin": [32, 32, 0],
+                                              "angles": [0, 0, 0],
+                                              "scale": [1, 1, 1],
+                                              "instance": {
+                                                  "textures": ["_rt_imageLayerComposite_11"]
+                                              }
+                                          }
+                                      ]
+                                  })",
+                                  vfs,
+                                  sound_manager);
+        assert(scene != nullptr);
+        assert(scene->offscreenDependencyLayerIds.count(11) == 1);
+        assert(scene->layerNodes.count(11) == 1);
+        assert(scene->GetLayerLocalVisibility(11) == false);
+        assert(scene->objectRuntimeNodes.count(11) == 1);
+        assert(!scene->objectRuntimeNodes.at(11).empty());
+    }
+
+    {
+        wallpaper::WPSceneParser parser;
+        wallpaper::fs::VFS vfs;
         wallpaper::audio::SoundManager sound_manager;
         auto scene = parser.Parse("migrated-hdr-bloom",
                                   R"({

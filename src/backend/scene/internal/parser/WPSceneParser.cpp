@@ -422,6 +422,7 @@ struct ParseContext {
     // model-only material state preserve color after the first model pass without changing the
     // legacy load-op behavior of 2D image/effect passes.
     std::unordered_map<std::string, usize> model_pass_count_by_output;
+    std::unordered_map<int32_t, std::string> image_texture_fallbacks;
 };
 
 bool IsZeroParallaxDepth(const std::array<float, 2>& depth) {
@@ -905,6 +906,55 @@ bool IsCameraLayerObjectJson(const nlohmann::json& object_json) {
 bool IsCameraLayerRuntimeProperty(std::string_view property_name) {
     return property_name == "visible" || property_name == "origin" || property_name == "angles" ||
            property_name == "zoom" || property_name == "fov";
+}
+
+std::optional<int32_t> ParseLinkedLayerId(std::string_view value) {
+    if (sstart_with(value, WE_IMAGE_LAYER_COMPOSITE_PREFIX)) {
+        std::string id_text(
+            value.substr(static_cast<size_t>(WE_IMAGE_LAYER_COMPOSITE_PREFIX.size())));
+        int32_t id { 0 };
+        STRTONUM(id_text, id);
+        return id > 0 ? std::optional<int32_t>(id) : std::nullopt;
+    }
+    if (IsSpecLinkTex(value)) return static_cast<int32_t>(ParseLinkTex(value));
+    return std::nullopt;
+}
+
+void CollectLinkedSourceIdsFromJsonValue(const nlohmann::json& value,
+                                         std::unordered_set<int32_t>& out) {
+    if (value.is_string()) {
+        if (const auto linked_id = ParseLinkedLayerId(value.get<std::string>()); linked_id) {
+            out.insert(*linked_id);
+        }
+        return;
+    }
+
+    if (value.is_array()) {
+        for (const auto& element : value) {
+            CollectLinkedSourceIdsFromJsonValue(element, out);
+        }
+        return;
+    }
+
+    if (! value.is_object()) return;
+
+    for (const auto& item : value.items()) {
+        if (item.key() == "dependencies" && item.value().is_array()) {
+            for (const auto& dependency : item.value()) {
+                int32_t dependency_id { 0 };
+                GET_JSON_VALUE_NOWARN(dependency, dependency_id);
+                if (dependency_id > 0) out.insert(dependency_id);
+            }
+        }
+        CollectLinkedSourceIdsFromJsonValue(item.value(), out);
+    }
+}
+
+std::unordered_set<int32_t> CollectLinkedSourceIdsFromJson(const nlohmann::json& json) {
+    std::unordered_set<int32_t> linked_source_ids;
+    if (! json.contains("objects")) return linked_source_ids;
+    CollectLinkedSourceIdsFromJsonValue(json.at("objects"), linked_source_ids);
+    return linked_source_ids;
 }
 
 bool ReadAuthoredVisibleValue(const nlohmann::json& json, bool default_visible = true) {
@@ -4240,7 +4290,10 @@ private:
 };
 
 void ParseModelObj(ParseContext& context, WPModelObject& model_obj) {
-    if (! model_obj.visible) return;
+    const auto* visibility_contract = FindLayerVisibilityContract(context, model_obj.id);
+    const bool  dependency_source =
+        visibility_contract != nullptr && visibility_contract->dependency_source;
+    if (! model_obj.visible && ! dependency_source) return;
 
     WPMdl mdl;
     if (! WPMdlParser::ParseStaticModel(model_obj.model, *context.vfs, mdl)) {
@@ -5003,6 +5056,8 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
     const auto* visibility_contract = FindLayerVisibilityContract(context, text_obj.id);
     const bool  has_runtime_visibility_contract =
         visibility_contract != nullptr && visibility_contract->requires_runtime_contract;
+    const bool  dependency_source =
+        visibility_contract != nullptr && visibility_contract->dependency_source;
     if (ShouldDeferRuntimeLayerMaterialization(
             context, text_obj.id, text_obj.visible, visibility_contract, false)) {
         // Hidden dynamic text, including text hidden only by a runtime-controlled parent branch,
@@ -5012,7 +5067,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
         RegisterLogicalTextLayer(context, text_obj);
         return;
     }
-    if (! text_obj.visible) {
+    if (! text_obj.visible && ! dependency_source) {
         return;
     }
 
@@ -7683,18 +7738,11 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     std::unordered_map<int32_t, std::string>        initial_layer_config_json_by_id;
     std::unordered_set<int32_t>                     dependency_source_ids;
     std::unordered_set<std::string>                 script_referenced_layer_names;
+    const auto                                      linked_source_ids =
+        CollectLinkedSourceIdsFromJson(json);
 
     CollectScriptReferencedLayerNames(json, script_referenced_layer_names);
-
-    for (auto& obj : json.at("objects")) {
-        if (obj.contains("dependencies") && obj.at("dependencies").is_array()) {
-            for (const auto& dependency : obj.at("dependencies")) {
-                int32_t dependency_id = 0;
-                GET_JSON_VALUE_NOWARN(dependency, dependency_id);
-                if (dependency_id != 0) dependency_source_ids.insert(dependency_id);
-            }
-        }
-    }
+    dependency_source_ids = linked_source_ids;
 
     for (auto& obj : json.at("objects")) {
         int32_t     object_id = 0;
