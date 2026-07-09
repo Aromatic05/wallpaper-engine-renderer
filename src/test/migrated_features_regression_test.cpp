@@ -1,6 +1,7 @@
 #include "backend/scene/internal/parser/WPSceneParser.hpp"
 #include "backend/scene/internal/parser/WPShaderParser.hpp"
 #include "backend/scene/internal/animation/WPPuppet.hpp"
+#include "backend/scene/internal/interface/IImageParser.h"
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
 #include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
 #include "backend/scene/internal/text/WPTextLayer.hpp"
@@ -29,6 +30,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -178,6 +180,47 @@ std::vector<std::string> TopologicalPassNames(wallpaper::rg::RenderGraph& graph)
         if (pass_node != nullptr) names.emplace_back(pass_node->name());
     }
     return names;
+}
+
+template<typename T>
+void AppendLE(std::vector<uint8_t>& bytes, T value) {
+    for (size_t i = 0; i < sizeof(T); i++) {
+        bytes.push_back(static_cast<uint8_t>(
+            (static_cast<std::make_unsigned_t<T>>(value) >> (8 * i)) & 0xFF));
+    }
+}
+
+void AppendTexVersion(std::vector<uint8_t>& bytes, char prefix, int version) {
+    bytes.push_back('T');
+    bytes.push_back('E');
+    bytes.push_back('X');
+    bytes.push_back(static_cast<uint8_t>(prefix));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 1000) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 100) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + ((version / 10) % 10)));
+    bytes.push_back(static_cast<uint8_t>('0' + (version % 10)));
+    bytes.push_back('\0');
+}
+
+std::string BuildMinimalTexAsset(std::array<uint8_t, 4> rgba) {
+    std::vector<uint8_t> bytes;
+    AppendTexVersion(bytes, 'V', 1);
+    AppendTexVersion(bytes, 'I', 1);
+    AppendLE<int32_t>(bytes, 0);
+    AppendLE<uint32_t>(bytes, 0);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 0);
+    AppendTexVersion(bytes, 'B', 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 1);
+    AppendLE<int32_t>(bytes, 4);
+    bytes.insert(bytes.end(), rgba.begin(), rgba.end());
+    return std::string(bytes.begin(), bytes.end());
 }
 
 } // namespace
@@ -497,6 +540,127 @@ int main() {
         assert(scene->GetLayerLocalVisibility(11) == false);
         assert(scene->objectRuntimeNodes.count(11) == 1);
         assert(!scene->objectRuntimeNodes.at(11).empty());
+    }
+
+    {
+        wallpaper::WPSceneParser parser;
+        wallpaper::fs::VFS vfs;
+        assert(vfs.Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                { "/hidden_album_art.json",
+                  R"({
+                      "width": 16,
+                      "height": 16,
+                      "material": "materials/hidden_album_art.json"
+                  })" },
+                { "/thumbnail_consumer.json",
+                  R"({
+                      "width": 16,
+                      "height": 16,
+                      "material": "materials/thumbnail_consumer.json"
+                  })" },
+                { "/materials/hidden_album_art.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "thumbnail_passthrough",
+                              "textures": ["fallback_cover"]
+                          }
+                      ]
+                  })" },
+                { "/materials/thumbnail_consumer.json",
+                  R"({
+                      "passes": [
+                          {
+                              "shader": "thumbnail_passthrough",
+                              "textures": ["_rt_imageLayerComposite_21"],
+                              "usertextures": [
+                                  { "name": "$mediaThumbnail", "type": "system" }
+                              ]
+                          }
+                      ]
+                  })" },
+                { "/materials/fallback_cover.tex",
+                  BuildMinimalTexAsset({ 0x11, 0x22, 0x33, 0x44 }) },
+                { "/shaders/thumbnail_passthrough.vert",
+                  R"(
+                      attribute vec3 a_Position;
+                      attribute vec2 a_TexCoord;
+                      varying vec2 v_TexCoord;
+                      void main() {
+                          gl_Position = vec4(a_Position, 1.0);
+                          v_TexCoord = a_TexCoord;
+                      }
+                  )" },
+                { "/shaders/thumbnail_passthrough.frag",
+                  R"(
+                      varying vec2 v_TexCoord;
+                      uniform sampler2D g_Texture0;
+                      void main() {
+                          gl_FragColor = texture2D(g_Texture0, v_TexCoord);
+                      }
+                  )" },
+            }),
+            "media-thumbnail-assets"));
+
+        wallpaper::audio::SoundManager sound_manager;
+        auto scene = parser.Parse("migrated-media-thumbnail-fallback",
+                                  R"({
+                                      "camera": {
+                                          "center": [0, 0, 0],
+                                          "eye": [0, 0, 1],
+                                          "up": [0, 1, 0]
+                                      },
+                                      "general": {
+                                          "clearcolor": [0, 0, 0],
+                                          "orthogonalprojection": {
+                                              "width": 64,
+                                              "height": 64
+                                          },
+                                          "zoom": 1
+                                      },
+                                      "objects": [
+                                          {
+                                              "id": 21,
+                                              "name": "HiddenAlbumArt",
+                                              "visible": false,
+                                              "image": "hidden_album_art.json",
+                                              "origin": [16, 16, 0],
+                                              "angles": [0, 0, 0],
+                                              "scale": [1, 1, 1]
+                                          },
+                                          {
+                                              "id": 22,
+                                              "name": "ThumbnailConsumer",
+                                              "visible": true,
+                                              "image": "thumbnail_consumer.json",
+                                              "origin": [32, 32, 0],
+                                              "angles": [0, 0, 0],
+                                              "scale": [1, 1, 1]
+                                          }
+                                      ]
+                                  })",
+                                  vfs,
+                                  sound_manager);
+        assert(scene != nullptr);
+        assert(scene->textures.count(std::string(
+                   wallpaper::WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE)) == 1);
+
+        auto image = scene->imageParser->Parse(
+            std::string(wallpaper::WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE));
+        assert(image != nullptr);
+        assert(image->slots.size() == 1);
+        assert(image->slots[0].mipmaps.size() == 1);
+        const auto& mipmap = image->slots[0].mipmaps[0];
+        assert(mipmap.width == 1);
+        assert(mipmap.height == 1);
+        assert(mipmap.size == 4);
+        assert(mipmap.data != nullptr);
+        assert(mipmap.data.get()[0] == 0x11);
+        assert(mipmap.data.get()[1] == 0x22);
+        assert(mipmap.data.get()[2] == 0x33);
+        assert(mipmap.data.get()[3] == 0x44);
     }
 
     {

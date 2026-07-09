@@ -957,6 +957,123 @@ std::unordered_set<int32_t> CollectLinkedSourceIdsFromJson(const nlohmann::json&
     return linked_source_ids;
 }
 
+std::string ResolveMaterialTextureSlot(const wpscene::WPMaterial& material, usize slot,
+                                       const UserPropertyMap*     user_properties) {
+    std::string texture =
+        slot < material.textures.size() ? material.textures[slot] : std::string {};
+    if (slot >= material.usertextures.size()) return texture;
+
+    const auto& binding = material.usertextures[slot];
+    if (binding.empty() || binding.type == "system") return texture;
+
+    const auto* property = LookupUserPropertyString(user_properties, binding.name);
+    if (property == nullptr || property->empty()) return texture;
+    return *property;
+}
+
+void IndexImageTextureFallbacks(ParseContext& context, const std::vector<WPObjectVar>& objects) {
+    context.image_texture_fallbacks.clear();
+    for (const auto& object : objects) {
+        const auto* image = std::get_if<wpscene::WPImageObject>(&object);
+        if (image == nullptr) continue;
+
+        std::string texture = ResolveMaterialTextureSlot(image->material, 0, context.user_properties);
+        if (! texture.empty()) {
+            context.image_texture_fallbacks[image->id] = std::move(texture);
+        }
+    }
+}
+
+bool IsSystemMediaTextureBinding(const wpscene::WPUserTextureBinding& binding,
+                                 std::string_view                      name) {
+    return binding.type == "system" && binding.name == name;
+}
+
+std::string ResolveLinkedImageFallback(const ParseContext& context, std::string_view texture) {
+    const auto linked_id = ParseLinkedLayerId(texture);
+    if (! linked_id.has_value()) return {};
+
+    const auto it = context.image_texture_fallbacks.find(*linked_id);
+    return it == context.image_texture_fallbacks.end() ? std::string {} : it->second;
+}
+
+void SeedSystemTextureFromFallback(Scene& scene, std::string_view system_texture_key,
+                                   std::string_view fallback_texture_key) {
+    if (fallback_texture_key.empty() || scene.imageParser == nullptr) return;
+    if (scene.textures.count(std::string(system_texture_key)) != 0) return;
+
+    auto* synthetic_parser = AsSyntheticImageParser(scene.imageParser.get());
+    if (synthetic_parser == nullptr) return;
+
+    auto fallback_image = scene.imageParser->Parse(std::string(fallback_texture_key));
+    if (fallback_image == nullptr || fallback_image->slots.empty() ||
+        fallback_image->slots.front().mipmaps.empty()) {
+        return;
+    }
+
+    const auto& mipmap = fallback_image->slots.front().mipmaps.front();
+    if (! mipmap.data || mipmap.size <= 0 || mipmap.width <= 0 || mipmap.height <= 0) return;
+
+    auto fallback_copy = CreateSceneScriptRgbaImage(
+        system_texture_key,
+        mipmap.width,
+        mipmap.height,
+        std::span<const uint8_t>(mipmap.data.get(), static_cast<size_t>(mipmap.size)));
+    if (fallback_copy == nullptr) return;
+
+    synthetic_parser->RegisterImage(std::string(system_texture_key), fallback_copy);
+    scene.textures[std::string(system_texture_key)] = SceneTexture {
+        .url       = std::string(system_texture_key),
+        .sample    = fallback_copy->header.sample,
+        .format    = fallback_copy->header.format,
+        .isVideo   = false,
+        .isSprite  = false,
+        .width     = fallback_copy->header.width,
+        .height    = fallback_copy->header.height,
+        .mapWidth  = fallback_copy->header.mapWidth,
+        .mapHeight = fallback_copy->header.mapHeight,
+    };
+    scene.dirtyImportedTextureKeys.insert(std::string(system_texture_key));
+}
+
+void IndexSystemMediaTextureFallbacks(ParseContext& context, const std::vector<WPObjectVar>& objects) {
+    if (context.scene == nullptr) return;
+
+    auto inspect_material = [&](const wpscene::WPMaterial& material) {
+        for (usize i = 0; i < material.usertextures.size(); i++) {
+            const auto& binding = material.usertextures[i];
+            if (binding.empty() || binding.type != "system") continue;
+
+            const std::string linked_texture =
+                i < material.textures.size() ? material.textures[i] : std::string {};
+            const std::string fallback_texture =
+                ResolveLinkedImageFallback(context, linked_texture);
+            if (fallback_texture.empty()) continue;
+
+            if (IsSystemMediaTextureBinding(binding, "$mediaThumbnail")) {
+                SeedSystemTextureFromFallback(
+                    *context.scene, WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE, fallback_texture);
+            } else if (IsSystemMediaTextureBinding(binding, "$mediaPreviousThumbnail")) {
+                SeedSystemTextureFromFallback(*context.scene,
+                                              WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE,
+                                              fallback_texture);
+            }
+        }
+    };
+
+    for (const auto& object : objects) {
+        const auto* image = std::get_if<wpscene::WPImageObject>(&object);
+        if (image == nullptr) continue;
+
+        inspect_material(image->material);
+        for (const auto& effect : image->effects) {
+            for (const auto& material : effect.materials) {
+                inspect_material(material);
+            }
+        }
+    }
+}
+
 bool ReadAuthoredVisibleValue(const nlohmann::json& json, bool default_visible = true) {
     const auto* visible_json = FindVisibleProperty(json);
     if (visible_json == nullptr) return default_visible;
@@ -7967,6 +8084,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
         context.scene->userProperties.clear();
     }
     ParseCamera(context, sc);
+    IndexImageTextureFallbacks(context, wp_objs);
+    IndexSystemMediaTextureFallbacks(context, wp_objs);
 
     {
         context.scene->renderTargets[SpecTex_Default.data()] = {
