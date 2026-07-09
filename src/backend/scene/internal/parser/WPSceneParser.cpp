@@ -3118,60 +3118,59 @@ bool ConfigureSceneBloomPass(ParseContext& context) {
     // Build the Bloom node even when the authored user toggle currently disables it, as long as the
     // scene carries non-zero Bloom settings. Runtime toggles can then update `u_enabled` in place
     // instead of forcing a render-graph rebuild just to add or remove this final post-process pass.
-    //
-    // HDR support is intentionally excluded from this predicate for now. Wallpaper Engine's
-    // `general.hdr` selects an HDR post-processing path, but Hanabi currently has only an LDR Bloom
-    // chain and no HDR render target, tone mapper, or compositor hand-off. Parsing and logging the
-    // authored HDR metadata keeps the future implementation path open without letting `hdr=true`
-    // create or suppress any current LDR rendering.
-    const bool has_ldr_bloom_work = scene.bloom.enabled || scene.bloom.strength > 0.0f;
-    if (! has_ldr_bloom_work) {
+    const bool render_hdr = scene.bloom.hdr;
+    const float effective_strength =
+        render_hdr ? scene.bloom.hdrStrength : scene.bloom.strength;
+    const float effective_threshold =
+        render_hdr ? scene.bloom.hdrThreshold : scene.bloom.threshold;
+    const bool has_bloom_work = scene.bloom.enabled || effective_strength > 0.0f;
+    if (! has_bloom_work) {
         LOG_VERBOSE("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f "
-                    "hdr-requested=%s render-hdr=false active=false",
+                    "hdr-requested=%s render-hdr=%s active=false",
                     scene.bloom.enabled ? "true" : "false",
-                    scene.bloom.strength,
-                    scene.bloom.threshold,
-                    scene.bloom.hdr ? "true" : "false");
+                    effective_strength,
+                    effective_threshold,
+                    scene.bloom.hdr ? "true" : "false",
+                    render_hdr ? "true" : "false");
         return false;
     }
 
     const i32 scene_width    = std::max(1, context.ortho_w);
     const i32 scene_height   = std::max(1, context.ortho_h);
-    const i32 quarter_width  = std::max(1, scene_width / 4);
-    const i32 quarter_height = std::max(1, scene_height / 4);
-    const i32 eighth_width   = std::max(1, scene_width / 8);
-    const i32 eighth_height  = std::max(1, scene_height / 8);
+    const i32 mip1_width     = std::max(1, render_hdr ? (scene_width / 2) : (scene_width / 4));
+    const i32 mip1_height    = std::max(1, render_hdr ? (scene_height / 2) : (scene_height / 4));
+    const i32 mip2_width     = std::max(1, render_hdr ? (scene_width / 4) : (scene_width / 8));
+    const i32 mip2_height    = std::max(1, render_hdr ? (scene_height / 4) : (scene_height / 8));
+    const float mip1_scale   = render_hdr ? 0.5f : 0.25f;
+    const float mip2_scale   = render_hdr ? 0.25f : 0.125f;
 
-    constexpr std::string_view quarter_target = "__hanabi_scene_bloom_quarter";
-    constexpr std::string_view eighth_target  = "__hanabi_scene_bloom_eighth";
-    constexpr std::string_view blur_target    = "__hanabi_scene_bloom_blur";
+    constexpr std::string_view mip1_target = "__hanabi_scene_bloom_mip1";
+    constexpr std::string_view mip2_target = "__hanabi_scene_bloom_mip2";
+    constexpr std::string_view aux_target  = "__hanabi_scene_bloom_aux";
 
-    // Wallpaper Engine's scene Bloom is implemented by the stock utility assets as a four-pass
-    // render-target chain: quarter-size extraction, eighth-size horizontal blur, eighth-size
-    // vertical blur, then additive combine into `_rt_default`. Rebuilding that topology here keeps
-    // the high-channel clipping and pink highlight rolloff aligned with the Windows renderer,
-    // instead of relying on a hand-tuned single-pass approximation.
-    scene.renderTargets[std::string(quarter_target)] = {
-        .width     = quarter_width,
-        .height    = quarter_height,
-        .mapWidth  = quarter_width,
-        .mapHeight = quarter_height,
-        .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = 0.25 },
+    scene.renderTargets[std::string(mip1_target)] = {
+        .width     = mip1_width,
+        .height    = mip1_height,
+        .mapWidth  = mip1_width,
+        .mapHeight = mip1_height,
+        .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = mip1_scale },
     };
-    scene.renderTargets[std::string(eighth_target)] = {
-        .width     = eighth_width,
-        .height    = eighth_height,
-        .mapWidth  = eighth_width,
-        .mapHeight = eighth_height,
-        .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = 0.125 },
+    scene.renderTargets[std::string(mip2_target)] = {
+        .width     = mip2_width,
+        .height    = mip2_height,
+        .mapWidth  = mip2_width,
+        .mapHeight = mip2_height,
+        .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = mip2_scale },
     };
-    scene.renderTargets[std::string(blur_target)] = {
-        .width     = eighth_width,
-        .height    = eighth_height,
-        .mapWidth  = eighth_width,
-        .mapHeight = eighth_height,
-        .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = 0.125 },
-    };
+    if (! render_hdr) {
+        scene.renderTargets[std::string(aux_target)] = {
+            .width     = mip2_width,
+            .height    = mip2_height,
+            .mapWidth  = mip2_width,
+            .mapHeight = mip2_height,
+            .bind      = { .enable = true, .name = SpecTex_Default.data(), .scale = mip2_scale },
+        };
+    }
 
     constexpr std::string_view fullscreen_vertex_source           = R"(
 attribute vec3 a_Position;
@@ -3233,6 +3232,68 @@ void main() {
     albedo = -grayscale * sat + albedo * (1.0 + sat);
 
     gl_FragColor = vec4(max(CAST3(0), albedo * g_BloomStrength * g_BloomTint), 1.0);
+}
+)";
+    constexpr std::string_view hdr_extract_fragment_source        = R"(
+varying vec2 v_TexCoord[4];
+
+uniform sampler2D g_Texture0;
+
+uniform float u_enabled; // {"material":"Bloom enabled","default":0,"range":[0,1]}
+uniform float g_BloomStrength; // {"material":"bloomstrength","default":2,"range":[0,4]}
+uniform float g_BloomThreshold; // {"material":"bloomthreshold","default":1,"range":[0,8]}
+uniform vec3 g_BloomTint; // {"material":"bloomtint","default":"1 1 1"}
+uniform float g_BloomFeather; // {"material":"bloomhdrfeather","default":0,"range":[0,1]}
+
+void main() {
+    if (u_enabled <= 0.0 || g_BloomStrength <= 0.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    vec3 color = texSample2D(g_Texture0, v_TexCoord[0]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[1]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[2]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[3]).rgb;
+    color *= 0.25;
+
+    float brightness = max(max(color.r, color.g), color.b);
+    float knee = max(g_BloomThreshold * max(g_BloomFeather, 0.0), 0.00001);
+    float soft = clamp(brightness - g_BloomThreshold + knee, 0.0, 2.0 * knee);
+    soft = (soft * soft) / (4.0 * knee + 0.00001);
+    float hard = max(brightness - g_BloomThreshold, 0.0);
+    float contribution = max(hard, soft) / max(brightness, 0.00001);
+
+    color *= contribution;
+    color *= g_BloomStrength * g_BloomTint;
+    gl_FragColor = vec4(max(vec3(0.0), color), 1.0);
+}
+)";
+    constexpr std::string_view downsample_fragment_source         = R"(
+varying vec2 v_TexCoord[4];
+
+uniform sampler2D g_Texture0;
+
+void main() {
+    vec3 color = texSample2D(g_Texture0, v_TexCoord[0]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[1]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[2]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[3]).rgb;
+    gl_FragColor = vec4(color * 0.25, 1.0);
+}
+)";
+    constexpr std::string_view hdr_upsample_fragment_source      = R"(
+varying vec2 v_TexCoord[4];
+
+uniform sampler2D g_Texture0;
+uniform float g_BloomScatter; // {"material":"bloomhdrscatter","default":1,"range":[0,4]}
+
+void main() {
+    vec3 color = texSample2D(g_Texture0, v_TexCoord[0]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[1]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[2]).rgb +
+                 texSample2D(g_Texture0, v_TexCoord[3]).rgb;
+    gl_FragColor = vec4(color * (0.25 * g_BloomScatter), 1.0);
 }
 )";
     constexpr std::string_view blur_x_vertex_source               = R"(
@@ -3362,20 +3423,45 @@ void main() {
         1.0f / static_cast<float>(scene_width),
         1.0f / static_cast<float>(scene_height),
     };
-
-    auto downsample_shader = compile_shader("__hanabi_scene_bloom_downsample_quarter",
-                                            downsample_quarter_vertex_source,
-                                            downsample_quarter_fragment_source,
-                                            1);
-    auto blur_x_shader     = compile_shader("__hanabi_scene_bloom_downsample_eighth_blur",
-                                            blur_x_vertex_source,
-                                            blur_fragment_source,
-                                            1);
-    auto blur_y_shader =
-        compile_shader("__hanabi_scene_bloom_blur", blur_y_vertex_source, blur_fragment_source, 1);
+    const std::array<float, 2> mip1_texel_size {
+        1.0f / static_cast<float>(mip1_width),
+        1.0f / static_cast<float>(mip1_height),
+    };
+    const std::array<float, 2> mip2_texel_size {
+        1.0f / static_cast<float>(mip2_width),
+        1.0f / static_cast<float>(mip2_height),
+    };
+    std::shared_ptr<SceneShader> downsample_shader;
+    std::shared_ptr<SceneShader> second_shader;
+    std::shared_ptr<SceneShader> third_shader;
     auto combine_shader = compile_shader(
         "__hanabi_scene_bloom_combine", fullscreen_vertex_source, combine_fragment_source, 2);
-    if (downsample_shader == nullptr || blur_x_shader == nullptr || blur_y_shader == nullptr ||
+    if (render_hdr) {
+        downsample_shader = compile_shader("__hanabi_scene_bloom_hdr_extract",
+                                           downsample_quarter_vertex_source,
+                                           hdr_extract_fragment_source,
+                                           1);
+        second_shader     = compile_shader("__hanabi_scene_bloom_hdr_downsample",
+                                           downsample_quarter_vertex_source,
+                                           downsample_fragment_source,
+                                           1);
+        third_shader      = compile_shader("__hanabi_scene_bloom_hdr_upsample",
+                                      downsample_quarter_vertex_source,
+                                      hdr_upsample_fragment_source,
+                                      1);
+    } else {
+        downsample_shader = compile_shader("__hanabi_scene_bloom_downsample_quarter",
+                                           downsample_quarter_vertex_source,
+                                           downsample_quarter_fragment_source,
+                                           1);
+        second_shader     = compile_shader("__hanabi_scene_bloom_downsample_eighth_blur",
+                                       blur_x_vertex_source,
+                                       blur_fragment_source,
+                                       1);
+        third_shader      =
+            compile_shader("__hanabi_scene_bloom_blur", blur_y_vertex_source, blur_fragment_source, 1);
+    }
+    if (downsample_shader == nullptr || second_shader == nullptr || third_shader == nullptr ||
         combine_shader == nullptr) {
         return false;
     }
@@ -3412,58 +3498,80 @@ void main() {
     ShaderValues downsample_values;
     downsample_values["g_TexelSize"]      = ShaderValue(scene_texel_size);
     downsample_values["u_enabled"]        = ShaderValue(scene.bloom.enabled ? 1.0f : 0.0f);
-    downsample_values["g_BloomStrength"]  = ShaderValue(scene.bloom.strength);
-    downsample_values["g_BloomThreshold"] = ShaderValue(scene.bloom.threshold);
+    downsample_values["g_BloomStrength"]  = ShaderValue(effective_strength);
+    downsample_values["g_BloomThreshold"] = ShaderValue(effective_threshold);
     downsample_values["g_BloomTint"]      = ShaderValue(scene.bloom.tint);
+    if (render_hdr) {
+        downsample_values["g_BloomFeather"] = ShaderValue(scene.bloom.hdrFeather);
+    }
 
-    ShaderValues blur_values;
-    blur_values["g_TexelSize"] = ShaderValue(scene_texel_size);
-
-    auto downsample_node = make_node("__hanabi_scene_bloom_downsample_quarter",
+    auto downsample_node = make_node(render_hdr ? "__hanabi_scene_bloom_hdr_extract"
+                                                : "__hanabi_scene_bloom_downsample_quarter",
                                      downsample_shader,
                                      { SpecTex_Default.data() },
                                      std::move(downsample_values));
-    auto blur_x_node     = make_node("__hanabi_scene_bloom_downsample_eighth_blur",
-                                     blur_x_shader,
-                                     { std::string(quarter_target) },
-                                     blur_values);
-    auto blur_y_node     = make_node(
-        "__hanabi_scene_bloom_blur", blur_y_shader, { std::string(eighth_target) }, blur_values);
+    ShaderValues second_values;
+    second_values["g_TexelSize"] = ShaderValue(mip1_texel_size);
+    auto second_node     = make_node(render_hdr ? "__hanabi_scene_bloom_hdr_downsample"
+                                                : "__hanabi_scene_bloom_downsample_eighth_blur",
+                                 second_shader,
+                                 { std::string(mip1_target) },
+                                 second_values);
+    ShaderValues third_values;
+    third_values["g_TexelSize"] = ShaderValue(mip2_texel_size);
+    if (render_hdr) {
+        third_values["g_BloomScatter"] =
+            ShaderValue(scene.bloom.hdrScatter > 0.0f ? scene.bloom.hdrScatter : 1.0f);
+    }
+    auto third_node      = make_node(render_hdr ? "__hanabi_scene_bloom_hdr_upsample"
+                                                : "__hanabi_scene_bloom_blur",
+                                 third_shader,
+                                 { std::string(mip2_target) },
+                                 third_values);
     auto combine_node = make_node("__hanabi_scene_bloom_combine",
                                   combine_shader,
-                                  { SpecTex_Default.data(), std::string(blur_target) },
+                                  { SpecTex_Default.data(),
+                                    std::string(render_hdr ? mip1_target : aux_target) },
                                   {});
 
     scene.bloom.node    = downsample_node;
-    scene.bloom.nodes   = { downsample_node, blur_x_node, blur_y_node, combine_node };
-    scene.bloom.outputs = {
-        std::string(quarter_target),
-        std::string(eighth_target),
-        std::string(blur_target),
-        SpecTex_Default.data(),
-    };
+    scene.bloom.nodes   = { downsample_node, second_node, third_node, combine_node };
+    scene.bloom.outputs = render_hdr
+                              ? std::vector<std::string> {
+                                    std::string(mip1_target),
+                                    std::string(mip2_target),
+                                    std::string(mip1_target),
+                                    SpecTex_Default.data(),
+                                }
+                              : std::vector<std::string> {
+                                    std::string(mip1_target),
+                                    std::string(mip2_target),
+                                    std::string(aux_target),
+                                    SpecTex_Default.data(),
+                                };
 
     LOG_VERBOSE("SceneBloomConfig: enabled=%s strength=%.3f threshold=%.3f tint=[%.3f,%.3f,%.3f] "
-                "hdr-requested=%s render-hdr=false hdr-strength=%.3f hdr-threshold=%.3f "
+                "hdr-requested=%s render-hdr=%s hdr-strength=%.3f hdr-threshold=%.3f "
                 "hdr-scatter=%.3f hdr-feather=%.3f hdr-iterations=%d active=true passes=%zu "
-                "quarter=%dx%d eighth=%dx%d",
+                "mip1=%dx%d mip2=%dx%d",
                 scene.bloom.enabled ? "true" : "false",
-                scene.bloom.strength,
-                scene.bloom.threshold,
+                effective_strength,
+                effective_threshold,
                 scene.bloom.tint[0],
                 scene.bloom.tint[1],
                 scene.bloom.tint[2],
                 scene.bloom.hdr ? "true" : "false",
+                render_hdr ? "true" : "false",
                 scene.bloom.hdrStrength,
                 scene.bloom.hdrThreshold,
                 scene.bloom.hdrScatter,
                 scene.bloom.hdrFeather,
                 scene.bloom.hdrIterations,
                 scene.bloom.nodes.size(),
-                quarter_width,
-                quarter_height,
-                eighth_width,
-                eighth_height);
+                mip1_width,
+                mip1_height,
+                mip2_width,
+                mip2_height);
     return true;
 }
 

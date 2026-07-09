@@ -17,6 +17,7 @@
 #include "common/fs/include/fs/VFS.h"
 #include "host/audio/include/audio/SoundManager.h"
 #include "render/vulkanrender/ClearPass.hpp"
+#include "render/vulkanrender/CustomShaderPass.hpp"
 #include "render/vulkanrender/TextPass.hpp"
 #include "rendergraph/RenderGraph.hpp"
 
@@ -105,6 +106,24 @@ const wallpaper::vulkan::ClearPass::Desc* FindClearPass(
         if (auto* clear = dynamic_cast<wallpaper::vulkan::ClearPass*>(pass)) {
             if (clear->desc().target == target) {
                 return &clear->desc();
+            }
+        }
+    }
+    return nullptr;
+}
+
+const wallpaper::vulkan::CustomShaderPass::Desc* FindCustomShaderPassByMaterial(
+    wallpaper::rg::RenderGraph& graph,
+    const std::string& material_name) {
+    for (auto id : graph.topologicalOrder()) {
+        auto* pass = graph.getPass(id);
+        if (auto* shader = dynamic_cast<wallpaper::vulkan::CustomShaderPass*>(pass)) {
+            const auto* material =
+                shader->desc().node != nullptr && shader->desc().node->Mesh() != nullptr
+                    ? shader->desc().node->Mesh()->Material()
+                    : nullptr;
+            if (material != nullptr && material->name == material_name) {
+                return &shader->desc();
             }
         }
     }
@@ -227,6 +246,96 @@ int main() {
         assert(shadow_atlas.withDepth);
         assert(shadow_atlas.allowReuse);
         assert(shadow_atlas.height == 180);
+    }
+
+    {
+        wallpaper::WPSceneParser parser;
+        wallpaper::fs::VFS vfs;
+        wallpaper::audio::SoundManager sound_manager;
+        auto scene = parser.Parse("migrated-hdr-bloom",
+                                  R"({
+                                      "camera": {
+                                          "center": [0, 0, 0],
+                                          "eye": [0, 0, 1],
+                                          "up": [0, 1, 0]
+                                      },
+                                      "general": {
+                                          "clearcolor": [0, 0, 0],
+                                          "bloom": true,
+                                          "hdr": true,
+                                          "bloomtint": [0.9, 0.8, 0.7],
+                                          "bloomhdrstrength": 1.75,
+                                          "bloomhdrthreshold": 1.2,
+                                          "bloomhdrscatter": 0.6,
+                                          "bloomhdrfeather": 0.3,
+                                          "bloomhdriterations": 4,
+                                          "orthogonalprojection": {
+                                              "width": 320,
+                                              "height": 180
+                                          },
+                                          "zoom": 1
+                                      },
+                                      "objects": []
+                                  })",
+                                  vfs,
+                                  sound_manager);
+        assert(scene != nullptr);
+        assert(scene->bloom.hdr);
+        assert(scene->bloom.nodes.size() == 4);
+        assert(scene->bloom.outputs.size() == 4);
+        assert(scene->bloom.outputs[0] == "__hanabi_scene_bloom_mip1");
+        assert(scene->bloom.outputs[1] == "__hanabi_scene_bloom_mip2");
+        assert(scene->bloom.outputs[2] == "__hanabi_scene_bloom_mip1");
+        assert(scene->bloom.outputs[3] == wallpaper::SpecTex_Default.data());
+        assert(scene->renderTargets.count("__hanabi_scene_bloom_mip1") == 1);
+        assert(scene->renderTargets.count("__hanabi_scene_bloom_mip2") == 1);
+        assert(scene->renderTargets.count("__hanabi_scene_bloom_aux") == 0);
+        assert(scene->renderTargets.at("__hanabi_scene_bloom_mip1").width == 160);
+        assert(scene->renderTargets.at("__hanabi_scene_bloom_mip1").height == 90);
+        assert(scene->renderTargets.at("__hanabi_scene_bloom_mip2").width == 80);
+        assert(scene->renderTargets.at("__hanabi_scene_bloom_mip2").height == 45);
+
+        auto graph = wallpaper::BuildWESceneRenderPlan(*scene);
+        const auto* hdr_extract =
+            FindCustomShaderPassByMaterial(*graph, "__hanabi_scene_bloom_hdr_extract");
+        const auto* hdr_downsample =
+            FindCustomShaderPassByMaterial(*graph, "__hanabi_scene_bloom_hdr_downsample");
+        const auto* hdr_upsample =
+            FindCustomShaderPassByMaterial(*graph, "__hanabi_scene_bloom_hdr_upsample");
+        const auto* combine =
+            FindCustomShaderPassByMaterial(*graph, "__hanabi_scene_bloom_combine");
+        assert(hdr_extract != nullptr);
+        assert(hdr_downsample != nullptr);
+        assert(hdr_upsample != nullptr);
+        assert(combine != nullptr);
+        assert(hdr_extract->output == "__hanabi_scene_bloom_mip1");
+        assert(hdr_downsample->output == "__hanabi_scene_bloom_mip2");
+        assert(hdr_upsample->output == "__hanabi_scene_bloom_mip1");
+        assert(combine->output == wallpaper::SpecTex_Default.data());
+        assert(hdr_extract->textures.size() == 1);
+        assert(hdr_extract->textures[0] == wallpaper::SpecTex_Default.data());
+        assert(hdr_downsample->textures.size() == 1);
+        assert(hdr_downsample->textures[0] == "__hanabi_scene_bloom_mip1");
+        assert(hdr_upsample->textures.size() == 1);
+        assert(hdr_upsample->textures[0] == "__hanabi_scene_bloom_mip2");
+        assert(combine->textures.size() == 2);
+        assert(combine->textures[0] == wallpaper::SpecTex_Default.data());
+        assert(combine->textures[1] == "__hanabi_scene_bloom_mip1");
+
+        const auto* material = hdr_extract->node->Mesh()->Material();
+        assert(material != nullptr);
+        assert(material->customShader.constValues.count("g_BloomStrength") == 1);
+        assert(material->customShader.constValues.count("g_BloomThreshold") == 1);
+        assert(material->customShader.constValues.count("g_BloomFeather") == 1);
+        assert(material->customShader.constValues.count("g_BloomTint") == 1);
+        assert(NearlyEqual(material->customShader.constValues.at("g_BloomStrength")[0], 1.75));
+        assert(NearlyEqual(material->customShader.constValues.at("g_BloomThreshold")[0], 1.2));
+        assert(NearlyEqual(material->customShader.constValues.at("g_BloomFeather")[0], 0.3));
+        const auto* upsample_material = hdr_upsample->node->Mesh()->Material();
+        assert(upsample_material != nullptr);
+        assert(upsample_material->customShader.constValues.count("g_BloomScatter") == 1);
+        assert(NearlyEqual(upsample_material->customShader.constValues.at("g_BloomScatter")[0],
+                           0.6));
     }
 
     {
