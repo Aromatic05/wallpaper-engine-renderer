@@ -211,8 +211,8 @@ its independent node-alignment layout contract.
 | `f0eb7c1` | clamp image effect render targets | `DONE` | Primary targets, cameras, effect layers, and scaled FBOs use non-zero extents; passthrough uses active-camera size. |
 | `77bcea2` | transform effect final composite | `DONE` | Transform shaders remain authored final writers; ordinary filters publish through the neutral composite. |
 | `4cab330` | dynamic text effect sizing | `DONE` | Camera, final mesh, source target, and dependent FBOs synchronize after text layout changes. |
-| `082ba2c` | image alpha visibility | `REVIEW` | Visibility and alpha must remain separate. |
-| `faf188d` | image alpha user bindings | `REVIEW` | User property binding plus final alpha fixture. |
+| `082ba2c` | image alpha visibility | `DONE` | Layer visibility remains a topology/residency flag and never rewrites material alpha; hide/show retention is covered. |
+| `faf188d` | image alpha user bindings | `DONE` | Object-form initial values and live updates reach direct, deferred, source, and authored final-effect materials. |
 
 Linked solid layers without authored effects now receive a neutral passthrough only when they are
 used as offscreen dependency sources. The authored/synthetic final effect remains on a private local
@@ -270,6 +270,14 @@ static images qualify: puppet, fullscreen, passthrough, effect-backed, and speci
 rejected. A dedicated parser test validates both eligibility boundaries and exact fallback pixels.
 SceneScript logical-layer proxies also preserve transform value shape before a deferred or nonvisual
 layer owns a `SceneNode`: origin and angles return zero vectors and scale returns a unit vector.
+
+Image visibility and image alpha intentionally remain separate in the local runtime. Visibility updates
+only change layer graph residency and `SceneNode::LayerVisible`; opacity stays in material uniforms and
+therefore survives hide/show cycles. Existing generic property registrations already parse object-form
+alpha bindings, clamp them to the normalized domain, materialize deferred images before the remaining
+same-dispatch bindings run, and synchronize direct/source/authored-final effect materials. A dedicated
+integration test covers initial overrides, deferred visibility, same-dispatch alpha, hidden updates,
+reshow retention, and direct-final effect ownership. No parallel `SceneNode` alpha state is introduced.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

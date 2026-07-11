@@ -530,6 +530,35 @@ target_compile_options(image-color-blend-test PRIVATE ${warn_opts} -UNDEBUG)
 add_test(NAME image-color-blend-test COMMAND image-color-blend-test)
 
 add_executable(
+  image-alpha-visibility-test
+  scene/composition/image_alpha_visibility_test.cpp)
+
+target_link_libraries(
+  image-alpha-visibility-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend)
+target_include_directories(
+  image-alpha-visibility-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../../third_party/nlohmann/include)
+target_compile_options(image-alpha-visibility-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME image-alpha-visibility-test COMMAND image-alpha-visibility-test)
+
+add_executable(
   effect-compatibility-test
   scene/composition/effect_compatibility_test.cpp)
 
