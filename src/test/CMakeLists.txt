@@ -467,7 +467,7 @@ target_include_directories(
   ../common/scene
   ../common/utils/include
   ../render/vulkan/include)
-target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts})
+target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts} -UNDEBUG)
 
 add_test(NAME effect-rendergraph-correctness-test COMMAND effect-rendergraph-correctness-test)
 

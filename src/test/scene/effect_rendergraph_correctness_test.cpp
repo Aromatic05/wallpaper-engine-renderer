@@ -349,5 +349,28 @@ int main() {
         assert(! bridged_text->referencesTextLayer(77));
     }
 
+    {
+        Scene scene;
+        scene.renderTargets[SpecTex_Default.data()] = { 64, 64, true };
+
+        auto hidden_parent = makeNode("hidden-particle-parent", { "parent.png" });
+        hidden_parent->ID() = 501;
+        hidden_parent->SetVisible(false);
+
+        auto generated_child = makeNode("generated-particle-child", { "child.png" });
+        generated_child->ID() = -1;
+        hidden_parent->AppendChild(generated_child);
+        scene.sceneGraph->AppendChild(hidden_parent);
+
+        auto hidden_graph = wallpaper::BuildWESceneRenderPlan(scene);
+        assert(findShaderByMaterial(*hidden_graph, "hidden-particle-parent") == nullptr);
+        assert(findShaderByMaterial(*hidden_graph, "generated-particle-child") == nullptr);
+
+        hidden_parent->SetVisible(true);
+        auto visible_graph = wallpaper::BuildWESceneRenderPlan(scene);
+        assert(findShaderByMaterial(*visible_graph, "hidden-particle-parent") != nullptr);
+        assert(findShaderByMaterial(*visible_graph, "generated-particle-child") != nullptr);
+    }
+
     return 0;
 }

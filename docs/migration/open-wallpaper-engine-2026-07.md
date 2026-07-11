@@ -123,7 +123,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 |---|---|---|---|
 | `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
 | `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
-| `1691a07` | hidden particles and rain drag | `PARTIAL` | Drag now uses the authored linear strength without the previous extra factor of two. Hidden generated particle subtree elision remains separate work; font fallback belongs to Stage 5. |
+| `1691a07` | hidden particles and rain drag | `DONE` | Drag uses authored linear strength. Local node-visibility traversal already skips generated descendants by subtree, now covered with assertions enabled. Font fallback is tracked separately in Stage 5. |
 | `ebd56ee` | node field animations | `REVIEW` | Compare with local property animation path. |
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
@@ -154,6 +154,11 @@ emission, lifetime, size, velocity, and control-point fields.
 
 Particle drag now evaluates `-speed * strength * density`. Scalar and vector regression assertions
 lock the authored coefficient and direction, preventing the previous doubled damping from returning.
+
+Render-plan traversal stops at an invisible node before visiting children, so anonymous/generated
+particle descendants do not need layer IDs to be elided. The render-graph regression now toggles a
+hidden particle parent with an ID-less child and verifies both passes disappear and return together.
+The target explicitly undefines `NDEBUG`, making its existing and new assertions effective.
 
 ### Stage 4 — RenderGraph and visual composition
 
