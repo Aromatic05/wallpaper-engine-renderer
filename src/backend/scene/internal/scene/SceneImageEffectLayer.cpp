@@ -325,6 +325,9 @@ SceneImageEffectNode* SceneImageEffectLayer::ResolveEffectPingPongChain(
             assert(it->sceneNode->HasMaterial());
 
             auto& material = *(it->sceneNode->Mesh()->Material());
+            for (const auto& [name, value] : it->effect_pass_shader_values) {
+                material.customShader.constValues[name] = value;
+            }
             material.blenmode = BlendMode::Normal;
             it->sceneNode->SetCamera(effect_cam.data());
             it->camera_override.clear();
@@ -484,6 +487,9 @@ void SceneImageEffectLayer::ResolveVisibleFinalOutput(
     final_output_node.output = std::string(final_output);
     auto& mesh               = *(final_output_node.sceneNode->Mesh());
     auto& material           = *mesh.Material();
+    for (const auto& [name, value] : final_output_node.final_quad_shader_values) {
+        material.customShader.constValues[name] = value;
+    }
     if (m_fullscreen) {
         // Fullscreen postprocess final passes already draw the unit effect mesh and may still
         // multiply by g_ModelViewProjectionMatrix. Keep that final pass on the effect camera so

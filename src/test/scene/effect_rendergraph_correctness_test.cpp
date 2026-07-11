@@ -1,6 +1,7 @@
 #include "backend/scene/internal/engine/WESceneRenderPlanBuilder.hpp"
 #include "backend/scene/internal/parser/WPShaderParser.hpp"
 #include "backend/scene/internal/parser/effect/FinalComposite.hpp"
+#include "backend/scene/internal/parser/effect/QuadPosition.hpp"
 #include "backend/scene/internal/wpscene/WPMaterial.h"
 #include "common/fs/include/fs/VFS.h"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
@@ -235,17 +236,32 @@ int main() {
             R"(
                 // [COMBO] {"combo":"TRANSPARENCY","default":1}
                 uniform sampler2D g_Texture0; // {"material":"previous"}
+                uniform vec2 g_Center; // {"material":"Center","default":"0.5 0.5","position":true}
             )",
             &parsed_info,
             texture_info);
         assert(! parsed_source.empty());
         assert(parsed_info.combos.count("TRANSPARENCY") == 1);
         assert(parsed_info.textureMaterials.at("g_Texture0") == "previous");
+        assert(parsed_info.positionUniforms.count("g_Center") == 1);
+        material.shader = "effects/transform";
+        material.combos["MODE"] = 1;
+        assert(wallpaper::UsesEffectQuadPositionSpace(material));
+        assert(wallpaper::IsShaderPositionUniform(parsed_info, "g_Center"));
+        const auto normalized = wallpaper::NormalizeEffectPositionValue({ 0.25f, 0.75f });
+        assert(normalized == std::vector<float>({ -0.5f, 0.5f }));
+        material.shader = "effects/blur";
+        material.combos.clear();
         assert(wallpaper::CanCompositeFinalEffectMaterial(material, parsed_info));
     }
 
     {
         auto direct = makeFixture(false, true);
+        auto& final_node = direct->effectB->nodes.front();
+        final_node.effect_pass_shader_values["g_Center"] =
+            wallpaper::ShaderValue(std::vector<float> { -0.5f, 0.5f });
+        final_node.final_quad_shader_values["g_Center"] =
+            wallpaper::ShaderValue(std::vector<float> { 0.25f, 0.75f });
         auto graph = wallpaper::BuildWESceneRenderPlan(direct->scene);
         auto* authored = findShaderByMaterial(*graph, "effect-b");
         auto* neutral = findShaderByMaterial(*graph, "final-composite");
@@ -253,10 +269,26 @@ int main() {
         assert(! direct->layer->PublishesPrivateFinalComposite());
         assert(authored != nullptr && authored->output == SpecTex_Default);
         assert(neutral != nullptr && neutral->should_execute && ! neutral->should_execute());
+        const auto& direct_center = final_node.sceneNode->Mesh()
+                                        ->Material()
+                                        ->customShader.constValues.at("g_Center");
+        assert(direct_center.size() == 2 && direct_center[0] == 0.25f &&
+               direct_center[1] == 0.75f);
+        auto rebuilt = wallpaper::BuildWESceneRenderPlan(direct->scene);
+        (void)rebuilt;
+        const auto& rebuilt_center = final_node.sceneNode->Mesh()
+                                         ->Material()
+                                         ->customShader.constValues.at("g_Center");
+        assert(rebuilt_center[0] == 0.25f && rebuilt_center[1] == 0.75f);
     }
 
     {
         auto private_final = makeFixture(false, false);
+        auto& private_node = private_final->effectB->nodes.front();
+        private_node.effect_pass_shader_values["g_Center"] =
+            wallpaper::ShaderValue(std::vector<float> { -0.5f, 0.5f });
+        private_node.final_quad_shader_values["g_Center"] =
+            wallpaper::ShaderValue(std::vector<float> { 0.25f, 0.75f });
         auto graph = wallpaper::BuildWESceneRenderPlan(private_final->scene);
         auto* authored = findShaderByMaterial(*graph, "effect-b");
         auto* neutral = findShaderByMaterial(*graph, "final-composite");
@@ -266,6 +298,11 @@ int main() {
         assert(neutral != nullptr && neutral->output == SpecTex_Default);
         assert(neutral->should_execute && neutral->should_execute());
         assert(neutral->textures.front() == private_final->layer->ResolvedPrivateOutputTarget());
+        const auto& private_center = private_node.sceneNode->Mesh()
+                                         ->Material()
+                                         ->customShader.constValues.at("g_Center");
+        assert(private_center.size() == 2 && private_center[0] == -0.5f &&
+               private_center[1] == 0.5f);
     }
 
     {

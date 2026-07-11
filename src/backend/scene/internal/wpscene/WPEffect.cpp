@@ -50,6 +50,7 @@ bool WPEffectFbo::FromJson(const nlohmann::json& json) {
 
     GET_JSON_NAME_VALUE_NOWARN(json, "scale", scale);
     GET_JSON_NAME_VALUE_NOWARN(json, "fit", fit);
+    GET_JSON_NAME_VALUE_NOWARN(json, "unique", unique);
     if (scale == 0) {
         LOG_ERROR("fbo scale can't be 0");
         scale = 1;

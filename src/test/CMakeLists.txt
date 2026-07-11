@@ -530,6 +530,37 @@ target_compile_options(image-color-blend-test PRIVATE ${warn_opts} -UNDEBUG)
 add_test(NAME image-color-blend-test COMMAND image-color-blend-test)
 
 add_executable(
+  effect-compatibility-test
+  scene/composition/effect_compatibility_test.cpp)
+
+target_link_libraries(
+  effect-compatibility-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend
+  wpTimer)
+target_include_directories(
+  effect-compatibility-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../host/timer/include
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../../third_party/nlohmann/include)
+target_compile_options(effect-compatibility-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME effect-compatibility-test COMMAND effect-compatibility-test)
+
+add_executable(
   text-effect-composition-test
   scene/text/text_effect_composition_test.cpp)
 

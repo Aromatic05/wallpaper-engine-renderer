@@ -7,6 +7,7 @@
 #include <Eigen/Geometry>
 #include "core/Literals.hpp"
 #include "Type.hpp"
+#include "SceneShader.h"
 
 namespace wallpaper
 {
@@ -33,6 +34,8 @@ struct SceneImageEffectNode {
     // Only shaders with a proven layer-composite contract may become the persistent visible final
     // writer. Ordinary filters stay private and are published by the neutral final composite.
     bool        can_composite_final { false };
+    ShaderValueMap effect_pass_shader_values;
+    ShaderValueMap final_quad_shader_values;
     // Some effect chains end with a synthetic layer-surface writer. Animated puppet images with
     // authored effects are the important case: intermediate shaders run as fullscreen private
     // passes, then the final synthetic material samples that result through the puppet mesh so

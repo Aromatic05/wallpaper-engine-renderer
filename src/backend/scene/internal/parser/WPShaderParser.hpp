@@ -29,6 +29,7 @@ struct WPShaderInfo {
     // capability detection. Keep them by uniform name so the parser can distinguish transparent
     // previous-frame shaders from ordinary filters without hard-coding every shader path.
     Map<std::string, std::string> textureMaterials;
+    Set<std::string> positionUniforms;
 };
 
 struct WPPreprocessorInfo {

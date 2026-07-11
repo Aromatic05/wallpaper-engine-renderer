@@ -201,14 +201,14 @@ its independent node-alignment layout contract.
 | `1362b6d` | simplify copybackground color blend | `DONE` | Consolidated into final-owner planning; no dedicated additive workaround remains. |
 | `fdce1ee` | copybackground effect color blend | `DONE` | COPYBG is propagated as a shader combo through authored and synthetic final effects. |
 | `680b3d8` | dynamic effect text clipping | `DONE` | Cropped visible source metrics drive bridge targets and final mesh placement. |
-| `26fc451` | atmosphere effect rendering | `REVIEW` | Real wallpaper and synthetic pass graph. |
-| `40c60bb` | spin effect final quad center | `REVIEW` | Transform center regression. |
-| `73342e3` | clock highlight rendering | `REVIEW` | Calendar/clock visual fixture. |
+| `26fc451` | atmosphere effect rendering | `DONE` | Legacy atmosphere aliases, light combo, uniform seeds, shader initialization, and passthrough target sizing are covered. |
+| `40c60bb` | spin effect final quad center | `DONE` | Position-annotated spin/transform uniforms use effect-space values internally and authored values on direct final quads. |
+| `73342e3` | clock highlight rendering | `DONE` | Unique FBOs, microsecond frame timing, and the existing dynamic text bridge path cover the relevant rendering behavior. |
 | `9c7ef47` | text alpha composition | `DONE` | Private glyph source uses straight RGBA; translucent final composite applies alpha once. |
 | `e366bc0` | copybackground video blend | `DONE` | COPYBG shader composition and existing getVideoTexture runtime controls are covered together. |
 | `c79db16` | scroll effect final composite | `DONE` | Scroll shaders remain authored final writers. |
 | `fdfd195` | copybackground color blend | `DONE` | Superseded fixed-additive experiment replaced by shader-owned blend math. |
-| `f0eb7c1` | clamp image effect render targets | `REVIEW` | Oversized/negative target extent fixture. |
+| `f0eb7c1` | clamp image effect render targets | `DONE` | Primary targets, cameras, effect layers, and scaled FBOs use non-zero extents; passthrough uses active-camera size. |
 | `77bcea2` | transform effect final composite | `DONE` | Transform shaders remain authored final writers; ordinary filters publish through the neutral composite. |
 | `4cab330` | dynamic text effect sizing | `DONE` | Camera, final mesh, source target, and dependent FBOs synchronize after text layout changes. |
 | `082ba2c` | image alpha visibility | `REVIEW` | Visibility and alpha must remain separate. |
@@ -252,6 +252,17 @@ synthetic color-blend writer, and no fixed additive material blend is used. Lega
 0–100 range is normalized at object parse time. Passes that preserve destination alpha now zero only
 their alpha blend factors while retaining authored RGB blending. Integration tests cover direct,
 effect-backed, linked-solid, shader-combo, alpha-write, and existing video-texture control paths.
+
+Effect compatibility now shares one bounded extent contract: invalid or sub-pixel primary dimensions
+clamp to 1, ordinary targets use authored effect-source size, and fullscreen/passthrough effects use
+the active camera extent without changing layer geometry. Authored `unique` FBOs are non-reusable,
+including text-effect FBOs. Frame pacing computes the requested interval directly in microseconds.
+The legacy atmosphere material receives its historical aliases, `g_ViewForward`, default light index,
+and initialized fragment-shader locals without affecting unrelated shaders. Shader metadata also keeps
+`position:true` uniforms in its versioned cache. Spin/transform MODE=1 passes receive normalized
+effect-space centers on every graph build, while a direct final writer restores the authored center;
+private writers remain normalized. The unrelated particle-rate reversal included in the clock commit
+is intentionally not adopted because Stage 3 already has a tested, newer local rate contract.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

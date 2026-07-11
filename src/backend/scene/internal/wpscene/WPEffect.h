@@ -39,6 +39,7 @@ public:
     std::string            format;
     uint32_t               scale { 1 };
     uint32_t               fit { 0 };
+    bool                   unique { false };
 };
 
 class WPImageEffect {
@@ -64,7 +65,7 @@ public:
     std::vector<WPEffectFbo>    fbos;
 };
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WPEffectFbo, name, scale, fit);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WPEffectFbo, name, scale, fit, unique);
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WPImageEffect, name, visible, passes, fbos, materials);
 
 } // namespace wpscene

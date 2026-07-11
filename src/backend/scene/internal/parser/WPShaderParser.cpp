@@ -1516,6 +1516,7 @@ inline void ParseWPShader(const std::string& src, WPShaderInfo* pWPShaderInfo,
     auto& shadervalues = pWPShaderInfo->svs;
     auto& defTexs      = pWPShaderInfo->defTexs;
     auto& textureMaterials = pWPShaderInfo->textureMaterials;
+    auto& positionUniforms = pWPShaderInfo->positionUniforms;
     idx   texcount     = std::ssize(texinfos);
 
     // pos start of line
@@ -1554,6 +1555,9 @@ inline void ParseWPShader(const std::string& src, WPShaderInfo* pWPShaderInfo,
                     ShaderValue sv;
                     std::string name  = defines.back();
                     bool        istex = name.compare(0, 9, "g_Texture") == 0;
+                    bool position = false;
+                    GET_JSON_NAME_VALUE_NOWARN(sv_json, "position", position);
+                    if (position) positionUniforms.insert(name);
                     if (istex) {
                         wpscene::WPUniformTex wput;
                         wput.FromJson(sv_json);
@@ -2077,7 +2081,7 @@ inline std::string GenPreparedShaderSha1(std::span<const WPShaderUnit> units,
 inline std::string GenPreShaderSha1(std::string_view expanded_src,
                                     std::span<const WPShaderTexInfo> texinfos) {
     std::ostringstream out;
-    out << "pre-shader-v4-final-composite-metadata\n";
+    out << "pre-shader-v5-quad-position-metadata\n";
     out << utils::genSha1(expanded_src) << '\n';
     for (const auto& texinfo : texinfos) {
         out << static_cast<int>(texinfo.enabled);
@@ -2125,6 +2129,22 @@ inline void SaveStringMap(const Map<std::string, std::string>& map, fs::IBinaryS
         WriteString(file, key);
         WriteString(file, value);
     }
+}
+
+inline bool LoadStringSet(Set<std::string>& set, fs::IBinaryStream& file) {
+    set.clear();
+    const auto count = file.ReadUint32();
+    for (u32 i = 0; i < count; i++) {
+        std::string value;
+        if (! ReadString(file, value)) return false;
+        set.insert(std::move(value));
+    }
+    return true;
+}
+
+inline void SaveStringSet(const Set<std::string>& set, fs::IBinaryStreamW& file) {
+    file.WriteUint32(static_cast<u32>(set.size()));
+    for (const auto& value : set) WriteString(file, value);
 }
 
 inline bool LoadShaderValue(ShaderValue& value, fs::IBinaryStream& file) {
@@ -2191,7 +2211,7 @@ inline void SaveDefaultTexs(const WPDefaultTexs& def_texs, fs::IBinaryStreamW& f
 
 inline bool LoadPreShaderInfo(WPShaderInfo& shader_info, fs::IBinaryStream& file) {
     const auto version = ReadVersion("WSHM", file);
-    if (version != 2) return false;
+    if (version != 3) return false;
 
     shader_info = {};
     if (! LoadStringMap(shader_info.combos, file)) return false;
@@ -2199,16 +2219,18 @@ inline bool LoadPreShaderInfo(WPShaderInfo& shader_info, fs::IBinaryStream& file
     if (! LoadShaderValueMap(shader_info.svs, file)) return false;
     if (! LoadDefaultTexs(shader_info.defTexs, file)) return false;
     if (! LoadStringMap(shader_info.textureMaterials, file)) return false;
+    if (! LoadStringSet(shader_info.positionUniforms, file)) return false;
     return true;
 }
 
 inline void SavePreShaderInfo(const WPShaderInfo& shader_info, fs::IBinaryStreamW& file) {
-    WriteVersion("WSHM", file, 2);
+    WriteVersion("WSHM", file, 3);
     SaveStringMap(shader_info.combos, file);
     SaveStringMap(shader_info.alias, file);
     SaveShaderValueMap(shader_info.svs, file);
     SaveDefaultTexs(shader_info.defTexs, file);
     SaveStringMap(shader_info.textureMaterials, file);
+    SaveStringSet(shader_info.positionUniforms, file);
 }
 
 inline void MergeShaderInfo(WPShaderInfo& into, const WPShaderInfo& from) {
@@ -2225,6 +2247,7 @@ inline void MergeShaderInfo(WPShaderInfo& into, const WPShaderInfo& from) {
     for (const auto& [key, value] : from.textureMaterials) {
         into.textureMaterials[key] = value;
     }
+    into.positionUniforms.insert(from.positionUniforms.begin(), from.positionUniforms.end());
 }
 
 struct ExpandedShaderSource {

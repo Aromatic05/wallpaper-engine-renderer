@@ -18,6 +18,9 @@
 #include "WPParticleParser.hpp"
 #include "effect/FinalComposite.hpp"
 #include "effect/ColorBlend.hpp"
+#include "effect/Extent.hpp"
+#include "effect/LegacyAtmosphere.hpp"
+#include "effect/QuadPosition.hpp"
 #include "particle/Animation.hpp"
 #include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
@@ -1637,12 +1640,15 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
     for (auto& unit : sd_units) {
         unit.src = WPShaderParser::PreShaderSrc(vfs, unit.src, pWPShaderInfo, texinfos);
     }
+    ApplyLegacyAtmosphereUniformAliases(wpmat, *pWPShaderInfo);
+    ApplyLegacyAtmosphereShaderCompat(wpmat, sd_units);
 
     shader->default_uniforms = pWPShaderInfo->svs;
 
     for (const auto& el : wpmat.combos) {
         pWPShaderInfo->combos[el.first] = std::to_string(el.second);
     }
+    ApplyLegacyAtmosphereLightCombo(wpmat, *pWPShaderInfo);
 
     if (pWPShaderInfo->defTexs.size() > 0) {
         for (auto& t : pWPShaderInfo->defTexs) {
@@ -2819,14 +2825,33 @@ void ApplyResolvedConstvalue(SceneMaterial& material, const std::string& materia
 }
 
 void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
-                    const WPShaderInfo& info) {
+                    const WPShaderInfo& info,
+                    ShaderValueMap* effect_pass_shader_values = nullptr,
+                    ShaderValueMap* final_quad_shader_values = nullptr) {
+    const bool uses_quad_position = UsesEffectQuadPositionSpace(wpmat);
+    auto apply_value = [&](const std::string& material_value_name,
+                           const std::vector<float>& value,
+                           const MaterialValueUniformResolution& resolution) {
+        if (!resolution.resolved()) return;
+        auto effective_value = value;
+        if (uses_quad_position && IsShaderPositionUniform(info, resolution.uniform_name)) {
+            if (final_quad_shader_values != nullptr) {
+                (*final_quad_shader_values)[resolution.uniform_name] = ShaderValue(value);
+            }
+            effective_value = NormalizeEffectPositionValue(std::move(effective_value));
+            if (effect_pass_shader_values != nullptr) {
+                (*effect_pass_shader_values)[resolution.uniform_name] = ShaderValue(effective_value);
+            }
+        }
+        ApplyResolvedConstvalue(material, material_value_name, effective_value, resolution);
+    };
     // Apply exact authored material keys before display-name fallbacks. Some Wallpaper Engine
     // projects serialize both forms in one pass; the display-name value is the editor-visible
     // override and must be allowed to replace the internal default key deterministically.
     for (const auto& [name, value] : wpmat.constantshadervalues) {
         const auto resolution = ResolveMaterialValueUniform(info, name, false);
         if (! resolution.resolved()) continue;
-        ApplyResolvedConstvalue(material, name, value, resolution);
+        apply_value(name, value, resolution);
     }
 
     for (const auto& [name, value] : wpmat.constantshadervalues) {
@@ -2838,7 +2863,7 @@ void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
 
         const auto resolution = ResolveMaterialValueUniform(info, name, true);
         if (resolution.resolved()) {
-            ApplyResolvedConstvalue(material, name, value, resolution);
+            apply_value(name, value, resolution);
             continue;
         }
 
@@ -2848,6 +2873,7 @@ void LoadConstvalue(SceneMaterial& material, const wpscene::WPMaterial& wpmat,
             continue;
         }
 
+        if (IsLegacyAtmosphereShadowValue(wpmat, name)) continue;
         LOG_WARN("ShaderValue: material-value='%s' skipped reason=%s",
                  name.c_str(),
                  MaterialValueUniformResolutionKindName(resolution.kind));
@@ -4466,10 +4492,14 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
         wpimgobj.fullscreen || wpimgobj.effectSourceScreenBound;
     const bool use_copybackground_source_helper =
         ShouldUseCopyBackgroundSourceHelper(hasEffect, isCompose, isSolidLayer, wpimgobj);
-    const std::array<float, 2> effect_source_size =
+    const std::array<float, 2> authored_effect_source_size =
         wpimgobj.effectSourceSize[0] > 0.0f && wpimgobj.effectSourceSize[1] > 0.0f
             ? wpimgobj.effectSourceSize
             : wpimgobj.size;
+    const std::array<float, 2> effect_source_size = ResolveImageEffectTargetSize(
+        context.scene.get(), wpimgobj, authored_effect_source_size);
+    const auto effect_extent =
+        NonZeroRenderTargetExtent(effect_source_size[0], effect_source_size[1]);
     // skip no effect fullscreen layer
     if (! hasEffect && wpimgobj.fullscreen) {
         RegisterLogicalImageLayer(context, wpimgobj, false);
@@ -4758,16 +4788,14 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
         std::string nodeAddr = getAddr(spImgNode.get());
         const auto  effect_camera_clip = ResolveImageEffectCameraClipRange(hasAnimatedPuppetMesh);
         // set camera to attatch effect
+        const int32_t source_camera_width  = effect_extent[0];
+        const int32_t source_camera_height = effect_extent[1];
+        scene.cameras[nodeAddr] = std::make_shared<SceneCamera>(
+            source_camera_width,
+            source_camera_height,
+            effect_camera_clip.near_clip,
+            effect_camera_clip.far_clip);
         if (isCompose) {
-            const int32_t source_camera_width =
-                std::max<int32_t>(1, static_cast<int32_t>(std::lround(effect_source_size[0])));
-            const int32_t source_camera_height =
-                std::max<int32_t>(1, static_cast<int32_t>(std::lround(effect_source_size[1])));
-            scene.cameras[nodeAddr] = std::make_shared<SceneCamera>(
-                source_camera_width,
-                source_camera_height,
-                effect_camera_clip.near_clip,
-                effect_camera_clip.far_clip);
             scene.cameras.at(nodeAddr)->AttatchNode(spWorldNode);
             LOG_VERBOSE("SceneCompositionLayerSourceCamera: layer=%d name='%s' camera='%s' "
                      "size=[%d, %d] source-target=[%.3f, %.3f] near=%.3f far=%.3f "
@@ -4783,23 +4811,21 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                      effect_camera_clip.far_clip,
                      hasAnimatedPuppetMesh ? "true" : "false");
         } else {
-            // Keep the effect camera extents in display units. The render target
-            // resolution below may still be reduced independently.
-            i32 w                   = (i32)wpimgobj.size[0];
-            i32 h                   = (i32)wpimgobj.size[1];
-            scene.cameras[nodeAddr] = std::make_shared<SceneCamera>(
-                w, h, effect_camera_clip.near_clip, effect_camera_clip.far_clip);
             scene.cameras.at(nodeAddr)->AttatchNode(context.effect_camera_node);
             LOG_VERBOSE("SceneImageEffectSourceCamera: layer=%d name='%s' camera='%s' "
-                     "size=[%d, %d] near=%.3f far=%.3f animated-puppet=%s",
+                     "size=[%d, %d] target-size=[%.3f, %.3f] near=%.3f far=%.3f "
+                     "animated-puppet=%s passthrough=%s",
                      wpimgobj.id,
                      wpimgobj.name.c_str(),
                      nodeAddr.c_str(),
-                     w,
-                     h,
+                     source_camera_width,
+                     source_camera_height,
+                     effect_source_size[0],
+                     effect_source_size[1],
                      effect_camera_clip.near_clip,
                      effect_camera_clip.far_clip,
-                     hasAnimatedPuppetMesh ? "true" : "false");
+                     hasAnimatedPuppetMesh ? "true" : "false",
+                     wpimgobj.config.passthrough ? "true" : "false");
         }
         scene.objectRuntimeCameraNames[wpimgobj.id].push_back(nodeAddr);
         spImgNode->SetCamera(nodeAddr);
@@ -4815,7 +4841,11 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
         auto* effect_world_node =
             (use_detached_effect_world_node || isCompose) ? spWorldNode.get() : nullptr;
         auto imgEffectLayer = std::make_shared<SceneImageEffectLayer>(
-            effect_world_node, wpimgobj.size[0], wpimgobj.size[1], effect_ppong_a, effect_ppong_b);
+            effect_world_node,
+            static_cast<float>(effect_extent[0]),
+            static_cast<float>(effect_extent[1]),
+            effect_ppong_a,
+            effect_ppong_b);
         {
             // Fullscreen image-effect layers are postprocess-style framebuffer passes. Remember
             // that authored shape here so ResolveEffect() can keep their final shader on the
@@ -4849,10 +4879,10 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
         // set renderTarget for ping-pong operate
         {
             scene.renderTargets[effect_ppong_a] = {
-                .width      = (uint16_t)effect_source_size[0],
-                .height     = (uint16_t)effect_source_size[1],
-                .mapWidth   = (uint16_t)effect_source_size[0],
-                .mapHeight  = (uint16_t)effect_source_size[1],
+                .width      = effect_extent[0],
+                .height     = effect_extent[1],
+                .mapWidth   = effect_extent[0],
+                .mapHeight  = effect_extent[1],
                 .allowReuse = true,
             };
             if (effect_source_screen_bound) {
@@ -4959,7 +4989,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                             .height     = 2,
                             .mapWidth   = 2,
                             .mapHeight  = 2,
-                            .allowReuse = ! persistent_feedback_fbo,
+                            .allowReuse = ! persistent_feedback_fbo && ! wpfbo.unique,
                         };
                         scene.renderTargets[rtname].bind = {
                             .enable = true,
@@ -4976,7 +5006,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                             .height     = fbo_size[1],
                             .mapWidth   = fbo_size[0],
                             .mapHeight  = fbo_size[1],
-                            .allowReuse = ! persistent_feedback_fbo,
+                            .allowReuse = ! persistent_feedback_fbo && ! wpfbo.unique,
                         };
                     }
                     if (wpfbo.fit > 0 || persistent_feedback_fbo) {
@@ -5091,7 +5121,13 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                     break;
                 }
                 // load glname from alias and load to constvalue
-                LoadConstvalue(material, wpmat, wpEffShaderInfo);
+                ShaderValueMap effect_pass_shader_values;
+                ShaderValueMap final_quad_shader_values;
+                LoadConstvalue(material,
+                               wpmat,
+                               wpEffShaderInfo,
+                               &effect_pass_shader_values,
+                               &final_quad_shader_values);
                 LoadUserShaderValue(material, wpmat, wpEffShaderInfo, context.user_properties);
                 auto spMesh = std::make_shared<SceneMesh>();
                 {
@@ -5134,6 +5170,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                     .force_alpha_write = false,
                     .can_composite_final =
                         CanCompositeFinalEffectMaterial(wpmat, wpEffShaderInfo),
+                    .effect_pass_shader_values = std::move(effect_pass_shader_values),
+                    .final_quad_shader_values = std::move(final_quad_shader_values),
                     .private_final_output_uses_layer_surface =
                         hasAnimatedPuppetMesh && wpmat.use_puppet,
                 });
@@ -5425,7 +5463,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                     .height     = fbo_size[1],
                     .mapWidth   = fbo_size[0],
                     .mapHeight  = fbo_size[1],
-                    .allowReuse = ! persistent_feedback_fbo,
+                    .allowReuse = ! persistent_feedback_fbo && ! wp_fbo.unique,
                 };
                 if (wp_fbo.fit > 0 || persistent_feedback_fbo) {
                     LOG_INFO("SceneTextEffectFboResolve: layer=%d effect-id=%d effect='%s' "
@@ -5517,7 +5555,13 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                     effect_materials_ok = false;
                     break;
                 }
-                LoadConstvalue(effect_material, material_source, effect_shader_info);
+                ShaderValueMap effect_pass_shader_values;
+                ShaderValueMap final_quad_shader_values;
+                LoadConstvalue(effect_material,
+                               material_source,
+                               effect_shader_info,
+                               &effect_pass_shader_values,
+                               &final_quad_shader_values);
                 LoadUserShaderValue(
                     effect_material, material_source, effect_shader_info, context.user_properties);
 
@@ -5567,6 +5611,8 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                     .force_alpha_write = false,
                     .can_composite_final =
                         CanCompositeFinalEffectMaterial(material_source, effect_shader_info),
+                    .effect_pass_shader_values = std::move(effect_pass_shader_values),
+                    .final_quad_shader_values = std::move(final_quad_shader_values),
                     .private_final_output_uses_layer_surface = false,
                 });
             }
