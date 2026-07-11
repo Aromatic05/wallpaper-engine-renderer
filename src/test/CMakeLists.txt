@@ -75,6 +75,26 @@ target_compile_options(wp-pkg-index-test PRIVATE ${warn_opts})
 add_test(NAME wp-pkg-index-test COMMAND wp-pkg-index-test)
 
 add_executable(
+  corpus-manifest-test
+  corpus/corpus_manifest_test.cpp)
+
+target_link_libraries(corpus-manifest-test PRIVATE wpSceneBackend)
+target_include_directories(
+  corpus-manifest-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../common
+  ../common/fs/include
+  ../../third_party/nlohmann/include)
+target_compile_definitions(
+  corpus-manifest-test PRIVATE
+  WE_CORPUS_MANIFEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/corpus/manifest.json")
+target_compile_options(corpus-manifest-test PRIVATE ${warn_opts})
+
+add_test(NAME corpus-manifest-test COMMAND corpus-manifest-test)
+
+add_executable(
   we-renderer-scene-options-test
   abi/we_renderer_scene_options_test.cpp)
 
