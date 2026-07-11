@@ -59,6 +59,22 @@ target_compile_options(user-properties-json-test PRIVATE ${warn_opts})
 add_test(NAME user-properties-json-test COMMAND user-properties-json-test)
 
 add_executable(
+  wp-pkg-index-test
+  scene/pkg/pkg_index_test.cpp)
+
+target_link_libraries(wp-pkg-index-test PRIVATE wpSceneBackend)
+target_include_directories(
+  wp-pkg-index-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../common
+  ../common/fs/include)
+target_compile_options(wp-pkg-index-test PRIVATE ${warn_opts})
+
+add_test(NAME wp-pkg-index-test COMMAND wp-pkg-index-test)
+
+add_executable(
   we-renderer-scene-options-test
   abi/we_renderer_scene_options_test.cpp)
 

@@ -1,4 +1,5 @@
 #include "WPPkgFs.hpp"
+#include "WPPkgIndex.hpp"
 #include "utils/Logging.h"
 #include "fs/LimitedBinaryStream.h"
 #include "fs/CBinaryStream.h"
@@ -6,6 +7,7 @@
 #include "utils/Sha.hpp"
 #include "WPCommon.hpp"
 #include <filesystem>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -22,15 +24,25 @@ struct CachePkgFile {
     idx         length { 0 };
 };
 
-std::string ReadSizedString(IBinaryStream& f) {
-    idx ilen = f.ReadInt32();
-    assert(ilen >= 0);
+constexpr i32 MAX_CACHE_ENTRY_COUNT = 1'000'000;
+constexpr i32 MAX_CACHE_STRING_SIZE = 16 * 1024 * 1024;
 
-    usize       len = (usize)ilen;
-    std::string result;
-    result.resize(len);
-    f.Read(result.data(), len);
-    return result;
+bool CanRead(const IBinaryStream& file, idx bytes) {
+    if (bytes < 0) return false;
+    const auto position = file.Tell();
+    const auto size     = file.Size();
+    return position >= 0 && size >= position && bytes <= size - position;
+}
+
+bool ReadSizedString(IBinaryStream& file, std::string& result) {
+    if (! CanRead(file, static_cast<idx>(sizeof(i32)))) return false;
+    const auto length = file.ReadInt32();
+    if (length < 0 || length > MAX_CACHE_STRING_SIZE) return false;
+    if (! CanRead(file, static_cast<idx>(length))) return false;
+
+    result.assign(static_cast<size_t>(length), '\0');
+    return length == 0
+           || file.Read(result.data(), static_cast<usize>(length)) == static_cast<usize>(length);
 }
 
 template<typename T>
@@ -80,18 +92,21 @@ bool LoadPkgFilesFromCache(std::string_view pkgpath, const PkgFileStamp& stamp, 
     if (! ReadPod(*cache_file, cached_size) || ! ReadPod(*cache_file, cached_mtime)) return false;
     if (cached_size != stamp.size || cached_mtime != stamp.mtime) return false;
 
-    version = ReadSizedString(*cache_file);
+    if (! ReadSizedString(*cache_file, version)) return false;
 
+    if (! CanRead(*cache_file, static_cast<idx>(sizeof(i32)))) return false;
     const auto entry_count = cache_file->ReadInt32();
-    if (entry_count < 0) return false;
+    if (entry_count < 0 || entry_count > MAX_CACHE_ENTRY_COUNT) return false;
 
     files.clear();
     files.reserve(static_cast<size_t>(entry_count));
     for (i32 i = 0; i < entry_count; i++) {
         CachePkgFile file;
-        file.path   = ReadSizedString(*cache_file);
+        if (! ReadSizedString(*cache_file, file.path)) return false;
+        if (! CanRead(*cache_file, static_cast<idx>(sizeof(i32) * 2))) return false;
         file.offset = cache_file->ReadInt32();
         file.length = cache_file->ReadInt32();
+        if (file.offset < 0 || file.length < 0) return false;
         files.push_back(std::move(file));
     }
     return true;
@@ -99,6 +114,18 @@ bool LoadPkgFilesFromCache(std::string_view pkgpath, const PkgFileStamp& stamp, 
 
 void SavePkgFilesToCache(std::string_view pkgpath, const PkgFileStamp& stamp, std::string_view version,
                          std::span<const CachePkgFile> files) {
+    const auto max_i32 = static_cast<idx>(std::numeric_limits<i32>::max());
+    if (version.size() > static_cast<size_t>(std::numeric_limits<i32>::max())
+        || files.size() > static_cast<size_t>(std::numeric_limits<i32>::max())) {
+        return;
+    }
+    for (const auto& file : files) {
+        if (file.path.size() > static_cast<size_t>(std::numeric_limits<i32>::max())
+            || file.offset < 0 || file.offset > max_i32
+            || file.length < 0 || file.length > max_i32) {
+            return;
+        }
+    }
     const auto cache_path = GetPkgCachePath(pkgpath);
     std::error_code ec;
     std::filesystem::create_directories(cache_path.parent_path(), ec);
@@ -117,8 +144,8 @@ void SavePkgFilesToCache(std::string_view pkgpath, const PkgFileStamp& stamp, st
     for (const auto& file : files) {
         cache_file->WriteInt32(static_cast<i32>(file.path.size()));
         if (! file.path.empty()) cache_file->Write(file.path.data(), file.path.size());
-        cache_file->WriteInt32(file.offset);
-        cache_file->WriteInt32(file.length);
+        cache_file->WriteInt32(static_cast<i32>(file.offset));
+        cache_file->WriteInt32(static_cast<i32>(file.length));
     }
 }
 } // namespace
@@ -138,33 +165,27 @@ std::unique_ptr<WPPkgFs> WPPkgFs::CreatePkgFs(std::string_view pkgpath) {
         return pkgfs;
     }
 
-    auto ppkg = fs::CreateCBinaryStream(pkgpath);
-    if (! ppkg) return nullptr;
-
-    auto&       pkg = *ppkg;
-    std::string ver = ReadSizedString(pkg);
-    LOG_INFO("pkg version: %s", ver.c_str());
-
-    i32 entryCount = pkg.ReadInt32();
-    if (entryCount < 0) return nullptr;
-
-    pkgfiles.clear();
-    pkgfiles.reserve(static_cast<size_t>(entryCount));
-    for (i32 i = 0; i < entryCount; i++) {
-        std::string path   = "/" + ReadSizedString(pkg);
-        idx         offset = pkg.ReadInt32();
-        idx         length = pkg.ReadInt32();
-        pkgfiles.push_back({ path, offset, length });
+    auto indexResult = ReadWPPkgIndex(pkgpath);
+    if (! indexResult) {
+        const std::string packagePath(pkgpath);
+        LOG_ERROR("invalid pkg file %s: %s",
+                  packagePath.c_str(),
+                  indexResult.error().message.c_str());
+        return nullptr;
     }
 
-    idx headerSize   = pkg.Tell();
-    for (auto& el : pkgfiles) {
-        el.offset += headerSize;
-        pkgfs->m_files.insert({ el.path, { el.path, el.offset, el.length } });
+    auto index = std::move(indexResult.value());
+    LOG_INFO("pkg version: %s", index.version.c_str());
+    pkgfiles.clear();
+    pkgfiles.reserve(index.entries.size());
+    for (auto& entry : index.entries) {
+        pkgfiles.push_back({ entry.path, entry.offset, entry.length });
+        pkgfs->m_files.insert(
+            { entry.path, { entry.path, entry.offset, entry.length } });
     }
 
     if (QueryPkgFileStamp(pkgpath, stamp)) {
-        SavePkgFilesToCache(pkgpath, stamp, ver, pkgfiles);
+        SavePkgFilesToCache(pkgpath, stamp, index.version, pkgfiles);
     }
     return pkgfs;
 }

@@ -7,6 +7,7 @@ add_library(
   settings/WPUserPropertiesJson.cpp
   resources/WPJson.cpp
   resources/WPPkgFs.cpp
+  resources/WPPkgIndex.cpp
   transform/WPNodeTransformResolver.cpp
   parser/WPParticleParser.cpp
   animation/WPPropertyAnimation.cpp
