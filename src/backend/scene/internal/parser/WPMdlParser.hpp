@@ -76,7 +76,7 @@ struct WPMdl {
         std::array<float, 2>    texcoord;
     };
     std::vector<Vertex>                  vertexs;
-    std::vector<std::array<uint16_t, 3>> indices;
+    std::vector<std::array<uint32_t, 3>> indices;
 
     // std::vector<Eigen::Matrix<float, 3, 4>> bones;
     std::shared_ptr<WPPuppet> puppet;

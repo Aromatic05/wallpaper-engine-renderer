@@ -117,6 +117,25 @@ target_compile_options(mdl-mesh-test PRIVATE ${warn_opts})
 add_test(NAME mdl-mesh-test COMMAND mdl-mesh-test)
 
 add_executable(
+  mdl-parser-integration-test
+  scene/mdl/parser_integration_test.cpp)
+
+target_link_libraries(mdl-parser-integration-test PRIVATE wpSceneBackend)
+target_include_directories(
+  mdl-parser-integration-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/scene
+  ../common/fs/include)
+target_compile_options(mdl-parser-integration-test PRIVATE ${warn_opts})
+
+add_test(NAME mdl-parser-integration-test COMMAND mdl-parser-integration-test)
+
+add_executable(
   tex-header-parser-test
   scene/tex/tex_header_parser_test.cpp)
 

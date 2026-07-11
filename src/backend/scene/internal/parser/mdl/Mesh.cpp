@@ -165,9 +165,10 @@ Result<void> ParseParts(CheckedReader& reader,
             return Result<void>::failure(ResultCode::InvalidArgument,
                                          "truncated MDLV21 part record");
         }
-        if (static_cast<std::uint64_t>(part.start) + part.size > indexElementCount) {
+        if (part.start % 3u != 0 || part.size % 3u != 0
+            || static_cast<std::uint64_t>(part.start) + part.size > indexElementCount) {
             return Result<void>::failure(ResultCode::InvalidArgument,
-                                         "MDLV21 part range exceeds index buffer");
+                                         "MDLV21 part range is not triangle-aligned or exceeds index buffer");
         }
     }
     return Result<void>::success();

@@ -390,6 +390,160 @@ Result<WPMdlHeader> WPMdlParser::ParseHeader(std::string_view path, fs::VFS& vfs
     return ParseWPMdlHeader(stream);
 }
 
+namespace
+{
+bool AppendGenericMeshToLegacyView(WPMdl& mdl, const WPMdlMesh& mesh) {
+    if (mesh.positions.empty()) return false;
+    if (mdl.vertexs.size() > std::numeric_limits<uint32_t>::max() - mesh.positions.size()) {
+        return false;
+    }
+
+    const auto vertexBase = static_cast<uint32_t>(mdl.vertexs.size());
+    mdl.vertexs.reserve(mdl.vertexs.size() + mesh.positions.size());
+    for (usize index = 0; index < mesh.positions.size(); ++index) {
+        WPMdl::Vertex vertex {};
+        vertex.position = mesh.positions[index];
+        vertex.blend_indices = index < mesh.blend_indices.size()
+            ? mesh.blend_indices[index]
+            : std::array<uint32_t, 4> { 0, 0, 0, 0 };
+        vertex.weight = index < mesh.blend_weights.size()
+            ? mesh.blend_weights[index]
+            : (! mesh.blend_indices.empty()
+                   ? std::array<float, 4> { 1.0f, 0.0f, 0.0f, 0.0f }
+                   : std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f });
+        vertex.texcoord = index < mesh.texcoords.size()
+            ? mesh.texcoords[index]
+            : std::array<float, 2> { 0.0f, 0.0f };
+        mdl.vertexs.push_back(vertex);
+    }
+
+    const auto appendTriangle = [&](const std::array<uint32_t, 3>& triangle) {
+        std::array<uint32_t, 3> rebased {};
+        for (usize component = 0; component < rebased.size(); ++component) {
+            if (triangle[component] > std::numeric_limits<uint32_t>::max() - vertexBase) {
+                return false;
+            }
+            rebased[component] = triangle[component] + vertexBase;
+        }
+        mdl.indices.push_back(rebased);
+        return true;
+    };
+
+    if (mesh.parts.empty()) {
+        for (const auto& triangle : mesh.indices) {
+            if (! appendTriangle(triangle)) return false;
+        }
+        return true;
+    }
+
+    for (const auto& part : mesh.parts) {
+        const usize firstTriangle = static_cast<usize>(part.start / 3u);
+        const usize triangleCount = static_cast<usize>(part.size / 3u);
+        for (usize offset = 0; offset < triangleCount; ++offset) {
+            if (! appendTriangle(mesh.indices[firstTriangle + offset])) return false;
+        }
+    }
+    return true;
+}
+
+Result<void> ParseGenericMdlGeometry(fs::IBinaryStream& stream, WPMdl& mdl) {
+    mdl.meshes.clear();
+    mdl.meshes.reserve(mdl.header.mesh_count);
+    mdl.vertexs.clear();
+    mdl.indices.clear();
+
+    bool hasSkinning = false;
+    for (u32 meshIndex = 0; meshIndex < mdl.header.mesh_count; ++meshIndex) {
+        auto meshResult = ParseWPMdlMesh(stream, mdl.header);
+        if (! meshResult) return Result<void>(meshResult.error());
+        hasSkinning = hasSkinning || ! meshResult.value().blend_indices.empty();
+        mdl.meshes.push_back(std::move(meshResult.value()));
+    }
+    for (const auto& mesh : mdl.meshes) {
+        if (! AppendGenericMeshToLegacyView(mdl, mesh)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "MDL mesh merge exceeds runtime index range");
+        }
+    }
+    if (mdl.meshes.empty()) {
+        return Result<void>::failure(ResultCode::InvalidArgument, "MDL contains no meshes");
+    }
+
+    mdl.mat_json_file = mdl.meshes.front().material_json_file;
+    mdl.kind = hasSkinning ? WPMdl::MeshKind::Puppet : WPMdl::MeshKind::StaticImage;
+    return Result<void>::success();
+}
+
+bool ParseLegacySingleMeshGeometry(fs::IBinaryStream& f,
+                                   WPMdl& mdl,
+                                   bool staticImageMesh,
+                                   bool& alternativeFormat) {
+    mdl.mat_json_file = f.ReadStr();
+    f.ReadInt32(); // mesh flag_a / reserved
+
+    uint32_t current = f.ReadUint32();
+    const auto isAlternativeMarker = [&](uint32_t value) {
+        return value == alt_format_vertex_size_herald_value
+            || (staticImageMesh && value == static_image_vertex_size_marker);
+    };
+    if (current == 0) {
+        alternativeFormat = true;
+        while (! isAlternativeMarker(current) && f.Tell() < f.Size()) {
+            current = f.ReadUint32();
+        }
+        if (! isAlternativeMarker(current)) {
+            LOG_ERROR("failed to locate alternative vertex herald 0x%08x",
+                      alt_format_vertex_size_herald_value);
+            return false;
+        }
+        current = f.ReadUint32();
+    } else if (current == std_format_vertex_size_herald_value
+               || (staticImageMesh && current == static_image_vertex_size_marker)) {
+        current = f.ReadUint32();
+    }
+
+    const uint32_t vertexSize = current;
+    const uint32_t vertexStride = staticImageMesh
+        ? static_image_singile_vertex
+        : (alternativeFormat ? alt_singile_vertex : singile_vertex);
+    if (vertexSize == 0 || vertexSize % vertexStride != 0 || ! CanReadBytes(f, vertexSize)) {
+        LOG_ERROR("unsupported or truncated legacy mdl vertex payload: bytes=%u", vertexSize);
+        return false;
+    }
+
+    const uint32_t vertexCount = vertexSize / vertexStride;
+    mdl.vertexs.resize(vertexCount);
+    for (auto& vertex : mdl.vertexs) {
+        if (staticImageMesh) {
+            for (auto& value : vertex.position) value = f.ReadFloat();
+            for (int index = 0; index < 7; ++index) f.ReadFloat();
+            vertex.blend_indices = { 0, 0, 0, 0 };
+            vertex.weight = { 0.0f, 0.0f, 0.0f, 1.0f };
+            for (auto& value : vertex.texcoord) value = f.ReadFloat();
+        } else {
+            for (auto& value : vertex.position) value = f.ReadFloat();
+            if (alternativeFormat) {
+                for (int index = 0; index < 7; ++index) f.ReadUint32();
+            }
+            for (auto& value : vertex.blend_indices) value = f.ReadUint32();
+            for (auto& value : vertex.weight) value = f.ReadFloat();
+            for (auto& value : vertex.texcoord) value = f.ReadFloat();
+        }
+    }
+
+    const uint32_t indexBytes = f.ReadUint32();
+    if (indexBytes == 0 || indexBytes % singile_indices != 0 || ! CanReadBytes(f, indexBytes)) {
+        LOG_ERROR("unsupported or truncated legacy mdl index payload: bytes=%u", indexBytes);
+        return false;
+    }
+    mdl.indices.resize(indexBytes / singile_indices);
+    for (auto& triangle : mdl.indices) {
+        for (auto& index : triangle) index = f.ReadUint16();
+    }
+    return true;
+}
+} // namespace
+
 bool WPMdlParser::ParseStaticModel(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     auto str_path = std::string(path);
     auto pfile    = vfs.Open("/assets/" + str_path);
@@ -480,124 +634,45 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     mdl = WPMdl {};
     mdl.header = headerResult.value();
     mdl.mdlv = mdl.header.mdlv;
-    const int32_t mdl_flag = static_cast<int32_t>(mdl.header.mdl_flag);
-    if (mdl.header.mesh_count != 1) {
-        LOG_ERROR("mdl multi-mesh body is not migrated yet: path='%s' mesh-count=%u",
-                  str_path.c_str(),
-                  mdl.header.mesh_count);
-        return false;
-    }
-    const bool static_image_mesh = mdl_flag == 9;
-    if (static_image_mesh) {
-        // Flag 9 image puppet files are authored static image meshes, not broken animated
-        // puppets. They reuse the puppet slot to carry crop/shape geometry for image layers and
-        // intentionally stop before MDLS/MDLA skeleton data, so routing them through the animated
-        // puppet reader would either reject them or interpret their compact vertex stream with the
-        // wrong stride.
-        mdl.kind = WPMdl::MeshKind::StaticImage;
-    } else {
-        mdl.kind = WPMdl::MeshKind::Puppet;
-    }
-    f.ReadInt32(); // unk, 1
-    f.ReadInt32(); // unk, 1
+    const int32_t mdlFlag = static_cast<int32_t>(mdl.header.mdl_flag);
+    const idx geometryStart = f.Tell();
+    bool alternativeMdlFormat = false;
 
-    mdl.mat_json_file = f.ReadStr();
-    // 0    
-    f.ReadInt32();
-
-    bool alt_mdl_format = false;
-    uint32_t curr = f.ReadUint32();
-
-    auto is_alt_vertex_marker = [&](uint32_t value) {
-        return value == alt_format_vertex_size_herald_value ||
-               (static_image_mesh && value == static_image_vertex_size_marker);
-    };
-
-    // If the uint at the normal vertex size position is 0, this file uses a marker-delimited
-    // vertex-size block. Static image puppets have their own marker value because their file
-    // family is image-layer geometry rather than animated skeleton data, but the cursor contract is
-    // the same: seek the marker, then read the byte size immediately after it.
-    if(curr == 0){
-        alt_mdl_format = true;
-        while (! is_alt_vertex_marker(curr) && f.Tell() < f.Size()){
-            curr = f.ReadUint32();
-        }
-        if (! is_alt_vertex_marker(curr)) {
-            LOG_ERROR("failed to locate alternative vertex herald 0x%08x", alt_format_vertex_size_herald_value);
+    auto geometryResult = ParseGenericMdlGeometry(f, mdl);
+    if (! geometryResult) {
+        if (mdl.header.mesh_count != 1 || ! f.SeekSet(geometryStart)) {
+            LOG_ERROR("mdl geometry parse failed for '%s': %s",
+                      str_path.c_str(),
+                      geometryResult.error().message.c_str());
             return false;
         }
-        curr = f.ReadUint32();
-    }
-    else if(curr == std_format_vertex_size_herald_value ||
-            (static_image_mesh && curr == static_image_vertex_size_marker)){
-        curr = f.ReadUint32();
-    }
 
-    uint32_t vertex_size = curr;
-    const uint32_t vertex_stride =
-        static_image_mesh ? static_image_singile_vertex
-                          : (alt_mdl_format ? alt_singile_vertex : singile_vertex);
-    if (vertex_size % vertex_stride != 0) {
-        LOG_ERROR("unsupport mdl vertex size %d", vertex_size);
-        return false;
-    }
-
-    uint32_t vertex_num = vertex_size / vertex_stride;
-    if (! CanReadBytes(f, vertex_size)) {
-        LOG_ERROR("mdl vertex payload exceeds file: bytes=%u remaining=%zu",
-                  vertex_size,
-                  RemainingBytes(f));
-        return false;
-    }
-    mdl.vertexs.resize(vertex_num);
-    for (auto& vert : mdl.vertexs) {
-        if (static_image_mesh) {
-            // Static image puppet meshes store position.xyz, normal.xyz, a vec4 payload, and
-            // texcoord.xy. They have no skinning attributes, so synthesize a neutral bone binding
-            // while preserving the authored shape and UV crop exactly for the final image layer.
-            for (auto& v : vert.position) v = f.ReadFloat();
-            for (int i = 0; i < 7; i++) f.ReadFloat();
-            vert.blend_indices = { 0, 0, 0, 0 };
-            vert.weight        = { 0.0f, 0.0f, 0.0f, 1.0f };
-            for (auto& v : vert.texcoord) v = f.ReadFloat();
-        } else {
-            for (auto& v : vert.position) v = f.ReadFloat();
-            // If using the alternative MDL format, vertexes contain 7 extra 32-bit chunks between
-            // position and blend indices. They are opaque payload for animated puppet meshes and
-            // must stay separate from the compact static-image path above.
-            if(alt_mdl_format) {for (int i = 0; i < 7; i++) f.ReadUint32();}
-            for (auto& v : vert.blend_indices) v = f.ReadUint32();
-            for (auto& v : vert.weight) v = f.ReadFloat();
-            for (auto& v : vert.texcoord) v = f.ReadFloat();
+        LOG_INFO("generic mdl geometry parse failed for '%s', trying legacy single-mesh path: %s",
+                 str_path.c_str(),
+                 geometryResult.error().message.c_str());
+        mdl.meshes.clear();
+        mdl.vertexs.clear();
+        mdl.indices.clear();
+        mdl.mat_json_file.clear();
+        const bool legacyStaticImage = mdlFlag == static_cast<int32_t>(kStaticPositionTexcoordFlag);
+        mdl.kind = legacyStaticImage ? WPMdl::MeshKind::StaticImage
+                                     : WPMdl::MeshKind::Puppet;
+        if (! ParseLegacySingleMeshGeometry(
+                f, mdl, legacyStaticImage, alternativeMdlFormat)) {
+            return false;
         }
     }
 
-    uint32_t indices_size = f.ReadUint32();
-    if (indices_size % singile_indices != 0) {
-        LOG_ERROR("unsupport mdl indices size %d", indices_size);
-        return false;
-    }
-
-    uint32_t indices_num = indices_size / singile_indices;
-    if (! CanReadBytes(f, indices_size)) {
-        LOG_ERROR("mdl index payload exceeds file: bytes=%u remaining=%zu",
-                  indices_size,
-                  RemainingBytes(f));
-        return false;
-    }
-    mdl.indices.resize(indices_num);
-    for (auto& id : mdl.indices) {
-        for (auto& v : id) v = f.ReadUint16();
-    }
-
-    if (static_image_mesh) {
-        // Static image puppet meshes end after the index buffer. Returning here makes the contract
-        // explicit for callers: the mesh is valid render geometry, but there is no WPPuppet object,
-        // no bone uniforms, and no animation state to attach to the scene node.
-        LOG_INFO("read static image puppet: mdlv: %d, vertices: %u, indices: %u",
+    const bool staticImageMesh = mdl.kind == WPMdl::MeshKind::StaticImage;
+    if (staticImageMesh) {
+        // Geometry-only image meshes intentionally have no MDLS/MDLA skeleton sections. Generic
+        // multi-mesh files are merged into the runtime draw view while retaining their parsed
+        // per-mesh records for future material/mask consumers.
+        LOG_INFO("read static image mesh: mdlv=%d meshes=%zu vertices=%zu triangles=%zu",
                  mdl.mdlv,
-                 vertex_num,
-                 indices_num);
+                 mdl.meshes.empty() ? usize { 1 } : mdl.meshes.size(),
+                 mdl.vertexs.size(),
+                 mdl.indices.size());
         return true;
     }
 
@@ -833,7 +908,7 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
                 // by a variable number of 32-bit 0s between animations. We'll read
                 // the two bytes now so that the cursor is aligned to read through the
                 // 32-bit 0s in the next iteration
-                if(alt_mdl_format)
+                if(alternativeMdlFormat)
                 {
                     f.ReadUint8();
                     f.ReadUint8();
@@ -875,7 +950,7 @@ void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl) {
                               { WE_IN_TEXCOORD.data(), VertexType::FLOAT2 } },
                             mdl.vertexs.size());
 
-    std::array<float, 16> one_vert;
+    std::array<float, 16> one_vert {};
     auto                  to_one = [](const WPMdl::Vertex& in, decltype(one_vert)& out) {
         uint offset = 0;
         memcpy(out.data() + 4 * (offset++), in.position.data(), sizeof(in.position));
@@ -885,13 +960,15 @@ void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl) {
     };
     for (uint i = 0; i < mdl.vertexs.size(); i++) {
         auto& v = mdl.vertexs[i];
+        one_vert.fill(0.0f);
         to_one(v, one_vert);
         vertex.SetVertexs(i, one_vert);
     }
     std::vector<uint32_t> indices;
-    size_t                u16_count = mdl.indices.size() * 3;
-    indices.resize(u16_count / 2 + 1);
-    memcpy(indices.data(), mdl.indices.data(), u16_count * sizeof(uint16_t));
+    indices.reserve(mdl.indices.size() * 3);
+    for (const auto& triangle : mdl.indices) {
+        indices.insert(indices.end(), triangle.begin(), triangle.end());
+    }
 
     mesh.AddVertexArray(std::move(vertex));
     mesh.AddIndexArray(SceneIndexArray(indices));
