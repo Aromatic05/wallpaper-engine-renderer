@@ -6337,7 +6337,19 @@ JSValue NativeGetLayerProperty(JSContext* context, JSValueConst, int argc, JSVal
     }
 
     auto* node = FindNodeById(opaque, node_id);
-    if (node == nullptr) return JS_UNDEFINED;
+    if (node == nullptr) {
+        if (property_name == "origin" || property_name == "angles") {
+            const auto value = WPDynamicValue(std::array<float, 3> { 0.0f, 0.0f, 0.0f });
+            const auto script_value = ToScriptFacingLayerPropertyValue(property_name, value).toScriptValue();
+            return script_value.has_value() ? ScriptValueToJS(context, *script_value) : JS_UNDEFINED;
+        }
+        if (property_name == "scale") {
+            const auto value = WPDynamicValue(std::array<float, 3> { 1.0f, 1.0f, 1.0f });
+            const auto script_value = value.toScriptValue();
+            return script_value.has_value() ? ScriptValueToJS(context, *script_value) : JS_UNDEFINED;
+        }
+        return JS_UNDEFINED;
+    }
 
     const auto value = ReadLayerPropertyValue(opaque, node, property_name);
     if (! value.has_value()) return JS_UNDEFINED;

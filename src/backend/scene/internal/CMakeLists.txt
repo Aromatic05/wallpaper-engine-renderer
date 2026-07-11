@@ -20,6 +20,7 @@ add_library(
   parser/effect/Extent.cpp
   parser/effect/LegacyAtmosphere.cpp
   parser/effect/QuadPosition.cpp
+  parser/media/Fallback.cpp
   shader/WPShaderValueUpdater.cpp
   parser/WPSceneLayerMetadata.cpp
   parser/WPSyntheticImageParser.cpp

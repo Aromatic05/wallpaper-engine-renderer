@@ -21,6 +21,7 @@
 #include "effect/Extent.hpp"
 #include "effect/LegacyAtmosphere.hpp"
 #include "effect/QuadPosition.hpp"
+#include "media/Fallback.hpp"
 #include "particle/Animation.hpp"
 #include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
@@ -951,11 +952,11 @@ void IndexImageTextureFallbacks(ParseContext& context, const std::vector<WPObjec
     for (const auto& object : objects) {
         const auto* image = std::get_if<wpscene::WPImageObject>(&object);
         if (image == nullptr) continue;
+        if (! CanUseImageAsSystemMediaFallback(*image)) continue;
 
         std::string texture = ResolveMaterialTextureSlot(image->material, 0, context.user_properties);
-        if (! texture.empty()) {
-            context.image_texture_fallbacks[image->id] = std::move(texture);
-        }
+        if (texture.empty() || IsSpecTex(texture)) continue;
+        context.image_texture_fallbacks[image->id] = std::move(texture);
     }
 }
 
@@ -8044,6 +8045,10 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
             AddWPObject<WPEmptyObject>(wp_objs, obj, vfs, user_properties);
         }
     }
+    // System media bindings may refer to a static hidden image as their authored fallback.
+    // Capture eligible source textures before visibility pruning removes those image objects;
+    // the resulting metadata survives InitContext() and is consumed after the image parser exists.
+    IndexImageTextureFallbacks(context, wp_objs);
 
     context.initial_parent_by_layer_id.clear();
     for (const auto& obj : wp_objs) {
@@ -8178,7 +8183,6 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
         context.scene->userProperties.clear();
     }
     ParseCamera(context, sc);
-    IndexImageTextureFallbacks(context, wp_objs);
     IndexSystemMediaTextureFallbacks(context, wp_objs);
 
     {

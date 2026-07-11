@@ -498,5 +498,48 @@ int main() {
         assert(scene.objectRuntimeSoundHandles.count(asset_created_id) == 1);
     }
 
+    {
+        Scene scene;
+        auto root_node = MakeLayerNode(70, "UnresolvedRoot");
+        auto root_mesh = std::make_shared<SceneMesh>();
+        SceneMaterial root_material;
+        root_material.customShader.constValues["g_UserAlpha"] = ShaderValue(0.0f);
+        root_mesh->AddMaterial(std::move(root_material));
+        root_node->AddMesh(root_mesh);
+        scene.sceneGraph->AppendChild(root_node);
+        RegisterLayer(scene, 70, root_node, R"({"id":70,"name":"UnresolvedRoot"})");
+
+        // Logical layers such as deferred sound or imported layers can exist before they own a
+        // SceneNode. Keep their proxy transform shape stable until materialization catches up.
+        scene.layerOrder.push_back(71);
+        scene.layerNameToId["late-sound"] = 71;
+        scene.initialLayerConfigJson[71] = R"({"id":71,"name":"late-sound"})";
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(70,
+                                             "UnresolvedRoot",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(0.0f));
+        registration.node = root_node.get();
+        registration.setting.script = R"(
+            export function update() {
+                const late = thisScene.getLayer('late-sound');
+                return late.scale.x + late.origin.x + late.angles.x;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        const auto* material = root_node->Mesh()->Material();
+        assert(material != nullptr);
+        const auto alpha_it = material->customShader.constValues.find("g_UserAlpha");
+        assert(alpha_it != material->customShader.constValues.end());
+        assert(alpha_it->second.size() == 1);
+        assert(NearlyEqual(alpha_it->second[0], 1.0));
+    }
+
     return 0;
 }

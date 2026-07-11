@@ -191,10 +191,10 @@ its independent node-alignment layout contract.
 | `c50269f` | solid layer link composites | `DONE` | Explicit private link publication plus visible/hidden final-owner regression. |
 | `5431b87` | preserve text color in glyph seed | `DONE` | First-class TextPass preserves authored glyph RGB independently from background brightness. |
 | `f721e8c` | composite final perspective effects | `DONE` | Perspective shaders are classified as authored final writers. |
-| `f7406a4` | media thumbnail image fallback | `TEST` | Local implementation exists; add/retain exact fallback regression. |
+| `f7406a4` | media thumbnail image fallback | `DONE` | Eligible hidden static-image fallbacks are indexed before visibility pruning and verified pixel-for-pixel. |
 | `ba993dd` | image color blend final owner | `DONE` | BLENDMODE is applied to the actual layer/puppet/final-effect writer. |
 | `9165e37` | seed text effects with background | `DONE` | Framebuffer RGB/zero-alpha prefill precedes one private glyph seed. |
-| `1a6251c` | unresolved layers script-safe | `REVIEW` | Validate deferred materialization and unresolved references. |
+| `1a6251c` | unresolved layers script-safe | `DONE` | Logical layers without SceneNode ownership expose stable origin/angles/scale defaults through SceneScript. |
 | `c52a28e` | resize dynamic text effect targets | `DONE` | Runtime text rebuild grows bridge/FBO resources and marks only affected targets dirty. |
 | `a03db48` | color blend alpha compositing | `DONE` | Legacy 0–100 image alpha is normalized and RGB-only passes preserve destination alpha. |
 | `7556026` | transparent previous effects | `DONE` | TRANSPARENCY plus a sampler annotated as `previous` may composite directly. |
@@ -263,6 +263,13 @@ and initialized fragment-shader locals without affecting unrelated shaders. Shad
 effect-space centers on every graph build, while a direct final writer restores the authored center;
 private writers remain normalized. The unrelated particle-rate reversal included in the clock commit
 is intentionally not adopted because Stage 3 already has a tested, newer local rate contract.
+
+System media thumbnail fallback indexing now happens before static hidden-layer pruning, so an authored
+hidden cover image can seed `$mediaThumbnail` even when it never becomes a renderable layer. Only simple
+static images qualify: puppet, fullscreen, passthrough, effect-backed, and special-target sources are
+rejected. A dedicated parser test validates both eligibility boundaries and exact fallback pixels.
+SceneScript logical-layer proxies also preserve transform value shape before a deferred or nonvisual
+layer owns a `SceneNode`: origin and angles return zero vectors and scale returns a unit vector.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

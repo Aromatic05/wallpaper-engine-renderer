@@ -561,6 +561,35 @@ target_compile_options(effect-compatibility-test PRIVATE ${warn_opts} -UNDEBUG)
 add_test(NAME effect-compatibility-test COMMAND effect-compatibility-test)
 
 add_executable(
+  media-thumbnail-fallback-test
+  scene/media/media_thumbnail_fallback_test.cpp)
+
+target_link_libraries(
+  media-thumbnail-fallback-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend)
+target_include_directories(
+  media-thumbnail-fallback-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../../third_party/nlohmann/include)
+target_compile_options(media-thumbnail-fallback-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME media-thumbnail-fallback-test COMMAND media-thumbnail-fallback-test)
+
+add_executable(
   text-effect-composition-test
   scene/text/text_effect_composition_test.cpp)
 
