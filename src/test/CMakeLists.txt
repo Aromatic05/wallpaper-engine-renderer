@@ -341,7 +341,8 @@ target_include_directories(
   ../backend/scene/internal/settings
   ../backend/scene/internal/text
   ../common
-  ../common/scene)
+  ../common/scene
+  ../../third_party/nlohmann/include)
 target_compile_options(text-clear-pass-test PRIVATE ${warn_opts})
 
 add_test(NAME text-clear-pass-test COMMAND text-clear-pass-test)
