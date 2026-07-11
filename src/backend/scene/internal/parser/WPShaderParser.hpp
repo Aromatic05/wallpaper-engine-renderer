@@ -25,6 +25,10 @@ struct WPShaderInfo {
     ShaderValueMap   baseConstSvs;
     WPAliasValueDict alias;
     WPDefaultTexs    defTexs;
+    // Sampler annotation material names (for example `previous`) are part of final-composite
+    // capability detection. Keep them by uniform name so the parser can distinguish transparent
+    // previous-frame shaders from ordinary filters without hard-coding every shader path.
+    Map<std::string, std::string> textureMaterials;
 };
 
 struct WPPreprocessorInfo {

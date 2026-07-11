@@ -1,4 +1,8 @@
 #include "backend/scene/internal/engine/WESceneRenderPlanBuilder.hpp"
+#include "backend/scene/internal/parser/WPShaderParser.hpp"
+#include "backend/scene/internal/parser/effect/FinalComposite.hpp"
+#include "backend/scene/internal/wpscene/WPMaterial.h"
+#include "common/fs/include/fs/VFS.h"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneCamera.h"
 #include "backend/scene/internal/scene/include/scene/SceneImageEffectLayer.h"
@@ -66,7 +70,7 @@ struct Fixture {
     std::string                                pingB;
 };
 
-std::unique_ptr<Fixture> makeFixture(bool fullscreen) {
+std::unique_ptr<Fixture> makeFixture(bool fullscreen, bool final_can_composite = true) {
     auto fx = std::make_unique<Fixture>();
     fx->pingA = std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) + "fixture";
     fx->pingB = std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_B) + "fixture";
@@ -102,6 +106,7 @@ std::unique_ptr<Fixture> makeFixture(bool fullscreen) {
         .output = std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_B),
         .authored_textures = { std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) },
         .sceneNode = nodeA,
+        .can_composite_final = false,
     });
 
     auto nodeB = makeNode("effect-b", { std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) });
@@ -112,6 +117,7 @@ std::unique_ptr<Fixture> makeFixture(bool fullscreen) {
         .output = std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_B),
         .authored_textures = { std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) },
         .sceneNode = nodeB,
+        .can_composite_final = final_can_composite,
     });
 
     fx->layer->AddEffect(fx->effectA);
@@ -202,6 +208,66 @@ const vk::ClearPass::Desc* findClearPass(rg::RenderGraph& graph, const std::stri
 } // namespace
 
 int main() {
+    {
+        wallpaper::wpscene::WPMaterial material;
+        wallpaper::WPShaderInfo shader_info;
+
+        for (const std::string shader : { "genericimage", "genericimage2", "genericimage3",
+                                          "genericimage4", "passthrough", "effects/transform",
+                                          "effects/scroll", "effects/perspective" }) {
+            material.shader = shader;
+            assert(wallpaper::CanCompositeFinalEffectMaterial(material, shader_info));
+        }
+
+        material.shader = "effects/blur";
+        assert(! wallpaper::CanCompositeFinalEffectMaterial(material, shader_info));
+        shader_info.combos["TRANSPARENCY"] = "1";
+        assert(! wallpaper::CanCompositeFinalEffectMaterial(material, shader_info));
+        shader_info.textureMaterials["g_Texture0"] = "previous";
+        assert(wallpaper::CanCompositeFinalEffectMaterial(material, shader_info));
+
+        wallpaper::fs::VFS vfs;
+        wallpaper::WPShaderInfo parsed_info;
+        std::vector<wallpaper::WPShaderTexInfo> texture_info(1);
+        texture_info.front().enabled = true;
+        const auto parsed_source = wallpaper::WPShaderParser::PreShaderSrc(
+            vfs,
+            R"(
+                // [COMBO] {"combo":"TRANSPARENCY","default":1}
+                uniform sampler2D g_Texture0; // {"material":"previous"}
+            )",
+            &parsed_info,
+            texture_info);
+        assert(! parsed_source.empty());
+        assert(parsed_info.combos.count("TRANSPARENCY") == 1);
+        assert(parsed_info.textureMaterials.at("g_Texture0") == "previous");
+        assert(wallpaper::CanCompositeFinalEffectMaterial(material, parsed_info));
+    }
+
+    {
+        auto direct = makeFixture(false, true);
+        auto graph = wallpaper::BuildWESceneRenderPlan(direct->scene);
+        auto* authored = findShaderByMaterial(*graph, "effect-b");
+        auto* neutral = findShaderByMaterial(*graph, "final-composite");
+        assert(direct->layer->AuthoredFinalCanComposite());
+        assert(! direct->layer->PublishesPrivateFinalComposite());
+        assert(authored != nullptr && authored->output == SpecTex_Default);
+        assert(neutral != nullptr && neutral->should_execute && ! neutral->should_execute());
+    }
+
+    {
+        auto private_final = makeFixture(false, false);
+        auto graph = wallpaper::BuildWESceneRenderPlan(private_final->scene);
+        auto* authored = findShaderByMaterial(*graph, "effect-b");
+        auto* neutral = findShaderByMaterial(*graph, "final-composite");
+        assert(! private_final->layer->AuthoredFinalCanComposite());
+        assert(private_final->layer->PublishesPrivateFinalComposite());
+        assert(authored != nullptr && authored->output != SpecTex_Default);
+        assert(neutral != nullptr && neutral->output == SpecTex_Default);
+        assert(neutral->should_execute && neutral->should_execute());
+        assert(neutral->textures.front() == private_final->layer->ResolvedPrivateOutputTarget());
+    }
+
     {
         auto fixture   = makeFixture(false);
         auto graphA    = wallpaper::BuildWESceneRenderPlan(fixture->scene);

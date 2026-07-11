@@ -16,6 +16,7 @@
 #include "WPTexImageParser.hpp"
 #include "WPSyntheticImageParser.hpp"
 #include "WPParticleParser.hpp"
+#include "effect/FinalComposite.hpp"
 #include "particle/Animation.hpp"
 #include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
@@ -1759,6 +1760,7 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
 
     return true;
 }
+
 
 bool ConfigureEffectFinalComposite(ParseContext& context, SceneImageEffectLayer& effect_layer,
                                    std::string_view initial_source, int32_t owner_layer_id,
@@ -5103,12 +5105,20 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
                 context.shader_updater->SetNodeData(spEffNode.get(), svData);
                 context.scene->nodeOwners[spEffNode.get()] = wpimgobj.id;
-                imgEffect->nodes.push_back({ .authored_output = matOutRT,
-                                             .output = matOutRT,
-                                             .authored_textures = authored_textures,
-                                             .sceneNode = spEffNode,
-                                             .private_final_output_uses_layer_surface =
-                                                 hasAnimatedPuppetMesh && wpmat.use_puppet });
+                imgEffect->nodes.push_back({
+                    .authored_output = matOutRT,
+                    .output = matOutRT,
+                    .authored_textures = authored_textures,
+                    .sceneNode = spEffNode,
+                    .camera_override = {},
+                    .use_active_camera_for_parallax = false,
+                    .clear_before_draw = false,
+                    .force_alpha_write = false,
+                    .can_composite_final =
+                        CanCompositeFinalEffectMaterial(wpmat, wpEffShaderInfo),
+                    .private_final_output_uses_layer_surface =
+                        hasAnimatedPuppetMesh && wpmat.use_puppet,
+                });
             }
 
             if (eff_mat_ok) {
@@ -5321,6 +5331,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             .use_active_camera_for_parallax = false,
             .clear_before_draw = false,
             .force_alpha_write = false,
+            .can_composite_final = false,
             .private_final_output_uses_layer_surface = false,
         });
         imgEffectLayer->FinalMesh().ChangeMeshDataFrom(effect_final_mesh);
@@ -5527,10 +5538,19 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                                                     material_index);
                 context.shader_updater->SetNodeData(spEffectNode.get(), effect_node_data);
                 context.scene->nodeOwners[spEffectNode.get()] = text_obj.id;
-                img_effect->nodes.push_back({ .authored_output = material_output,
-                                              .output = material_output,
-                                              .authored_textures = authored_textures,
-                                              .sceneNode = spEffectNode });
+                img_effect->nodes.push_back({
+                    .authored_output = material_output,
+                    .output = material_output,
+                    .authored_textures = authored_textures,
+                    .sceneNode = spEffectNode,
+                    .camera_override = {},
+                    .use_active_camera_for_parallax = false,
+                    .clear_before_draw = false,
+                    .force_alpha_write = false,
+                    .can_composite_final =
+                        CanCompositeFinalEffectMaterial(material_source, effect_shader_info),
+                    .private_final_output_uses_layer_surface = false,
+                });
             }
 
             if (effect_materials_ok) {

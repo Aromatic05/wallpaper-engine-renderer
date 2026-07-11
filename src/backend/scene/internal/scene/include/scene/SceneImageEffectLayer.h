@@ -30,6 +30,9 @@ struct SceneImageEffectNode {
     bool        use_active_camera_for_parallax { false };
     bool        clear_before_draw { false };
     bool        force_alpha_write { false };
+    // Only shaders with a proven layer-composite contract may become the persistent visible final
+    // writer. Ordinary filters stay private and are published by the neutral final composite.
+    bool        can_composite_final { false };
     // Some effect chains end with a synthetic layer-surface writer. Animated puppet images with
     // authored effects are the important case: intermediate shaders run as fullscreen private
     // passes, then the final synthetic material samples that result through the puppet mesh so
@@ -133,6 +136,7 @@ public:
     SceneNode&  FinalNode() const { return *m_final_node; }
     SourcePolicy SourceContributionPolicy() const { return m_source_policy; }
     bool        HasFinalComposite() const;
+    bool        AuthoredFinalCanComposite() const;
     bool        ShouldRunFinalComposite() const;
     bool        PublishesPrivateFinalComposite() const {
         return m_final_composite.publishes_private_output;

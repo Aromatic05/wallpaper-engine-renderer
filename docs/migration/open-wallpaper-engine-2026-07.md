@@ -190,14 +190,14 @@ its independent node-alignment layout contract.
 |---|---|---|---|
 | `c50269f` | solid layer link composites | `DONE` | Explicit private link publication plus visible/hidden final-owner regression. |
 | `5431b87` | preserve text color in glyph seed | `DONE` | First-class TextPass preserves authored glyph RGB independently from background brightness. |
-| `f721e8c` | composite final perspective effects | `REVIEW` | Perspective effect final-writer test. |
+| `f721e8c` | composite final perspective effects | `DONE` | Perspective shaders are classified as authored final writers. |
 | `f7406a4` | media thumbnail image fallback | `TEST` | Local implementation exists; add/retain exact fallback regression. |
 | `ba993dd` | image color blend final owner | `REVIEW` | Validate final render target ownership. |
 | `9165e37` | seed text effects with background | `DONE` | Framebuffer RGB/zero-alpha prefill precedes one private glyph seed. |
 | `1a6251c` | unresolved layers script-safe | `REVIEW` | Validate deferred materialization and unresolved references. |
 | `c52a28e` | resize dynamic text effect targets | `DONE` | Runtime text rebuild grows bridge/FBO resources and marks only affected targets dirty. |
 | `a03db48` | color blend alpha compositing | `REVIEW` | Pixel/ROI comparison. |
-| `7556026` | transparent previous effects | `REVIEW` | Transparent intermediate target fixture. |
+| `7556026` | transparent previous effects | `DONE` | TRANSPARENCY plus a sampler annotated as `previous` may composite directly. |
 | `1362b6d` | simplify copybackground color blend | `REVIEW` | Behavior only; do not copy structural simplification blindly. |
 | `fdce1ee` | copybackground effect color blend | `REVIEW` | Copybackground and alpha ownership fixture. |
 | `680b3d8` | dynamic effect text clipping | `DONE` | Cropped visible source metrics drive bridge targets and final mesh placement. |
@@ -206,10 +206,10 @@ its independent node-alignment layout contract.
 | `73342e3` | clock highlight rendering | `REVIEW` | Calendar/clock visual fixture. |
 | `9c7ef47` | text alpha composition | `DONE` | Private glyph source uses straight RGBA; translucent final composite applies alpha once. |
 | `e366bc0` | copybackground video blend | `REVIEW` | Video-backed copybackground fixture. |
-| `c79db16` | scroll effect final composite | `REVIEW` | Final writer and UV bounds test. |
+| `c79db16` | scroll effect final composite | `DONE` | Scroll shaders remain authored final writers. |
 | `fdfd195` | copybackground color blend | `REVIEW` | Consolidate with the other copybackground cases. |
 | `f0eb7c1` | clamp image effect render targets | `REVIEW` | Oversized/negative target extent fixture. |
-| `77bcea2` | transform effect final composite | `REVIEW` | Transform final writer test. |
+| `77bcea2` | transform effect final composite | `DONE` | Transform shaders remain authored final writers; ordinary filters publish through the neutral composite. |
 | `4cab330` | dynamic text effect sizing | `DONE` | Camera, final mesh, source target, and dependent FBOs synchronize after text layout changes. |
 | `082ba2c` | image alpha visibility | `REVIEW` | Visibility and alpha must remain separate. |
 | `faf188d` | image alpha user bindings | `REVIEW` | User property binding plus final alpha fixture. |
@@ -234,6 +234,14 @@ visible-source metrics for clipping and effect sizing; dynamic text rebuilds upd
 final mesh, ping-pong targets, and authored effect FBOs, then mark only those resources dirty. A
 parser-to-RenderGraph regression verifies prefill/glyph/effect/final order, one glyph seed, background
 sampling, blend contracts, and target growth after a live text update.
+
+Effect final ownership is now capability-driven rather than assuming every last authored pass can
+write the visible framebuffer. Shader preprocessing preserves sampler material annotations in its
+versioned cache, allowing transparent shaders that explicitly sample `previous` to be recognized.
+Generic image/passthrough, transform, scroll, and perspective shaders remain direct final writers.
+All other terminal filters stay on a private ping-pong target and are published by the neutral final
+composite. Tests cover annotation parsing, direct and private topology, linked-layer publication, and
+text bridges.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

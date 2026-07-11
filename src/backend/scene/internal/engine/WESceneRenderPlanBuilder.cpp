@@ -196,6 +196,8 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     auto loadEffect = [node, &rgraph, &scene, &extra](SceneImageEffectLayer* effs) {
         const bool publish_link =
             scene.offscreenDependencyLayerIds.count(node->ID()) != 0;
+        const bool publish_through_neutral_composite =
+            publish_link || ! effs->AuthoredFinalCanComposite();
         effs->ResolveEffect(
             scene.default_effect_mesh,
             "effect",
@@ -203,8 +205,9 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
             SpecTex_Default,
             false,
             nullptr,
-            publish_link ? SceneImageEffectLayer::FinalOutputPolicy::PrivateAuthoredThenComposite
-                         : SceneImageEffectLayer::FinalOutputPolicy::AuthoredWriter);
+            publish_through_neutral_composite
+                ? SceneImageEffectLayer::FinalOutputPolicy::PrivateAuthoredThenComposite
+                : SceneImageEffectLayer::FinalOutputPolicy::AuthoredWriter);
         for (usize i = 0; i < effs->EffectCount(); i++) {
             auto& eff     = effs->GetEffect(i);
             auto  cmdItor = eff->commands.begin();

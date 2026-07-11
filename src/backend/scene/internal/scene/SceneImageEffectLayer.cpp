@@ -101,6 +101,20 @@ bool SceneImageEffectLayer::HasFinalComposite() const {
     return m_final_node != nullptr && m_final_node->HasMaterial();
 }
 
+bool SceneImageEffectLayer::AuthoredFinalCanComposite() const {
+    for (auto effect_it = m_effects.rbegin(); effect_it != m_effects.rend(); ++effect_it) {
+        const auto& effect = *effect_it;
+        if (effect == nullptr) continue;
+        for (auto node_it = effect->nodes.rbegin(); node_it != effect->nodes.rend(); ++node_it) {
+            const auto& node = *node_it;
+            const auto authored_output =
+                ResolveTemplateOrCurrent(node.authored_output, node.output);
+            if (IsCurrentEffectOutput(authored_output)) return node.can_composite_final;
+        }
+    }
+    return false;
+}
+
 bool SceneImageEffectLayer::HasRuntimeVisibilityContract() const {
     for (const auto& effect : m_effects) {
         if (effect != nullptr && effect->HasRuntimeVisibilityContract()) return true;

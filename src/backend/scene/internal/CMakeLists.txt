@@ -15,6 +15,7 @@ add_library(
   scenescript/WPSceneScriptMedia.cpp
   parser/WPShaderParser.cpp
   parser/WPSceneParser.cpp
+  parser/effect/FinalComposite.cpp
   shader/WPShaderValueUpdater.cpp
   parser/WPSceneLayerMetadata.cpp
   parser/WPSyntheticImageParser.cpp
