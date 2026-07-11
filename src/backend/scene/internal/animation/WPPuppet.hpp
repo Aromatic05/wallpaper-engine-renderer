@@ -26,6 +26,8 @@ public:
         std::string     name;
         Eigen::Affine3f transform { Eigen::Affine3f::Identity() };
         uint32_t        parent { 0xFFFFFFFFu };
+        Eigen::Affine3f file_world_bind { Eigen::Affine3f::Identity() };
+        bool            has_file_world_bind { false };
 
         bool noParent() const { return parent == 0xFFFFFFFFu; }
         // prepared

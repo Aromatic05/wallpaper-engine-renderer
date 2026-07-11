@@ -5,6 +5,7 @@
 #include "fs/VFS.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -39,6 +40,35 @@ void AppendPod(Bytes& bytes, const T& value) {
 void AppendCString(Bytes& bytes, std::string_view value) {
     bytes.insert(bytes.end(), value.begin(), value.end());
     bytes.push_back(0);
+}
+
+void AppendIdentityMatrix(Bytes& bytes, float translationX = 0.0f) {
+    std::array<float, 16> matrix {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        translationX, 0.0f, 0.0f, 1.0f,
+    };
+    AppendPod(bytes, matrix);
+}
+
+std::size_t BeginSection(Bytes& bytes, std::string_view type, int version) {
+    Require(type.size() == 4, "section type must contain four bytes");
+    char stamp[9] {};
+    std::snprintf(stamp, sizeof(stamp), "%.*s%04d",
+                  static_cast<int>(type.size()), type.data(), version);
+    bytes.insert(bytes.end(), stamp, stamp + sizeof(stamp));
+    const std::size_t endOffsetPosition = bytes.size();
+    AppendPod<std::uint32_t>(bytes, 0);
+    return endOffsetPosition;
+}
+
+void EndSection(Bytes& bytes, std::size_t endOffsetPosition) {
+    const auto endOffset = static_cast<std::uint32_t>(bytes.size());
+    const auto* raw = reinterpret_cast<const std::uint8_t*>(&endOffset);
+    for (std::size_t index = 0; index < sizeof(endOffset); ++index) {
+        bytes[endOffsetPosition + index] = raw[index];
+    }
 }
 
 void AppendHeader(Bytes& bytes, int version, std::uint32_t flags, std::uint32_t meshCount) {
@@ -112,6 +142,88 @@ Bytes BuildLegacyStaticImageMesh() {
     return bytes;
 }
 
+void AppendGenericPuppetMesh(Bytes& bytes) {
+    constexpr std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
+        | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
+        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT;
+    AppendCString(bytes, "materials/puppet.json");
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 3 * wallpaper::WPMdlVertexStride(flags));
+    for (std::uint32_t index = 0; index < 3; ++index) {
+        AppendPod(bytes, std::array<float, 3> {
+            static_cast<float>(index), static_cast<float>(index), 0.0f
+        });
+        AppendPod(bytes, std::array<std::uint32_t, 4> { 0, 0, 0, 0 });
+        AppendPod(bytes, std::array<float, 4> { 1.0f, 0.0f, 0.0f, 0.0f });
+        AppendPod(bytes, std::array<float, 2> {
+            static_cast<float>(index) * 0.5f, 0.5f
+        });
+    }
+    AppendPod<std::uint32_t>(bytes, 3 * sizeof(std::uint16_t));
+    AppendPod<std::uint16_t>(bytes, 0);
+    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<std::uint16_t>(bytes, 2);
+}
+
+Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
+                           bool malformedAnimation = false) {
+    Bytes bytes;
+    constexpr std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
+        | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
+        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT;
+    AppendHeader(bytes, 13, flags, 1);
+    AppendGenericPuppetMesh(bytes);
+
+    bytes.insert(bytes.end(), { 0, 0x7f, 0 });
+    const auto skeletonEnd = BeginSection(bytes, "MDLS", 1);
+    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<std::uint16_t>(bytes, 0);
+    AppendCString(bytes, "root");
+    AppendPod<std::int32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 0xffffffffu);
+    AppendPod<std::uint32_t>(bytes, 64);
+    AppendIdentityMatrix(bytes);
+    AppendCString(bytes, "");
+    EndSection(bytes, skeletonEnd);
+
+    const auto attachmentEnd = BeginSection(bytes, "MDAT", 1);
+    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<std::uint16_t>(bytes, 0);
+    AppendCString(bytes, "socket");
+    AppendIdentityMatrix(bytes, 2.0f);
+    EndSection(bytes, attachmentEnd);
+
+    const auto unknownEnd = BeginSection(bytes, "MDZZ", 1);
+    AppendPod<std::uint32_t>(bytes, 0xdeadbeefu);
+    EndSection(bytes, unknownEnd);
+
+    const auto animationEnd = BeginSection(bytes, "MDLA", 1);
+    AppendPod<std::uint32_t>(bytes, malformedAnimation ? 1u : 0u);
+    EndSection(bytes, animationEnd);
+
+    const auto morphEnd = BeginSection(bytes, "MDMP", 1);
+    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<float>(bytes, 0.5f);
+    AppendPod<std::uint16_t>(bytes, 7);
+    AppendPod<std::uint16_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendCString(bytes, "shape");
+    AppendPod<std::uint32_t>(bytes, 6);
+    AppendPod<std::uint32_t>(bytes, 123);
+    AppendPod<std::uint16_t>(bytes, 10);
+    AppendPod<std::uint16_t>(bytes, 20);
+    AppendPod<std::uint16_t>(bytes, 30);
+    AppendPod<std::uint16_t>(bytes, 40);
+    EndSection(bytes, morphEnd);
+
+    const auto worldBindEnd = BeginSection(bytes, "MDLE", 1);
+    AppendPod<std::uint32_t>(bytes, invalidWorldBind ? 60u : 64u);
+    AppendIdentityMatrix(bytes, 3.0f);
+    EndSection(bytes, worldBindEnd);
+    return bytes;
+}
+
 class MemoryFs final : public wallpaper::fs::Fs {
 public:
     explicit MemoryFs(std::unordered_map<std::string, std::string> files)
@@ -140,7 +252,7 @@ std::string ToString(const Bytes& bytes) {
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
-wallpaper::WPMdl ParseModel(std::string_view path, Bytes bytes) {
+bool TryParseModel(std::string_view path, const Bytes& bytes, wallpaper::WPMdl& mdl) {
     wallpaper::fs::VFS vfs;
     vfs.Mount("/assets",
               std::make_unique<MemoryFs>(
@@ -148,8 +260,12 @@ wallpaper::WPMdl ParseModel(std::string_view path, Bytes bytes) {
                       { "/" + std::string(path), ToString(bytes) },
                   }),
               "mdl-test");
+    return wallpaper::WPMdlParser::Parse(path, vfs, mdl);
+}
+
+wallpaper::WPMdl ParseModel(std::string_view path, const Bytes& bytes) {
     wallpaper::WPMdl mdl;
-    Require(wallpaper::WPMdlParser::Parse(path, vfs, mdl), "WPMdlParser::Parse failed");
+    Require(TryParseModel(path, bytes, mdl), "WPMdlParser::Parse failed");
     return mdl;
 }
 
@@ -181,6 +297,67 @@ void TestLegacyFallbackIntegration() {
             "legacy material path mismatch");
 }
 
+void TestSectionDispatchIntegration() {
+    auto mdl = ParseModel("models/sectioned.mdl", BuildSectionedPuppet());
+    Require(mdl.kind == wallpaper::WPMdl::MeshKind::Puppet,
+            "skinned generic mesh must remain a puppet");
+    Require(mdl.mdls == 1 && mdl.mdla == 1 && mdl.mdmp == 1 && mdl.mdle == 1,
+            "section versions were not preserved");
+    Require(mdl.puppet != nullptr && mdl.puppet->bones.size() == 1,
+            "MDLS bone payload mismatch");
+    Require(mdl.puppet->bones[0].name == "root"
+                && mdl.puppet->bones[0].noParent(),
+            "MDLS bone identity mismatch");
+    Require(mdl.puppet->attachments.size() == 1
+                && mdl.puppet->attachments[0].name == "socket",
+            "MDAT attachment payload mismatch");
+    Require(std::abs(mdl.puppet->attachments[0].transform.translation().x() - 2.0f)
+                < 0.0001f,
+            "MDAT attachment transform mismatch");
+    Require(mdl.puppet->anims.empty(), "zero-count MDLA should keep an empty animation list");
+
+    Require(mdl.morph_sections.size() == 1,
+            "MDMP event count mismatch");
+    const auto& morphEvent = mdl.morph_sections.front();
+    Require(std::abs(morphEvent.event_time - 0.5f) < 0.0001f
+                && morphEvent.event_id == 7 && morphEvent.sections.size() == 1,
+            "MDMP event metadata mismatch");
+    const auto& morphData = morphEvent.sections.front();
+    Require(morphData.shape_id == 1 && morphData.tag == "shape" && morphData.hash == 123,
+            "MDMP section metadata mismatch");
+    Require(morphData.vertices
+                == std::vector<std::array<std::uint16_t, 3>> { { 10, 20, 30 } }
+                && morphData.vertex_trailers == std::vector<std::uint16_t> { 40 },
+            "MDMP vertex payload mismatch");
+
+    const auto& bone = mdl.puppet->bones.front();
+    Require(bone.has_file_world_bind,
+            "MDLE world-bind matrix must be marked present");
+    Require(std::abs(bone.file_world_bind.translation().x() - 3.0f) < 0.0001f,
+            "MDLE world-bind translation mismatch");
+}
+
+void TestMalformedAnimationRecovery() {
+    wallpaper::WPMdl mdl;
+    Require(TryParseModel("models/malformed-animation.mdl",
+                          BuildSectionedPuppet(false, true),
+                          mdl),
+            "malformed MDLA should recover at its declared end offset");
+    Require(mdl.puppet != nullptr && mdl.puppet->anims.empty(),
+            "malformed MDLA must leave a bind-pose-only puppet");
+    Require(mdl.mdmp == 1 && mdl.mdle == 1
+                && mdl.puppet->bones.front().has_file_world_bind,
+            "sections after malformed MDLA must still be parsed");
+}
+
+void TestInvalidWorldBindRejected() {
+    wallpaper::WPMdl mdl;
+    Require(! TryParseModel("models/invalid-world-bind.mdl",
+                            BuildSectionedPuppet(true, false),
+                            mdl),
+            "MDLE payload size mismatch must reject the model");
+}
+
 void TestRuntimeUint32IndexUpload() {
     wallpaper::WPMdl mdl;
     mdl.vertexs.resize(65'537);
@@ -201,5 +378,8 @@ int main() {
     TestGenericMultiMeshIntegration();
     TestLegacyFallbackIntegration();
     TestRuntimeUint32IndexUpload();
+    TestSectionDispatchIntegration();
+    TestMalformedAnimationRecovery();
+    TestInvalidWorldBindRejected();
     return 0;
 }

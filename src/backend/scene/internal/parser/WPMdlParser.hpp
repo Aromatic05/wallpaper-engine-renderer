@@ -38,6 +38,8 @@ struct WPMdl {
     i32 mdlv { 13 };
     i32 mdls { 1 };
     i32 mdla { 1 };
+    i32 mdmp { 0 };
+    i32 mdle { 0 };
     MeshKind kind { MeshKind::Unknown };
 
     using Mesh = WPMdlMesh;
@@ -77,6 +79,21 @@ struct WPMdl {
     };
     std::vector<Vertex>                  vertexs;
     std::vector<std::array<uint32_t, 3>> indices;
+
+    struct MorphSectionData {
+        uint32_t shape_id { 0 };
+        std::string tag;
+        uint32_t hash { 0 };
+        std::vector<std::array<uint16_t, 3>> vertices;
+        std::vector<uint8_t> trailer;
+        std::vector<uint16_t> vertex_trailers;
+    };
+    struct MorphSection {
+        float event_time { 0.0f };
+        uint16_t event_id { 0 };
+        std::vector<MorphSectionData> sections;
+    };
+    std::vector<MorphSection> morph_sections;
 
     // std::vector<Eigen::Matrix<float, 3, 4>> bones;
     std::shared_ptr<WPPuppet> puppet;

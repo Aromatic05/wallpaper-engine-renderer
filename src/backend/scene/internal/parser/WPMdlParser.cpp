@@ -1,4 +1,5 @@
 #include "WPMdlParser.hpp"
+#include "mdl/Section.hpp"
 #include "fs/VFS.h"
 #include "fs/IBinaryStream.h"
 #include "fs/MemBinaryStream.h"
@@ -84,29 +85,28 @@ bool CanReadBytes(const fs::IBinaryStream& file, std::uint64_t bytes) {
     return bytes <= static_cast<std::uint64_t>(RemainingBytes(file));
 }
 
-bool ValidateElementCount(const fs::IBinaryStream& file, std::string_view label,
-                          std::uint64_t count, std::uint64_t minimum_bytes_per_element,
-                          std::uint64_t hard_limit) {
-    if (count > hard_limit) {
-        LOG_ERROR("mdl %.*s count is implausible: %llu (limit=%llu)",
-                  static_cast<int>(label.size()),
-                  label.data(),
-                  static_cast<unsigned long long>(count),
-                  static_cast<unsigned long long>(hard_limit));
-        return false;
-    }
-    if (minimum_bytes_per_element != 0 &&
-        (count > std::numeric_limits<std::uint64_t>::max() / minimum_bytes_per_element ||
-         ! CanReadBytes(file, count * minimum_bytes_per_element))) {
-        LOG_ERROR("mdl %.*s count exceeds remaining payload: count=%llu remaining=%zu",
-                  static_cast<int>(label.size()),
-                  label.data(),
-                  static_cast<unsigned long long>(count),
-                  RemainingBytes(file));
-        return false;
-    }
-    return true;
+bool CanReadSectionBytes(const fs::IBinaryStream& file,
+                         const WPMdlSectionHeader& section,
+                         std::uint64_t bytes) {
+    const auto position = file.Tell();
+    return position >= section.payload_offset && position <= section.end_offset
+           && bytes <= static_cast<std::uint64_t>(section.end_offset - position);
 }
+
+bool ReadSectionCString(fs::IBinaryStream& file,
+                        const WPMdlSectionHeader& section,
+                        std::string& value,
+                        usize maxBytes = 16 * 1024 * 1024) {
+    value.clear();
+    while (value.size() < maxBytes && CanReadSectionBytes(file, section, 1)) {
+        char ch = '\0';
+        if (file.Read(&ch, 1) != 1) return false;
+        if (ch == '\0') return true;
+        value.push_back(ch);
+    }
+    return false;
+}
+
 
 WPPuppet::PlayMode ToPlayMode(std::string_view m) {
     if (m == "loop" || m.empty()) return WPPuppet::PlayMode::Loop;
@@ -114,45 +114,9 @@ WPPuppet::PlayMode ToPlayMode(std::string_view m) {
     if (m == "single") return WPPuppet::PlayMode::Single;
 
     LOG_ERROR("unknown puppet animation play mode \"%s\"", m.data());
-    assert(m == "loop");
     return WPPuppet::PlayMode::Loop;
 }
 
-int32_t SeekNextMDLVersion(fs::IBinaryStream& f, std::string_view prefix) {
-    const auto start = f.Tell();
-    const auto end = f.Size();
-    for (auto pos = start; pos + 9 <= end; ++pos) {
-        f.SeekSet(pos);
-        auto ver = ReadVersion(prefix, f);
-        if (ver > 0)
-            return ver;
-    }
-    f.SeekSet(start);
-    return 0;
-}
-
-bool SeekNextMDLSection(fs::IBinaryStream& f, std::span<const std::string_view> prefixes) {
-    const auto start = f.Tell();
-    const auto end = f.Size();
-    idx best_pos = -1;
-    for (const auto prefix : prefixes) {
-        for (auto pos = start; pos + 9 <= end; ++pos) {
-            f.SeekSet(pos);
-            auto ver = ReadVersion(prefix, f);
-            if (ver > 0) {
-                if (best_pos < 0 || pos < best_pos)
-                    best_pos = pos;
-                break;
-            }
-        }
-    }
-    if (best_pos >= 0) {
-        f.SeekSet(best_pos);
-        return true;
-    }
-    f.SeekSet(start);
-    return false;
-}
 
 uint32_t StaticVertexFloatCount(uint32_t mdl_flag) {
     if (mdl_flag == kStaticPositionTexcoordFlag) return kStaticPositionTexcoordFloats;
@@ -542,6 +506,342 @@ bool ParseLegacySingleMeshGeometry(fs::IBinaryStream& f,
     }
     return true;
 }
+
+Result<void> ParseSkeletonSection(fs::IBinaryStream& f,
+                                  WPMdl& mdl,
+                                  const WPMdlSectionHeader& section) {
+    mdl.mdls = section.version;
+    if (! CanReadSectionBytes(f, section, 4)) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "truncated MDLS bone-count header");
+    }
+    const uint16_t bonesNum = f.ReadUint16();
+    f.ReadUint16();
+    if (bonesNum > 4096) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "implausible MDLS bone count");
+    }
+
+    mdl.puppet = std::make_shared<WPPuppet>();
+    auto& bones = mdl.puppet->bones;
+    bones.resize(bonesNum);
+    for (uint32_t index = 0; index < bonesNum; ++index) {
+        auto& bone = bones[index];
+        if (! ReadSectionCString(f, section, bone.name)
+            || ! CanReadSectionBytes(f, section, 12 + 64)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLS bone record");
+        }
+        f.ReadInt32();
+        bone.parent = f.ReadUint32();
+        if (bone.parent >= index && ! bone.noParent()) {
+            LOG_INFO("mdl bone %u has out-of-order parent index %u, fallback to root",
+                     index, bone.parent);
+            bone.parent = 0xFFFFFFFFu;
+        }
+        const uint32_t transformBytes = f.ReadUint32();
+        if (transformBytes != 64 || ! CanReadSectionBytes(f, section, transformBytes)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "unsupported or truncated MDLS bone matrix");
+        }
+        for (auto column : bone.transform.matrix().colwise()) {
+            for (auto& value : column) value = f.ReadFloat();
+        }
+        std::string simulationJson;
+        if (! ReadSectionCString(f, section, simulationJson)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLS bone simulation JSON");
+        }
+    }
+
+    if (mdl.mdls > 1) {
+        if (! CanReadSectionBytes(f, section, 3)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLS extended header");
+        }
+        f.ReadInt16();
+        const uint8_t hasTransforms = f.ReadUint8();
+        const auto transformBytes = static_cast<std::uint64_t>(bonesNum) * 64u;
+        if (hasTransforms != 0) {
+            if (! CanReadSectionBytes(f, section, transformBytes)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDLS transform payload exceeds section bounds");
+            }
+            for (uint32_t bone = 0; bone < bonesNum; ++bone)
+                for (uint32_t value = 0; value < 16; ++value) f.ReadFloat();
+        }
+        if (! CanReadSectionBytes(f, section, 4)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLS metadata count");
+        }
+        const uint32_t metadataCount = f.ReadUint32();
+        const auto metadataBytes = static_cast<std::uint64_t>(metadataCount) * 12u;
+        if (metadataCount > 65536 || ! CanReadSectionBytes(f, section, metadataBytes + 5u)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "MDLS metadata payload exceeds section bounds");
+        }
+        for (uint32_t index = 0; index < metadataCount; ++index) {
+            f.ReadUint32(); f.ReadUint32(); f.ReadUint32();
+        }
+        f.ReadUint32();
+        const uint8_t hasOffsetTransforms = f.ReadUint8();
+        const auto offsetBytes = static_cast<std::uint64_t>(bonesNum) * 76u;
+        if (hasOffsetTransforms != 0) {
+            if (! CanReadSectionBytes(f, section, offsetBytes)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDLS offset-transform payload exceeds section bounds");
+            }
+            for (uint32_t bone = 0; bone < bonesNum; ++bone)
+                for (uint32_t value = 0; value < 19; ++value) f.ReadFloat();
+        }
+        if (! CanReadSectionBytes(f, section, 1)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLS bone-index flag");
+        }
+        const uint8_t hasIndices = f.ReadUint8();
+        const auto indexBytes = static_cast<std::uint64_t>(bonesNum) * sizeof(uint32_t);
+        if (hasIndices != 0) {
+            if (! CanReadSectionBytes(f, section, indexBytes)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDLS bone-index payload exceeds section bounds");
+            }
+            for (uint32_t bone = 0; bone < bonesNum; ++bone) f.ReadUint32();
+        }
+    }
+    return SeekToWPMdlSectionEnd(f, section);
+}
+
+Result<void> ParseAttachmentSection(fs::IBinaryStream& f,
+                                    WPMdl& mdl,
+                                    const WPMdlSectionHeader& section) {
+    if (! mdl.puppet || ! CanReadSectionBytes(f, section, 2)) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "truncated MDAT attachment count");
+    }
+    const uint16_t count = f.ReadUint16();
+    if (count > 4096) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "implausible MDAT attachment count");
+    }
+    for (uint32_t index = 0; index < count; ++index) {
+        if (! CanReadSectionBytes(f, section, 2)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDAT attachment record");
+        }
+        WPPuppet::Attachment attachment;
+        attachment.bone_index = f.ReadUint16();
+        if (attachment.bone_index >= mdl.puppet->bones.size()
+            || ! ReadSectionCString(f, section, attachment.name)
+            || ! CanReadSectionBytes(f, section, 64)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "invalid or truncated MDAT attachment record");
+        }
+        for (auto column : attachment.transform.matrix().colwise()) {
+            for (auto& value : column) value = f.ReadFloat();
+        }
+        mdl.puppet->attachments.push_back(std::move(attachment));
+    }
+    return SeekToWPMdlSectionEnd(f, section);
+}
+
+Result<void> ParseAnimationSection(fs::IBinaryStream& f,
+                                   WPMdl& mdl,
+                                   const WPMdlSectionHeader& section,
+                                   bool alternativeFormat) {
+    if (! mdl.puppet || ! CanReadSectionBytes(f, section, 4)) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "truncated MDLA animation count");
+    }
+    mdl.mdla = section.version;
+    const uint32_t animationCount = f.ReadUint32();
+    if (animationCount > 4096) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "implausible MDLA animation count");
+    }
+    auto& animations = mdl.puppet->anims;
+    animations.resize(animationCount);
+    for (auto& animation : animations) {
+        animation.id = 0;
+        while (animation.id == 0) {
+            if (! CanReadSectionBytes(f, section, 4)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDLA animation id");
+            }
+            animation.id = f.ReadInt32();
+        }
+        if (animation.id < 0 || ! CanReadSectionBytes(f, section, 4)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "invalid MDLA animation id");
+        }
+        f.ReadInt32();
+        if (! ReadSectionCString(f, section, animation.name)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLA animation name");
+        }
+        if (animation.name.empty() && ! ReadSectionCString(f, section, animation.name)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLA fallback animation name");
+        }
+        std::string mode;
+        if (! ReadSectionCString(f, section, mode) || ! CanReadSectionBytes(f, section, 16)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDLA animation header");
+        }
+        animation.mode = ToPlayMode(mode);
+        animation.fps = f.ReadFloat();
+        animation.length = f.ReadInt32();
+        f.ReadInt32();
+        const uint32_t boneTrackCount = f.ReadUint32();
+        if (boneTrackCount > 4096) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "implausible MDLA bone-track count");
+        }
+        animation.bframes_array.resize(boneTrackCount);
+        for (auto& boneFrames : animation.bframes_array) {
+            if (! CanReadSectionBytes(f, section, 8)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDLA bone-track header");
+            }
+            f.ReadInt32();
+            const uint32_t byteSize = f.ReadUint32();
+            if (byteSize % singile_bone_frame != 0
+                || ! CanReadSectionBytes(f, section, byteSize)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "invalid MDLA bone-frame payload size");
+            }
+            boneFrames.frames.resize(byteSize / singile_bone_frame);
+            for (auto& frame : boneFrames.frames) {
+                for (auto& value : frame.position) value = f.ReadFloat();
+                for (auto& value : frame.angle) value = f.ReadFloat();
+                for (auto& value : frame.scale) value = f.ReadFloat();
+            }
+        }
+        if (alternativeFormat) {
+            const uint32_t separatorBytes = mdl.mdla >= 3 ? 3u : 2u;
+            if (! CanReadSectionBytes(f, section, separatorBytes)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated alternative MDLA separator");
+            }
+            for (uint32_t index = 0; index < separatorBytes; ++index) f.ReadUint8();
+        } else if (mdl.mdla >= 3) {
+            if (! CanReadSectionBytes(f, section, 1)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDLA separator");
+            }
+            f.ReadUint8();
+        } else {
+            if (! CanReadSectionBytes(f, section, 4)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDLA metadata count");
+            }
+            const uint32_t metadataCount = f.ReadUint32();
+            if (metadataCount > 65536) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "implausible MDLA metadata count");
+            }
+            for (uint32_t index = 0; index < metadataCount; ++index) {
+                if (! CanReadSectionBytes(f, section, 4)) {
+                    return Result<void>::failure(ResultCode::InvalidArgument,
+                                                 "truncated MDLA metadata record");
+                }
+                f.ReadFloat();
+                std::string metadata;
+                if (! ReadSectionCString(f, section, metadata)) {
+                    return Result<void>::failure(ResultCode::InvalidArgument,
+                                                 "truncated MDLA metadata string");
+                }
+            }
+        }
+    }
+    return SeekToWPMdlSectionEnd(f, section);
+}
+
+Result<void> ParseMorphSection(fs::IBinaryStream& f,
+                               WPMdl& mdl,
+                               const WPMdlSectionHeader& section) {
+    mdl.mdmp = section.version;
+    mdl.morph_sections.clear();
+    while (f.Tell() < section.end_offset) {
+        if (! CanReadSectionBytes(f, section, 10)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDMP event header");
+        }
+        WPMdl::MorphSection event;
+        const uint16_t sectionCount = f.ReadUint16();
+        event.event_time = f.ReadFloat();
+        event.event_id = f.ReadUint16();
+        f.ReadUint16();
+        event.sections.resize(sectionCount);
+        for (auto& data : event.sections) {
+            if (! CanReadSectionBytes(f, section, 8)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDMP section record");
+            }
+            data.shape_id = f.ReadUint32();
+            f.ReadUint32();
+            if (! ReadSectionCString(f, section, data.tag)
+                || ! CanReadSectionBytes(f, section, 8)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "truncated MDMP section metadata");
+            }
+            const uint32_t length = f.ReadUint32();
+            data.hash = f.ReadUint32();
+            if (length % 6u != 0) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDMP vertex payload is not divisible by six");
+            }
+            const uint32_t vertexCount = length / 6u;
+            if (! CanReadSectionBytes(f, section, length)) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDMP vertex payload exceeds section bounds");
+            }
+            data.vertices.resize(vertexCount);
+            for (auto& vertex : data.vertices)
+                for (auto& value : vertex) value = f.ReadUint16();
+            if (data.shape_id == 0) {
+                if (! CanReadSectionBytes(f, section, length)) {
+                    return Result<void>::failure(ResultCode::InvalidArgument,
+                                                 "MDMP trailer exceeds section bounds");
+                }
+                data.trailer.resize(length);
+                for (auto& value : data.trailer) value = f.ReadUint8();
+            } else {
+                const auto trailerBytes = static_cast<std::uint64_t>(vertexCount) * 2u;
+                if (! CanReadSectionBytes(f, section, trailerBytes)) {
+                    return Result<void>::failure(ResultCode::InvalidArgument,
+                                                 "MDMP vertex trailer exceeds section bounds");
+                }
+                data.vertex_trailers.resize(vertexCount);
+                for (auto& value : data.vertex_trailers) value = f.ReadUint16();
+            }
+        }
+        mdl.morph_sections.push_back(std::move(event));
+    }
+    return SeekToWPMdlSectionEnd(f, section);
+}
+
+Result<void> ParseWorldBindSection(fs::IBinaryStream& f,
+                                   WPMdl& mdl,
+                                   const WPMdlSectionHeader& section) {
+    if (! mdl.puppet || ! CanReadSectionBytes(f, section, 4)) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "truncated MDLE payload size");
+    }
+    mdl.mdle = section.version;
+    const uint32_t payloadBytes = f.ReadUint32();
+    const auto expected = static_cast<std::uint64_t>(mdl.puppet->bones.size()) * 64u;
+    if (payloadBytes != expected || ! CanReadSectionBytes(f, section, payloadBytes)) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "MDLE payload size does not match bone count");
+    }
+    for (auto& bone : mdl.puppet->bones) {
+        for (auto column : bone.file_world_bind.matrix().colwise()) {
+            for (auto& value : column) value = f.ReadFloat();
+        }
+        bone.has_file_world_bind = true;
+    }
+    return SeekToWPMdlSectionEnd(f, section);
+}
 } // namespace
 
 bool WPMdlParser::ParseStaticModel(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
@@ -676,268 +976,74 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
         return true;
     }
 
-    mdl.mdls = ReadMDLVesion(f);
-    if (mdl.mdls == 0) {
-        mdl.mdls = SeekNextMDLVersion(f, "MDLS");
+    constexpr std::array<std::string_view, 1> skeletonTypes { "MDLS" };
+    auto skeletonSection = FindNextWPMdlSection(
+        f, skeletonTypes, std::max<idx>(0, f.Size() - f.Tell()));
+    if (! skeletonSection) {
+        LOG_ERROR("failed to locate a bounded MDLS section for '%s': %s",
+                  str_path.c_str(),
+                  skeletonSection.error().message.c_str());
+        return false;
     }
-    if (mdl.mdls == 0) {
-        LOG_ERROR("failed to locate MDLS section");
+    auto skeletonResult = ParseSkeletonSection(f, mdl, skeletonSection.value());
+    if (! skeletonResult) {
+        LOG_ERROR("failed to parse MDLS for '%s': %s",
+                  str_path.c_str(),
+                  skeletonResult.error().message.c_str());
         return false;
     }
 
-    size_t bones_file_end = f.ReadUint32();
-    (void)bones_file_end;
+    while (f.Tell() < f.Size()) {
+        const idx scanBytes = std::max<idx>(0, f.Size() - f.Tell());
+        auto sectionResult = FindNextWPMdlSection(f, {}, scanBytes);
+        if (! sectionResult) break;
 
-    uint16_t bones_num = f.ReadUint16();
-    // 1 byte
-    f.ReadUint16(); // unk
-
-    if (! ValidateElementCount(f, "bone", bones_num, 74, 4096)) return false;
-
-    mdl.puppet  = std::make_shared<WPPuppet>();
-    auto& bones = mdl.puppet->bones;
-    auto& anims = mdl.puppet->anims;
-
-    bones.resize(bones_num);
-    for (uint i = 0; i < bones_num; i++) {
-        auto&       bone = bones[i];
-        bone.name = f.ReadStr();
-        f.ReadInt32(); // unk
-
-        bone.parent = f.ReadUint32();
-        if (bone.parent >= i && !bone.noParent()) {
-            LOG_INFO("mdl bone %u has out-of-order parent index %u, fallback to root", i, bone.parent);
-            bone.parent = 0xFFFFFFFFu;
+        const auto section = sectionResult.value();
+        Result<void> parseResult = Result<void>::success();
+        if (section.Is("MDAT")) {
+            parseResult = ParseAttachmentSection(f, mdl, section);
+        } else if (section.Is("MDLA")) {
+            parseResult = ParseAnimationSection(f, mdl, section, alternativeMdlFormat);
+            if (! parseResult && mdl.puppet) {
+                // A malformed animation block must not invalidate geometry and bind pose. The
+                // bounded section header still lets us recover exactly at the declared end.
+                LOG_ERROR("failed to parse MDLA for '%s'; keeping bind pose: %s",
+                          str_path.c_str(),
+                          parseResult.error().message.c_str());
+                mdl.puppet->anims.clear();
+                if (! f.SeekSet(section.end_offset)) return false;
+                parseResult = Result<void>::success();
+            }
+        } else if (section.Is("MDMP")) {
+            parseResult = ParseMorphSection(f, mdl, section);
+        } else if (section.Is("MDLE")) {
+            parseResult = ParseWorldBindSection(f, mdl, section);
+        } else {
+            LOG_INFO("skip unsupported mdl section %s v%d at 0x%llx",
+                     section.Type().c_str(),
+                     section.version,
+                     static_cast<unsigned long long>(section.header_offset));
+            parseResult = SeekToWPMdlSectionEnd(f, section);
         }
 
-        uint32_t size = f.ReadUint32();
-        if (size != 64) {
-            LOG_ERROR("mdl unsupport bones size: %d", size);
+        if (! parseResult) {
+            LOG_ERROR("failed to parse mdl section %s v%d for '%s': %s",
+                      section.Type().c_str(),
+                      section.version,
+                      str_path.c_str(),
+                      parseResult.error().message.c_str());
             return false;
         }
-        for (auto row : bone.transform.matrix().colwise()) {
-            for (auto& x : row) x = f.ReadFloat();
-        }
-
-        std::string bone_simulation_json = f.ReadStr();
-        /*
-        auto trans = bone.transform.translation();
-        LOG_INFO("trans: %f %f %f", trans[0], trans[1], trans[2]);
-        */
     }
 
-    if (mdl.mdls > 1) {
-        int16_t unk = f.ReadInt16();
-        if (unk != 0) {
-            LOG_INFO("puppet: one unk is not 0, may be wrong");
-        }
-
-        uint8_t has_trans = f.ReadUint8();
-        if (has_trans) {
-            const auto transform_bytes = static_cast<std::uint64_t>(bones_num) * 16 * sizeof(float);
-            if (! CanReadBytes(f, transform_bytes)) {
-                LOG_ERROR("mdl skeleton transform payload exceeds file: bytes=%llu remaining=%zu",
-                          static_cast<unsigned long long>(transform_bytes),
-                          RemainingBytes(f));
-                return false;
-            }
-            for (uint i = 0; i < bones_num; i++)
-                for (uint j = 0; j < 16; j++) f.ReadFloat(); // mat
-        }
-        uint32_t size_unk = f.ReadUint32();
-        if (! ValidateElementCount(f, "skeleton metadata", size_unk, 12, 65536)) return false;
-        for (uint i = 0; i < size_unk; i++)
-            for (int j = 0; j < 3; j++) f.ReadUint32();
-
-        f.ReadUint32(); // unk
-
-        uint8_t has_offset_trans = f.ReadUint8();
-        if (has_offset_trans) {
-            const auto offset_transform_bytes =
-                static_cast<std::uint64_t>(bones_num) * 19 * sizeof(float);
-            if (! CanReadBytes(f, offset_transform_bytes)) {
-                LOG_ERROR("mdl skeleton offset payload exceeds file: bytes=%llu remaining=%zu",
-                          static_cast<unsigned long long>(offset_transform_bytes),
-                          RemainingBytes(f));
-                return false;
-            }
-            for (uint i = 0; i < bones_num; i++) {
-                for (uint j = 0; j < 3; j++) f.ReadFloat();  // like pos
-                for (uint j = 0; j < 16; j++) f.ReadFloat(); // mat
-            }
-        }
-
-        uint8_t has_index = f.ReadUint8();
-        if (has_index) {
-            const auto index_bytes = static_cast<std::uint64_t>(bones_num) * sizeof(uint32_t);
-            if (! CanReadBytes(f, index_bytes)) {
-                LOG_ERROR("mdl skeleton index payload exceeds file: bytes=%llu remaining=%zu",
-                          static_cast<unsigned long long>(index_bytes),
-                          RemainingBytes(f));
-                return false;
-            }
-            for (uint i = 0; i < bones_num; i++) {
-                f.ReadUint32();
-            }
-        }
-    }
-
-    {
-        const auto probe_pos = f.Tell();
-        bool aligned = false;
-        for (const auto prefix : { std::string_view("MDAT"), std::string_view("MDLA") }) {
-            auto ver = ReadVersion(prefix, f);
-            f.SeekSet(probe_pos);
-            if (ver > 0) {
-                aligned = true;
-                break;
-            }
-        }
-        constexpr std::array<std::string_view, 2> kAnimSections { "MDAT", "MDLA" };
-        if (!aligned)
-            SeekNextMDLSection(f, kAnimSections);
-    }
-
-    // sometimes there can be one or more zero bytes and/or MDAT sections containing
-    // attachments before the MDLA section, so we need to skip them
-    std::string mdType = "";
-    std::string mdVersion;
-    
-    do {
-        if (f.Tell() >= f.Size()) {
-            LOG_ERROR("failed to locate MDLA section before EOF");
-            return false;
-        }
-        std::string mdPrefix = f.ReadStr();
-
-        // sometimes there can be other garbage in this gap, so we need to 
-        // skip over that as well
-        if(mdPrefix.length() == 8){
-            mdType = mdPrefix.substr(0, 4);
-            mdVersion = mdPrefix.substr(4, 4);
-
-            if(mdType == "MDAT"){
-                f.ReadUint32(); // skip 4 bytes
-                uint32_t num_attachments = f.ReadUint16(); // number of attachments in the MDAT section
-                if (! ValidateElementCount(f, "attachment", num_attachments, 67, 4096)) {
-                    return false;
-                }
-
-                for(int i = 0; i < num_attachments; i++){
-                    WPPuppet::Attachment attachment;
-                    attachment.bone_index = f.ReadUint16();
-                    attachment.name       = f.ReadStr();
-                    for (auto col : attachment.transform.matrix().colwise()) {
-                        for (auto& x : col) x = f.ReadFloat();
-                    }
-                    mdl.puppet->attachments.push_back(std::move(attachment));
-                }
-            }
-        }
-    } while (mdType != "MDLA");
-    
-
-    if(mdType == "MDLA" && mdVersion.length() > 0){
-        mdl.mdla = std::stoi(mdVersion);
-        if (mdl.mdla != 0) {
-            uint end_size = f.ReadUint32();
-            (void)end_size;
-
-            uint anim_num = f.ReadUint32();
-            if (! ValidateElementCount(f, "animation", anim_num, 26, 4096)) return false;
-            anims.resize(anim_num);
-            for (auto& anim : anims) {
-                // there can be a variable number of 32-bit 0s between animations
-                anim.id = 0;
-                while(anim.id == 0){
-                    if (f.Tell() >= f.Size()) {
-                        LOG_ERROR("unexpected EOF while reading animation id");
-                        return false;
-                    }
-                    const auto before = f.Tell();
-                    anim.id = f.ReadInt32();
-                    const auto after = f.Tell();
-                    if (after <= before) {
-                        LOG_ERROR("stream did not advance while reading animation id");
-                        return false;
-                    }
-                }
-    
-                if (anim.id <= 0) {
-                    LOG_ERROR("wrong anime id %d", anim.id);
-                    return false;
-                }
-                f.ReadInt32();
-                anim.name   = f.ReadStr();
-                if(anim.name.empty()){
-                    anim.name = f.ReadStr();
-                }
-                anim.mode   = ToPlayMode(f.ReadStr());
-                anim.fps    = f.ReadFloat();
-                anim.length = f.ReadInt32();
-                f.ReadInt32();
-
-                uint32_t b_num = f.ReadUint32();
-                if (! ValidateElementCount(f, "animation bone-track", b_num, 8, 4096)) {
-                    return false;
-                }
-                anim.bframes_array.resize(b_num);
-                for (auto& bframes : anim.bframes_array) {
-                    f.ReadInt32();
-                    uint32_t byte_size = f.ReadUint32();
-                    uint32_t num       = byte_size / singile_bone_frame;
-                    if (byte_size % singile_bone_frame != 0) {
-                        LOG_ERROR("wrong bone frame size %u", byte_size);
-                        return false;
-                    }
-                    if (! CanReadBytes(f, byte_size)) {
-                        LOG_ERROR("mdl bone frame payload exceeds file: bytes=%u remaining=%zu",
-                                  byte_size,
-                                  RemainingBytes(f));
-                        return false;
-                    }
-                    bframes.frames.resize(num);
-                    for (auto& frame : bframes.frames) {
-                        for (auto& v : frame.position) v = f.ReadFloat();
-                        for (auto& v : frame.angle) v = f.ReadFloat();
-                        for (auto& v : frame.scale) v = f.ReadFloat();
-                    }
-                }
-                
-                // in the alternative MDL format there are 2 empty bytes followed
-                // by a variable number of 32-bit 0s between animations. We'll read
-                // the two bytes now so that the cursor is aligned to read through the
-                // 32-bit 0s in the next iteration
-                if(alternativeMdlFormat)
-                {
-                    f.ReadUint8();
-                    f.ReadUint8();
-                    if (mdl.mdla >= 3)
-                        f.ReadUint8();
-                }
-                else if(mdl.mdla >= 3){
-                    // Newer MDLA variants insert an extra 8-bit zero between animations.
-                    // If we don't consume it here, subsequent animation ids are shifted by 8 bits.
-                    f.ReadUint8();
-                }
-                else{
-                    uint32_t unk_extra_uint = f.ReadUint32();
-                    for (uint i = 0; i < unk_extra_uint; i++) {
-                        f.ReadFloat();
-                        // data is like: {"$$hashKey":"object:2110","frame":1,"name":"random_anim"}
-                        std::string unk_extra = f.ReadStr();
-                    }
-                }
-            }
-        }
-    }
-    
     mdl.puppet->prepared();
 
-    LOG_INFO("read puppet: mdlv: %d, nmdls: %d, mdla: %d, bones: %d, anims: %d",
+    LOG_INFO("read puppet: mdlv=%d mdls=%d mdla=%d mdmp=%d mdle=%d bones=%zu anims=%zu",
              mdl.mdlv,
              mdl.mdls,
              mdl.mdla,
+             mdl.mdmp,
+             mdl.mdle,
              mdl.puppet->bones.size(),
              mdl.puppet->anims.size());
     return true;

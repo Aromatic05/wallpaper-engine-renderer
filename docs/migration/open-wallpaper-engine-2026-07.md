@@ -110,10 +110,10 @@ Reference branch:
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
 
-Modern MDL migration now has bounded header and mesh contracts shared by the production parser.
-Multi-mesh geometry, MDLV21 parts, MDLV23 masks, legacy marker fallback, and uint32 runtime indices
-are covered. MDLS/MDMP/MDLE section dispatch remains Stage 2 work; MDLV21 bind/animation semantics
-remain Stage 3 work.
+Modern MDL migration now has bounded header, mesh, and section contracts shared by the production
+parser. Multi-mesh geometry, MDLV21 parts, MDLV23 masks, legacy marker fallback, uint32 runtime
+indices, MDLS/MDAT/MDLA dispatch, preserved MDMP records, and MDLE world-bind matrices are covered.
+Morph rendering and MDLV21 bind/animation semantics remain Stage 3 work.
 
 ### Stage 4 — RenderGraph and visual composition
 
