@@ -26,6 +26,7 @@ add_library(
   parser/mdl/Format.cpp
   parser/mdl/Mesh.cpp
   animation/WPPuppet.cpp
+  parser/mdl/Section.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPEffect.cpp
   wpscene/WPParticleObject.cpp

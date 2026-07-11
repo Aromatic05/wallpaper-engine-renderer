@@ -117,6 +117,22 @@ target_compile_options(mdl-mesh-test PRIVATE ${warn_opts})
 add_test(NAME mdl-mesh-test COMMAND mdl-mesh-test)
 
 add_executable(
+  mdl-section-test
+  scene/mdl/section_test.cpp)
+
+target_link_libraries(mdl-section-test PRIVATE wpSceneBackend)
+target_include_directories(
+  mdl-section-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../common
+  ../common/fs/include)
+target_compile_options(mdl-section-test PRIVATE ${warn_opts})
+
+add_test(NAME mdl-section-test COMMAND mdl-section-test)
+
+add_executable(
   mdl-parser-integration-test
   scene/mdl/parser_integration_test.cpp)
 
