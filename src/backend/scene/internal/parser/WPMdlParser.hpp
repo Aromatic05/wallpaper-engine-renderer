@@ -8,6 +8,7 @@
 
 #include "WPPuppet.hpp"
 #include "mdl/Format.hpp"
+#include "mdl/Mesh.hpp"
 
 namespace wallpaper
 {
@@ -38,6 +39,9 @@ struct WPMdl {
     i32 mdls { 1 };
     i32 mdla { 1 };
     MeshKind kind { MeshKind::Unknown };
+
+    using Mesh = WPMdlMesh;
+    std::vector<Mesh> meshes;
 
     std::string mat_json_file;
     struct StaticVertex {

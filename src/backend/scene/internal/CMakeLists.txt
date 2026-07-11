@@ -24,6 +24,7 @@ add_library(
   parser/WPSoundParser.cpp
   parser/WPMdlParser.cpp
   parser/mdl/Format.cpp
+  parser/mdl/Mesh.cpp
   animation/WPPuppet.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPEffect.cpp
