@@ -1,5 +1,6 @@
 #include "wallpaper/abi/WeRenderer.h"
 #include "WeRendererOptions.hpp"
+#include "WeProjectSource.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
 #include "wallpaper/Diagnostics.hpp"
@@ -15,10 +16,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cctype>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <memory>
 #include <new>
@@ -90,119 +87,6 @@ bool source_has_field(const we_source_v1* source, std::size_t field_offset, std:
     return source && source->size >= field_offset + field_size;
 }
 
-std::string lower_ascii(std::string s) {
-    for (auto& c : s) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return s;
-}
-
-std::string trim_copy(std::string s) {
-    auto not_space = [](unsigned char ch) { return ! std::isspace(ch); };
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
-    s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
-    return s;
-}
-
-struct ProjectSourceInfo {
-    wallpaper::BackendType type { wallpaper::BackendType::WEScene };
-    std::filesystem::path  projectJson;
-    std::filesystem::path  sourcePath;
-    std::string            backendUri;
-};
-
-wallpaper::Result<ProjectSourceInfo> parse_project_source(const char* uri) {
-    if (! uri || ! *uri) {
-        return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::InvalidArgument, "source uri is empty");
-    }
-
-    ProjectSourceInfo info;
-    info.sourcePath = uri;
-
-    std::error_code ec;
-    if (std::filesystem::is_directory(info.sourcePath, ec) && ! ec) {
-        info.projectJson = info.sourcePath / "project.json";
-    } else {
-        info.projectJson = info.sourcePath;
-    }
-
-    std::ifstream is(info.projectJson);
-    if (! is) {
-        return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::NotFound,
-            "cannot open project.json: " + info.projectJson.string());
-    }
-
-    auto j = nlohmann::json::parse(is, nullptr, false, true);
-    if (j.is_discarded()) {
-        return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::InvalidArgument,
-            "invalid JSON: " + info.projectJson.string());
-    }
-
-    auto type_it = j.find("type");
-    if (type_it == j.end() || ! type_it->is_string()) {
-        return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::InvalidArgument,
-            "project.json is missing a string type field: " + info.projectJson.string());
-    }
-
-    const std::string type = lower_ascii(type_it->get<std::string>());
-    if (type == "web") {
-        info.type = wallpaper::BackendType::Web;
-        info.backendUri = info.projectJson.parent_path().string();
-    } else if (type == "scene") {
-        info.type = wallpaper::BackendType::WEScene;
-        info.backendUri = info.projectJson.parent_path().string();
-        std::ifstream pj(info.projectJson);
-        if (! pj) {
-            return wallpaper::Result<ProjectSourceInfo>::failure(
-                wallpaper::ResultCode::NotFound,
-                "cannot open project.json: " + info.projectJson.string());
-        }
-        auto j = nlohmann::json::parse(pj, nullptr, false, true);
-        if (j.is_discarded()) {
-            return wallpaper::Result<ProjectSourceInfo>::failure(
-                wallpaper::ResultCode::InvalidArgument,
-                "invalid JSON: " + info.projectJson.string());
-        }
-        auto file_it = j.find("file");
-        if (file_it != j.end() && file_it->is_string()) {
-            const auto file_value = trim_copy(file_it->get<std::string>());
-            if (! file_value.empty()) {
-                const std::filesystem::path file_path { file_value };
-                if (file_path.has_extension() && file_path.extension() == ".pkg") {
-                    info.backendUri = (info.projectJson.parent_path() / file_path).string();
-                } else {
-                    info.backendUri =
-                        (info.projectJson.parent_path() / file_path).replace_extension("pkg").string();
-                }
-            }
-        }
-    } else if (type == "video") {
-        info.type = wallpaper::BackendType::Video;
-        auto file_it = j.find("file");
-        if (file_it == j.end() || ! file_it->is_string()) {
-            return wallpaper::Result<ProjectSourceInfo>::failure(
-                wallpaper::ResultCode::InvalidArgument,
-                "video project.json is missing a string file field: " + info.projectJson.string());
-        }
-        const auto file_value = trim_copy(file_it->get<std::string>());
-        if (file_value.empty()) {
-            return wallpaper::Result<ProjectSourceInfo>::failure(
-                wallpaper::ResultCode::InvalidArgument,
-                "video project.json file field is empty: " + info.projectJson.string());
-        }
-        info.backendUri = (info.projectJson.parent_path() / std::filesystem::path(file_value)).string();
-    } else {
-        return wallpaper::Result<ProjectSourceInfo>::failure(
-            wallpaper::ResultCode::NotSupported,
-            "unsupported project type: " + type);
-    }
-
-    return wallpaper::Result<ProjectSourceInfo>::success(std::move(info));
-}
 
 wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     wallpaper::WallpaperSource out;
@@ -311,7 +195,7 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     if (! source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri)) || ! source->uri) {
         return -1;
     }
-    auto parsed = parse_project_source(source->uri);
+    auto parsed = wallpaper::ResolveProjectSource(source->uri);
     if (! parsed) return to_error_with_diagnostic(state, "abi.source", parsed);
 
     state->sourceType = parsed.value().type;

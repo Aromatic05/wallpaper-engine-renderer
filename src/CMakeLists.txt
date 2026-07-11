@@ -30,6 +30,7 @@ add_subdirectory(render)
 
 set(wallpaper_renderer_sources
   abi/WeRenderer.cpp
+  abi/WeProjectSource.cpp
   abi/WeRendererOptions.cpp
   common/Type.cpp
   backend/BuiltinBackendFactory.cpp

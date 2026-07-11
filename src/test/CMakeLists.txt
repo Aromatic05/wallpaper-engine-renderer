@@ -28,6 +28,16 @@ target_compile_options(we-renderer-options-test PRIVATE ${warn_opts})
 add_test(NAME we-renderer-options-test COMMAND we-renderer-options-test)
 
 add_executable(
+  we-project-source-test
+  abi/we_project_source_test.cpp)
+
+target_link_libraries(we-project-source-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-project-source-test PRIVATE ..)
+target_compile_options(we-project-source-test PRIVATE ${warn_opts})
+
+add_test(NAME we-project-source-test COMMAND we-project-source-test)
+
+add_executable(
   we-renderer-c-abi-test
   abi/we_renderer_c_abi_test.c)
 
