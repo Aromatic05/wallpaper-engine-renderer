@@ -103,6 +103,30 @@ target_compile_options(tex-header-parser-test PRIVATE ${warn_opts})
 add_test(NAME tex-header-parser-test COMMAND tex-header-parser-test)
 
 add_executable(
+  shader-audio-compat-test
+  scene/shader/shader_audio_compat_test.cpp)
+
+target_link_libraries(shader-audio-compat-test PRIVATE wpSceneBackend)
+target_include_directories(
+  shader-audio-compat-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(shader-audio-compat-test PRIVATE ${warn_opts})
+
+add_test(NAME shader-audio-compat-test COMMAND shader-audio-compat-test)
+
+add_executable(
   corpus-manifest-test
   corpus/corpus_manifest_test.cpp)
 

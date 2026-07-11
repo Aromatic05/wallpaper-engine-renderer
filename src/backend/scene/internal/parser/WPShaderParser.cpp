@@ -1,4 +1,5 @@
 #include "WPShaderParser.hpp"
+#include "WPShaderParserTestHooks.hpp"
 
 #include "fs/IBinaryStream.h"
 #include "utils/Logging.h"
@@ -507,6 +508,214 @@ inline std::string UndefBeforeUserMacroDefines(std::string_view src, std::string
     }
 
     return changed ? out : std::string(src);
+}
+
+inline bool IsAudioSpectrumName(std::string_view name) {
+    return name == "g_AudioSpectrum16Left" || name == "g_AudioSpectrum16Right" ||
+           name == "g_AudioSpectrum32Left" || name == "g_AudioSpectrum32Right" ||
+           name == "g_AudioSpectrum64Left" || name == "g_AudioSpectrum64Right";
+}
+
+inline size_t SkipShaderTrivia(std::string_view source, size_t pos) {
+    for (;;) {
+        pos = SkipWhitespace(source, pos);
+        if (pos + 1 >= source.size() || source[pos] != '/') return pos;
+        if (source[pos + 1] == '/') {
+            const auto line_end = source.find('\n', pos + 2);
+            if (line_end == std::string_view::npos) return source.size();
+            pos = line_end + 1;
+            continue;
+        }
+        if (source[pos + 1] != '*') return pos;
+        const auto close = source.find("*/", pos + 2);
+        if (close == std::string_view::npos) return source.size();
+        pos = close + 2;
+    }
+}
+
+inline size_t FindShaderBracketEnd(std::string_view source, size_t open_pos) {
+    if (open_pos >= source.size() || source[open_pos] != '[') return std::string::npos;
+
+    int  depth { 0 };
+    bool in_block_comment { false };
+    bool in_string { false };
+    bool escaped { false };
+    char quote { '\0' };
+    for (size_t pos = open_pos; pos < source.size(); pos++) {
+        const char ch = source[pos];
+        const char next = pos + 1 < source.size() ? source[pos + 1] : '\0';
+        if (in_block_comment) {
+            if (ch == '*' && next == '/') {
+                in_block_comment = false;
+                pos++;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == quote) {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            const auto line_end = source.find('\n', pos + 2);
+            if (line_end == std::string_view::npos) return std::string::npos;
+            pos = line_end;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            in_block_comment = true;
+            pos++;
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            in_string = true;
+            quote = ch;
+            continue;
+        }
+        if (ch == '[') {
+            depth++;
+        } else if (ch == ']') {
+            depth--;
+            if (depth == 0) return pos + 1;
+        }
+    }
+    return std::string::npos;
+}
+
+inline std::string_view TrimShaderExpression(std::string_view expression) {
+    const auto begin = expression.find_first_not_of(" \t\r\n");
+    if (begin == std::string_view::npos) return {};
+    const auto end = expression.find_last_not_of(" \t\r\n");
+    return expression.substr(begin, end - begin + 1);
+}
+
+inline std::optional<std::string_view> ParsePackedAudioIndexTerm(std::string_view expression,
+                                                                 char expected_operator) {
+    expression = TrimShaderExpression(expression);
+    if (expression.empty() || ! IsIdentifierStart(expression.front())) return std::nullopt;
+    const auto identifier_end = SkipIdentifier(expression, 0);
+    const auto identifier = expression.substr(0, identifier_end);
+    auto pos = SkipWhitespace(expression, identifier_end);
+    if (pos >= expression.size() || expression[pos] != expected_operator) return std::nullopt;
+    pos = SkipWhitespace(expression, pos + 1);
+    if (pos >= expression.size() || expression[pos] != '4') return std::nullopt;
+    pos = SkipWhitespace(expression, pos + 1);
+    if (pos != expression.size()) return std::nullopt;
+    return identifier;
+}
+
+inline std::string FlattenPackedAudioIndex(std::string_view group, std::string_view component) {
+    const auto group_identifier = ParsePackedAudioIndexTerm(group, '/');
+    const auto component_identifier = ParsePackedAudioIndexTerm(component, '%');
+    if (group_identifier && component_identifier && *group_identifier == *component_identifier) {
+        return "(int)(" + std::string(*group_identifier) + ")";
+    }
+
+    std::string result;
+    result.reserve(group.size() + component.size() + 32);
+    result += "((int)(";
+    result.append(group);
+    result += ") * 4 + (int)(";
+    result.append(component);
+    result += "))";
+    return result;
+}
+
+inline std::string NormalizePackedAudioSpectrumAccessImpl(std::string_view source) {
+    std::string output;
+    output.reserve(source.size());
+    size_t copied { 0 };
+    size_t pos { 0 };
+    bool changed { false };
+    bool in_block_comment { false };
+    bool in_string { false };
+    bool escaped { false };
+    char quote { '\0' };
+
+    while (pos < source.size()) {
+        const char ch = source[pos];
+        const char next = pos + 1 < source.size() ? source[pos + 1] : '\0';
+        if (in_block_comment) {
+            if (ch == '*' && next == '/') {
+                in_block_comment = false;
+                pos += 2;
+            } else {
+                pos++;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == quote) {
+                in_string = false;
+            }
+            pos++;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            const auto line_end = source.find('\n', pos + 2);
+            pos = line_end == std::string_view::npos ? source.size() : line_end + 1;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            in_block_comment = true;
+            pos += 2;
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            in_string = true;
+            quote = ch;
+            pos++;
+            continue;
+        }
+        if (! IsIdentifierStart(ch)) {
+            pos++;
+            continue;
+        }
+
+        const auto identifier_end = SkipIdentifier(source, pos);
+        const auto identifier = source.substr(pos, identifier_end - pos);
+        if (! IsAudioSpectrumName(identifier)) {
+            pos = identifier_end;
+            continue;
+        }
+
+        const auto first_open = SkipShaderTrivia(source, identifier_end);
+        const auto first_end = FindShaderBracketEnd(source, first_open);
+        const auto second_open = first_end == std::string_view::npos
+            ? std::string_view::npos
+            : SkipShaderTrivia(source, first_end);
+        const auto second_end = second_open == std::string_view::npos
+            ? std::string_view::npos
+            : FindShaderBracketEnd(source, second_open);
+        if (first_end == std::string_view::npos || second_end == std::string_view::npos) {
+            pos = identifier_end;
+            continue;
+        }
+
+        const auto group = source.substr(first_open + 1, first_end - first_open - 2);
+        const auto component = source.substr(second_open + 1, second_end - second_open - 2);
+        output.append(source, copied, pos - copied);
+        output.append(identifier);
+        output.push_back('[');
+        output += FlattenPackedAudioIndex(group, component);
+        output.push_back(']');
+        copied = second_end;
+        pos = second_end;
+        changed = true;
+    }
+
+    if (! changed) return std::string(source);
+    output.append(source, copied, source.size() - copied);
+    return output;
 }
 
 struct IODecl {
@@ -1151,6 +1360,7 @@ inline std::string PreprocessDxcWeSource(const std::string& src, ShaderType stag
     std::string source = SanitizeBrokenPreprocessorDirectives(src, stage);
     source             = CommentOutRequireDirectives(source);
     source             = UndefBeforeUserMacroDefines(source, "M_PI_2");
+    source             = NormalizePackedAudioSpectrumAccessImpl(source);
 
     std::string with_prologue;
     if (UserDefinesMod(source)) with_prologue += "#define WW_USER_MOD 1\n";
@@ -2221,6 +2431,10 @@ inline const char* DxcStageLogName(ShaderType stage) {
 }
 
 } // namespace
+
+std::string wallpaper::test::NormalizePackedAudioSpectrumAccess(std::string_view source) {
+    return NormalizePackedAudioSpectrumAccessImpl(source);
+}
 
 std::string WPShaderParser::PreShaderSrc(fs::VFS& vfs, const std::string& src,
                                          WPShaderInfo*                       pWPShaderInfo,
