@@ -160,6 +160,7 @@ target_include_directories(
   ../common
   ../common/scene
   ../common/fs/include
+  ../render/rendergraph/include
   ../render/vulkan/include)
 target_compile_options(resource-correctness-test PRIVATE ${warn_opts})
 

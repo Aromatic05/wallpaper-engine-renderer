@@ -7,10 +7,14 @@
 #include "backend/scene/internal/parser/WPTexImageParser.hpp"
 #include "render/vulkan/include/vulkan/Device.hpp"
 #include "render/vulkan/include/vulkan/Instance.hpp"
+#include "render/vulkanrender/CopyPass.hpp"
+#include "render/vulkanrender/PassCommon.hpp"
+#include "render/vulkanrender/Resource.hpp"
 
 #include <cassert>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <array>
 #include <memory>
@@ -34,6 +38,15 @@ using wallpaper::audio::CreateSoundStream;
 using wallpaper::audio::SoundStream;
 using wallpaper::TextureFormat;
 namespace vk = wallpaper::vulkan;
+
+[[noreturn]] void FailTest(const char* message) {
+    std::fprintf(stderr, "resource-correctness-test: %s\n", message);
+    std::abort();
+}
+
+void RequireTest(bool condition, const char* message) {
+    if (! condition) FailTest(message);
+}
 
 class ShortReadStream final : public IBinaryStream {
 public:
@@ -291,11 +304,14 @@ struct VulkanFixture {
         const std::array<vk::InstanceLayer, 0> inst_layers {};
         const std::array<vk::Extension, 0>     device_exts {};
 
-        assert(vk::Instance::Create(instance, inst_exts, inst_layers));
-        assert(instance.ChoosePhysicalDevice([&](auto gpu) {
-            return vk::Device::CheckGPU(gpu, device_exts, {});
-        }));
-        assert(vk::Device::Create(instance, device_exts, VkExtent2D { 1, 1 }, device));
+        RequireTest(vk::Instance::Create(instance, inst_exts, inst_layers),
+                    "failed to create Vulkan instance");
+        RequireTest(instance.ChoosePhysicalDevice([&](auto gpu) {
+                        return vk::Device::CheckGPU(gpu, device_exts, {});
+                    }),
+                    "failed to choose Vulkan physical device");
+        RequireTest(vk::Device::Create(instance, device_exts, VkExtent2D { 1, 1 }, device),
+                    "failed to create Vulkan device");
     }
 };
 
@@ -429,6 +445,51 @@ void TestVfsTextureCacheIsolation() {
     assert(tex2.slots.front().handle);
     assert(tex1.slots.front().view);
     assert(tex2.slots.front().view);
+}
+
+
+void TestCopyPassKeepsPreparedSourceResidentUntilExecution() {
+    VulkanFixture vk;
+    wallpaper::Scene scene;
+
+    constexpr std::string_view source_key = "_rt_copy_source";
+    constexpr std::string_view target_key = "_rt_copy_target";
+    constexpr std::string_view interloper_key = "_rt_copy_interloper";
+
+    wallpaper::SceneRenderTarget source_target {
+        .width = 4,
+        .height = 4,
+        .allowReuse = true,
+    };
+    scene.renderTargets[std::string(source_key)] = source_target;
+    scene.renderTargets[std::string(target_key)] = source_target;
+
+    vk::CopyPass::Desc desc {
+        .src = std::string(source_key),
+        .dst = std::string(target_key),
+    };
+    vk::CopyPass copy(desc);
+    copy.addReleaseTexs(std::array<std::string_view, 1> { source_key });
+
+    vk::RenderingResources resources {};
+    copy.prepare(scene, vk.device, resources);
+    RequireTest(copy.prepared(), "copy pass did not prepare");
+    RequireTest(copy.desc().vk_src.handle != VK_NULL_HANDLE, "copy source image is missing");
+
+    const auto texture_key = vk::ToTexKey(scene.renderTargets.at(std::string(source_key)));
+    auto& cache = vk.device.tex_cache();
+
+    auto interloper = cache.Query(interloper_key, texture_key);
+    RequireTest(interloper.has_value(), "failed to allocate interloper image");
+    RequireTest(interloper->handle != copy.desc().vk_src.handle,
+                "copy source was released during prepare and reused by an interloper");
+
+    auto producer = cache.Query(source_key, texture_key);
+    RequireTest(producer.has_value(), "failed to query producer image");
+    RequireTest(producer->handle == copy.desc().vk_src.handle,
+                "producer and prepared copy pass bound different source images");
+    RequireTest(producer->view == copy.desc().vk_src.view,
+                "producer and prepared copy pass bound different source views");
 }
 
 void TestTextureCacheDeferredGraphActivation() {
@@ -582,6 +643,7 @@ int main() {
     TestLimitedBinaryStream();
     TestVfsIdentityAndCacheIsolation();
     TestVfsTextureCacheIsolation();
+    TestCopyPassKeepsPreparedSourceResidentUntilExecution();
     TestTextureCacheDeferredGraphActivation();
     TestDecoderFailureHandling();
     TestDecoderProbeAndRewind();

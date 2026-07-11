@@ -58,10 +58,10 @@ void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& r
         *vk_textures[i] = img;
     }
 
-    for (auto& tex : releaseTexs()) {
-        device.tex_cache().MarkShareReady(tex);
-    }
-
+    // Copy passes are prepared before shader passes so graph dependencies exist before deferred
+    // residency begins. Releasing a final-read source here would let a later producer bind a new
+    // physical image for the same logical render target while this pass keeps the old handle. Keep
+    // the source resident until this pass reaches its actual final-read boundary in execute().
     setPrepared();
 };
 
@@ -86,7 +86,10 @@ void CopyPass::refreshResources(Scene& scene, const Device& device, RenderingRes
     }
 }
 void CopyPass::execute(const Device& device, RenderingResources& rr) {
-    if (m_desc.should_execute && ! m_desc.should_execute()) return;
+    if (m_desc.should_execute && ! m_desc.should_execute()) {
+        releaseFinalReadTexs(device);
+        return;
+    }
 
     auto& cmd = rr.command;
     auto& src = m_desc.vk_src;
@@ -94,6 +97,7 @@ void CopyPass::execute(const Device& device, RenderingResources& rr) {
 
     if (! (src.handle && dst.handle)) {
         assert(src.handle && dst.handle);
+        releaseFinalReadTexs(device);
         return;
     }
 
@@ -189,5 +193,6 @@ void CopyPass::execute(const Device& device, RenderingResources& rr) {
     if (dst.mipmap_level > 1) {
         device.tex_cache().RecGenerateMipmaps(cmd, dst);
     }
+    releaseFinalReadTexs(device);
 };
 void CopyPass::destory(const Device&, RenderingResources&) {}
