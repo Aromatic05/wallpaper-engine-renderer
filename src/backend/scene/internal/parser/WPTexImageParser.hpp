@@ -1,5 +1,6 @@
 #pragma once
 #include "interface/IImageParser.h"
+#include "wallpaper/Result.hpp"
 #include "fs/VFS.h"
 
 namespace wallpaper
@@ -13,6 +14,7 @@ public:
 
     std::shared_ptr<Image> Parse(const std::string&) override;
     ImageHeader            ParseHeader(const std::string&) override;
+    Result<ImageHeader>    ParseHeaderChecked(const std::string&);
 
 private:
     fs::VFS* m_vfs;

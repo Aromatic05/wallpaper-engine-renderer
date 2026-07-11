@@ -75,6 +75,24 @@ target_compile_options(wp-pkg-index-test PRIVATE ${warn_opts})
 add_test(NAME wp-pkg-index-test COMMAND wp-pkg-index-test)
 
 add_executable(
+  tex-header-parser-test
+  scene/tex/tex_header_parser_test.cpp)
+
+target_link_libraries(tex-header-parser-test PRIVATE wpSceneBackend)
+target_include_directories(
+  tex-header-parser-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/scene
+  ../common/fs/include)
+target_compile_options(tex-header-parser-test PRIVATE ${warn_opts})
+
+add_test(NAME tex-header-parser-test COMMAND tex-header-parser-test)
+
+add_executable(
   corpus-manifest-test
   corpus/corpus_manifest_test.cpp)
 

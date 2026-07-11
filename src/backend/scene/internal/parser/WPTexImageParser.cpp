@@ -1,4 +1,5 @@
 #include "WPTexImageParser.hpp"
+#include "WPTexHeaderParser.hpp"
 
 #include "Type.hpp"
 #include "WPCommon.hpp"
@@ -329,113 +330,6 @@ void SaveCachedImageHeader(const ImageHeader& header, uint64_t file_size, fs::IB
     SaveSpriteAnimation(header.spriteAnim, file);
 }
 
-ImageHeader ParseHeaderUncached(fs::IBinaryStream& file) {
-    ImageHeader header;
-    LoadHeader(file, header);
-    if (header.count < 0) return header;
-
-    usize image_count = (usize)header.count;
-
-    if (header.isSprite) {
-        std::vector<std::vector<float>> imageDatas(image_count);
-        for (usize i_image = 0; i_image < image_count; i_image++) {
-            int mipmap_count = file.ReadInt32();
-            for (int32_t i_mipmap = 0; i_mipmap < mipmap_count; i_mipmap++) {
-                int32_t width  = file.ReadInt32();
-                int32_t height = file.ReadInt32();
-                if (i_mipmap == 0) {
-                    imageDatas.at(i_image) = { (float)width, (float)height };
-                    header.mipmap_pow2     = algorism::IsPowOfTwo((u32)(width * height));
-                }
-                if (header.extraHeader["texb"].val > 1) {
-                    int32_t LZ4_compressed    = file.ReadInt32();
-                    int32_t decompressed_size = file.ReadInt32();
-                    (void)LZ4_compressed;
-                    (void)decompressed_size;
-                }
-                long src_size = file.ReadInt32();
-                file.SeekCur(src_size);
-            }
-        }
-
-        int32_t texs       = ReadTexVesion(file);
-        int32_t framecount = file.ReadInt32();
-        if (texs > 3) {
-            LOG_ERROR("Unkown texs version");
-        }
-        if (texs == 3) {
-            i32 width  = file.ReadInt32();
-            i32 height = file.ReadInt32();
-            (void)width;
-            (void)height;
-        }
-
-        for (int32_t i = 0; i < framecount; i++) {
-            SpriteFrame sf;
-            sf.imageId = file.ReadInt32();
-            if (sf.imageId < 0) {
-                LOG_ERROR("get neg imageid");
-            }
-            float spriteWidth  = imageDatas.at((usize)sf.imageId)[0];
-            float spriteHeight = imageDatas.at((usize)sf.imageId)[1];
-
-            sf.frametime = file.ReadFloat();
-            if (texs == 1) {
-                sf.x        = (float)file.ReadInt32() / spriteWidth;
-                sf.y        = (float)file.ReadInt32() / spriteHeight;
-                sf.xAxis[0] = (float)file.ReadInt32();
-                sf.xAxis[1] = (float)file.ReadInt32();
-                sf.yAxis[0] = (float)file.ReadInt32();
-                sf.yAxis[1] = (float)file.ReadInt32();
-            } else {
-                sf.x        = file.ReadFloat() / spriteWidth;
-                sf.y        = file.ReadFloat() / spriteHeight;
-                sf.xAxis[0] = file.ReadFloat();
-                sf.xAxis[1] = file.ReadFloat();
-                sf.yAxis[0] = file.ReadFloat();
-                sf.yAxis[1] = file.ReadFloat();
-            }
-            sf.width  = (float)std::sqrt(std::pow(sf.xAxis[0], 2) + std::pow(sf.xAxis[1], 2));
-            sf.height = (float)std::sqrt(std::pow(sf.yAxis[0], 2) + std::pow(sf.yAxis[1], 2));
-            sf.xAxis[0] /= spriteWidth;
-            sf.xAxis[1] /= spriteWidth;
-            sf.yAxis[0] /= spriteHeight;
-            sf.yAxis[1] /= spriteHeight;
-            sf.rate = sf.height / sf.width;
-            header.spriteAnim.AppendFrame(sf);
-        }
-    } else {
-        i32 mipmap_count = file.ReadInt32();
-        for (i32 i_mipmap = 0; i_mipmap < mipmap_count; i_mipmap++) {
-            i32 width  = file.ReadInt32();
-            i32 height = file.ReadInt32();
-            if (i_mipmap == 0) SetHeaderPow2(header, width, height);
-
-            bool    LZ4_compressed    = false;
-            int32_t decompressed_size = 0;
-            if (header.extraHeader["texb"].val > 1) {
-                LZ4_compressed    = file.ReadInt32() == 1;
-                decompressed_size = file.ReadInt32();
-            }
-            (void)decompressed_size;
-
-            const i32 src_size = file.ReadInt32();
-            if (src_size <= 0) continue;
-
-            constexpr usize probe_size = 16;
-            const auto      to_read = static_cast<usize>(std::min<i32>(src_size, probe_size));
-            char            probe[probe_size] {};
-            const auto      read = file.Read(probe, to_read);
-            if (i_mipmap == 0 && !LZ4_compressed && header.type == ImageType::UNKNOWN &&
-                LooksLikeMp4Payload(probe, read)) {
-                header.isVideoTexture = true;
-                header.extraHeader["texb_is_video_mp4"].val = 1;
-            }
-            if (src_size > static_cast<i32>(read)) file.SeekCur(src_size - static_cast<i32>(read));
-        }
-    }
-    return header;
-}
 
 } // namespace
 
@@ -547,9 +441,22 @@ std::shared_ptr<Image> WPTexImageParser::Parse(const std::string& name) {
 }
 
 ImageHeader WPTexImageParser::ParseHeader(const std::string& name) {
-    std::string path  = "/assets/materials/" + name + ".tex";
-    auto        pfile = m_vfs->Open(path);
-    if (! pfile) return {};
+    auto result = ParseHeaderChecked(name);
+    if (! result) {
+        LOG_ERROR("failed to parse texture header '%s': %s",
+                  name.c_str(), result.error().message.c_str());
+        return {};
+    }
+    return std::move(result.value());
+}
+
+Result<ImageHeader> WPTexImageParser::ParseHeaderChecked(const std::string& name) {
+    const std::string path = "/assets/materials/" + name + ".tex";
+    auto pfile = m_vfs->Open(path);
+    if (! pfile) {
+        return Result<ImageHeader>::failure(ResultCode::NotFound,
+                                            "texture file was not found: " + path);
+    }
     auto& file = *pfile;
 
     const auto file_size = static_cast<uint64_t>(file.Usize());
@@ -559,18 +466,19 @@ ImageHeader WPTexImageParser::ParseHeader(const std::string& name) {
             ImageHeader cached_header;
             uint64_t    cached_size { 0 };
             auto        cache_file = m_vfs->Open(cache_path);
-            if (cache_file && LoadCachedImageHeader(cached_header, cached_size, *cache_file) &&
-                cached_size == file_size) {
-                return cached_header;
+            if (cache_file && LoadCachedImageHeader(cached_header, cached_size, *cache_file)
+                && cached_size == file_size) {
+                return Result<ImageHeader>::success(std::move(cached_header));
             }
         }
 
-        auto header = ParseHeaderUncached(file);
+        auto headerResult = ParseWPTexHeader(file);
+        if (! headerResult) return headerResult;
         if (auto cache_file = m_vfs->OpenW(cache_path); cache_file) {
-            SaveCachedImageHeader(header, file_size, *cache_file);
+            SaveCachedImageHeader(headerResult.value(), file_size, *cache_file);
         }
-        return header;
+        return headerResult;
     }
 
-    return ParseHeaderUncached(file);
+    return ParseWPTexHeader(file);
 }
