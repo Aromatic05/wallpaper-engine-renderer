@@ -192,22 +192,22 @@ its independent node-alignment layout contract.
 | `5431b87` | preserve text color in glyph seed | `DONE` | First-class TextPass preserves authored glyph RGB independently from background brightness. |
 | `f721e8c` | composite final perspective effects | `DONE` | Perspective shaders are classified as authored final writers. |
 | `f7406a4` | media thumbnail image fallback | `TEST` | Local implementation exists; add/retain exact fallback regression. |
-| `ba993dd` | image color blend final owner | `REVIEW` | Validate final render target ownership. |
+| `ba993dd` | image color blend final owner | `DONE` | BLENDMODE is applied to the actual layer/puppet/final-effect writer. |
 | `9165e37` | seed text effects with background | `DONE` | Framebuffer RGB/zero-alpha prefill precedes one private glyph seed. |
 | `1a6251c` | unresolved layers script-safe | `REVIEW` | Validate deferred materialization and unresolved references. |
 | `c52a28e` | resize dynamic text effect targets | `DONE` | Runtime text rebuild grows bridge/FBO resources and marks only affected targets dirty. |
-| `a03db48` | color blend alpha compositing | `REVIEW` | Pixel/ROI comparison. |
+| `a03db48` | color blend alpha compositing | `DONE` | Legacy 0–100 image alpha is normalized and RGB-only passes preserve destination alpha. |
 | `7556026` | transparent previous effects | `DONE` | TRANSPARENCY plus a sampler annotated as `previous` may composite directly. |
-| `1362b6d` | simplify copybackground color blend | `REVIEW` | Behavior only; do not copy structural simplification blindly. |
-| `fdce1ee` | copybackground effect color blend | `REVIEW` | Copybackground and alpha ownership fixture. |
+| `1362b6d` | simplify copybackground color blend | `DONE` | Consolidated into final-owner planning; no dedicated additive workaround remains. |
+| `fdce1ee` | copybackground effect color blend | `DONE` | COPYBG is propagated as a shader combo through authored and synthetic final effects. |
 | `680b3d8` | dynamic effect text clipping | `DONE` | Cropped visible source metrics drive bridge targets and final mesh placement. |
 | `26fc451` | atmosphere effect rendering | `REVIEW` | Real wallpaper and synthetic pass graph. |
 | `40c60bb` | spin effect final quad center | `REVIEW` | Transform center regression. |
 | `73342e3` | clock highlight rendering | `REVIEW` | Calendar/clock visual fixture. |
 | `9c7ef47` | text alpha composition | `DONE` | Private glyph source uses straight RGBA; translucent final composite applies alpha once. |
-| `e366bc0` | copybackground video blend | `REVIEW` | Video-backed copybackground fixture. |
+| `e366bc0` | copybackground video blend | `DONE` | COPYBG shader composition and existing getVideoTexture runtime controls are covered together. |
 | `c79db16` | scroll effect final composite | `DONE` | Scroll shaders remain authored final writers. |
-| `fdfd195` | copybackground color blend | `REVIEW` | Consolidate with the other copybackground cases. |
+| `fdfd195` | copybackground color blend | `DONE` | Superseded fixed-additive experiment replaced by shader-owned blend math. |
 | `f0eb7c1` | clamp image effect render targets | `REVIEW` | Oversized/negative target extent fixture. |
 | `77bcea2` | transform effect final composite | `DONE` | Transform shaders remain authored final writers; ordinary filters publish through the neutral composite. |
 | `4cab330` | dynamic text effect sizing | `DONE` | Camera, final mesh, source target, and dependent FBOs synchronize after text layout changes. |
@@ -242,6 +242,16 @@ Generic image/passthrough, transform, scroll, and perspective shaders remain dir
 All other terminal filters stay on a private ping-pong target and are published by the neutral final
 composite. Tests cover annotation parsing, direct and private topology, linked-layer publication, and
 text bridges.
+
+Image color blending is assigned to the real final owner. Layers without an effect chain apply
+`BLENDMODE` to their image material; effect-backed layers append one synthetic final compositor; an
+animated puppet keeps the combo on its layer-surface writer. Local technical effects such as linked
+solid passthroughs count as an effect chain, preventing the combo from being stranded on a replaced
+source material. `copybackground` is carried as `COPYBG=1` on every effect material, including the
+synthetic color-blend writer, and no fixed additive material blend is used. Legacy image alpha in the
+0–100 range is normalized at object parse time. Passes that preserve destination alpha now zero only
+their alpha blend factors while retaining authored RGB blending. Integration tests cover direct,
+effect-backed, linked-solid, shader-combo, alpha-write, and existing video-texture control paths.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

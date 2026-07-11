@@ -592,6 +592,7 @@ CustomShaderRenderState BuildCustomShaderRenderState(
 
     const auto blend_mode = material.blenmode;
     SetBlend(blend_mode, state.color_blend);
+    SetAlphaBlendWritePolicy(writes_alpha, state.color_blend);
     ApplyPremultipliedSourceBlend(desc, writes_alpha, state.color_blend);
     PreservePublisherAlpha(desc.force_alpha_write, writes_alpha, state.color_blend);
     desc.blending = state.color_blend.blendEnable;

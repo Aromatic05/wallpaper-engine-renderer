@@ -17,6 +17,7 @@
 #include "WPSyntheticImageParser.hpp"
 #include "WPParticleParser.hpp"
 #include "effect/FinalComposite.hpp"
+#include "effect/ColorBlend.hpp"
 #include "particle/Animation.hpp"
 #include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
@@ -4414,22 +4415,6 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
     auto& vfs = *context.vfs;
 
-    // coloBlendMode load passthrough manaully
-    if (wpimgobj.colorBlendMode != 0) {
-        wpscene::WPImageEffect colorEffect;
-        wpscene::WPMaterial    colorMat;
-        nlohmann::json         json;
-        if (! PARSE_JSON(fs::GetFileContent(vfs, "/assets/materials/util/effectpassthrough.json"),
-                         json))
-            return;
-        colorMat.FromJson(json);
-        colorMat.combos["BONECOUNT"] = 1;
-        colorMat.combos["BLENDMODE"] = wpimgobj.colorBlendMode;
-        colorMat.blending            = "disabled";
-        colorEffect.name             = std::string(kSyntheticColorBlendEffectName);
-        colorEffect.materials.push_back(colorMat);
-        wpimgobj.effects.push_back(colorEffect);
-    }
 
     int32_t count_eff = 0;
     for (const auto& wpeffobj : wpimgobj.effects) {
@@ -4437,7 +4422,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             BuildEffectVisibilityContract(wpeffobj, context.user_properties);
         if (! effect_visibility.can_prune_at_parse_time) count_eff++;
     }
-    bool       hasAuthoredEffect = count_eff > 0;
+    const bool hasAuthorEffect = count_eff > 0;
+    bool       hasMaterializedEffect = hasAuthorEffect;
     bool       isCompose         = (wpimgobj.image == "models/util/composelayer.json");
     const bool isProjectLayer =
         wpimgobj.projectlayer || wpimgobj.image == "models/util/projectlayer.json";
@@ -4446,14 +4432,15 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     const bool is_offscreen_dependency_source =
         context.scene != nullptr &&
         context.scene->offscreenDependencyLayerIds.count(wpimgobj.id) != 0;
-    if (isSolidLayer && is_offscreen_dependency_source && ! hasAuthoredEffect) {
+    if (isSolidLayer && is_offscreen_dependency_source && ! hasMaterializedEffect) {
         // A linked solid layer needs two outputs from the same local result: its private
         // `_rt_imageLayerComposite_<id>` publication and, when visible, its normal scene
         // contribution. A neutral passthrough gives the effect bridge a concrete final writer so
         // RenderPlanBuilder can keep that writer private and publish it through the layer's final
         // composite without sampling the cumulative `_rt_default` framebuffer.
         if (! AppendLinkedSolidPassthroughEffect(vfs, wpimgobj)) return;
-        hasAuthoredEffect = true;
+        count_eff++;
+        hasMaterializedEffect = true;
     }
     // Wallpaper Engine `dependencies` expose a layer through `_rt_imageLayerComposite_<id>`
     // even when the source layer has no authored effects. Such layers still need a private source
@@ -4461,7 +4448,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     // hidden in the main scene. Treating dependency-only image layers as effect-backed sources lets
     // the existing effect camera/ping-pong path materialize the raw image or mask without drawing
     // it directly into `_rt_default`.
-    bool hasEffect = hasAuthoredEffect || is_offscreen_dependency_source;
+    bool hasEffect = hasMaterializedEffect || is_offscreen_dependency_source;
     // Detached effect world nodes still need to inherit the parent transform even though they
     // cannot become real scene-graph children of that parent. SceneScript/property-animation
     // also needs a dedicated logical/world node for image layers with effects, otherwise runtime
@@ -4514,6 +4501,36 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     const bool hasStaticImageMesh =
         puppet != nullptr && puppet->kind == WPMdl::MeshKind::StaticImage;
 
+    const bool had_effect_chain_before_color_blend = hasMaterializedEffect;
+    const auto color_blend_plan = ResolveImageColorBlendPlan(
+        wpimgobj.colorBlendMode,
+        had_effect_chain_before_color_blend,
+        hasAnimatedPuppetMesh);
+    if (color_blend_plan.append_final_effect) {
+        wpscene::WPImageEffect color_effect;
+        wpscene::WPMaterial    color_material;
+        nlohmann::json         color_json;
+        if (! PARSE_JSON(
+                fs::GetFileContent(vfs, "/assets/materials/util/effectpassthrough.json"),
+                color_json) ||
+            ! color_material.FromJson(color_json)) {
+            return;
+        }
+        color_material.combos["BONECOUNT"] = 1;
+        ApplyImageColorBlend(color_material, wpimgobj.colorBlendMode);
+        color_effect.name = std::string(kSyntheticColorBlendEffectName);
+        color_effect.materials.push_back(std::move(color_material));
+        wpimgobj.effects.push_back(std::move(color_effect));
+        count_eff++;
+        hasMaterializedEffect = true;
+        hasEffect = true;
+    }
+
+    wpscene::WPMaterial image_wpmat = wpimgobj.material;
+    if (color_blend_plan.apply_to_layer_material && ! had_effect_chain_before_color_blend) {
+        ApplyImageColorBlend(image_wpmat, wpimgobj.colorBlendMode);
+    }
+
     // wpimgobj.origin[1] = context.ortho_h - wpimgobj.origin[1];
     auto spWorldNode = std::make_shared<SceneNode>(Vector3f(wpimgobj.origin.data()),
                                                    Vector3f(wpimgobj.scale.data()),
@@ -4554,7 +4571,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
         if (! use_copybackground_source_helper) {
             if (! LoadMaterial(vfs,
-                               wpimgobj.material,
+                               image_wpmat,
                                context.scene.get(),
                                spImgNode.get(),
                                &material,
@@ -4564,8 +4581,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 LOG_ERROR("load imageobj '%s' material faild", wpimgobj.name.c_str());
                 return;
             };
-            LoadConstvalue(material, wpimgobj.material, shaderInfo);
-            LoadUserShaderValue(material, wpimgobj.material, shaderInfo, context.user_properties);
+            LoadConstvalue(material, image_wpmat, shaderInfo);
+            LoadUserShaderValue(material, image_wpmat, shaderInfo, context.user_properties);
         } else {
             // Preserve the authored final blend contract from the original helper material, but use
             // a neutral framebuffer-fed source so generator effects sample the already rendered
@@ -4573,7 +4590,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             SceneMaterial     authored_material;
             WPShaderValueData authored_sv_data;
             if (! LoadMaterial(vfs,
-                               wpimgobj.material,
+                               image_wpmat,
                                context.scene.get(),
                                spImgNode.get(),
                                &authored_material,
@@ -4583,9 +4600,9 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 LOG_ERROR("load imageobj '%s' authored material faild", wpimgobj.name.c_str());
                 return;
             }
-            LoadConstvalue(authored_material, wpimgobj.material, shaderInfo);
+            LoadConstvalue(authored_material, image_wpmat, shaderInfo);
             LoadUserShaderValue(
-                authored_material, wpimgobj.material, shaderInfo, context.user_properties);
+                authored_material, image_wpmat, shaderInfo, context.user_properties);
 
             wpscene::WPMaterial source_material;
             if (! LoadCopyBackgroundSourceHelperMaterial(vfs, source_material)) {
@@ -4647,11 +4664,15 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
 
                 wpscene::WPImageEffect puppet_effect;
                 wpscene::WPMaterial    puppet_mat;
-                puppet_mat             = wpimgobj.material;
+                puppet_mat = image_wpmat;
+                if (color_blend_plan.apply_to_layer_material) {
+                    ApplyImageColorBlend(puppet_mat, wpimgobj.colorBlendMode);
+                }
                 puppet_mat.textures[0] = "";
                 WPMdlParser::AddPuppetMatInfo(puppet_mat, *puppet);
                 puppet_effect.materials.push_back(puppet_mat);
                 wpimgobj.effects.push_back(puppet_effect);
+                count_eff++;
             } else {
                 svData.puppet_layer = WPPuppetLayer(puppet->puppet);
                 svData.puppet_layer.prepared(wpimgobj.puppet_layers);
@@ -4713,7 +4734,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     mesh.AddMaterial(std::move(material));
     spImgNode->AddMesh(spMesh);
     RegisterUserShaderValueBindings(
-        context, wpimgobj.material, shaderInfo, spImgNode.get(), wpimgobj.id, wpimgobj.name);
+        context, image_wpmat, shaderInfo, spImgNode.get(), wpimgobj.id, wpimgobj.name);
 
     if (hasAnimatedPuppetMesh) {
         svData.puppet_layer = WPPuppetLayer(puppet->puppet);
@@ -4853,7 +4874,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                          wpimgobj.fullscreen ? "true" : "false");
             }
         }
-        if (hasAuthoredEffect) {
+        if (hasMaterializedEffect) {
             // Every authored/synthetic chain gets a neutral final publisher. Linked dependency
             // sources resolve the authored final pass privately and use this node only for their
             // visible scene contribution; unlinked layers retain the historical hidden-effect
@@ -5027,14 +5048,11 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                         }
                     }
                 }
-                if (wpimgobj.copybackground) {
-                    // Stock combine shaders such as shine/godrays expect Wallpaper Engine to
-                    // synthesize COPYBG from the owning layer contract instead of from the authored
-                    // pass json. Without it, the combine pass keeps treating the incoming source as
-                    // a self-contained opaque strip and never mixes the live framebuffer back under
-                    // the glow based on the current alpha mask.
-                    wpmat.combos["COPYBG"] = 1;
-                }
+                // Layer-level copybackground is a shader combo contract for every authored effect
+                // material, including the synthetic color-blend final owner. Do not replace it with
+                // a fixed additive blend: the stock shader combines framebuffer RGB using its own
+                // alpha math while the material keeps the authored/final surface blend mode.
+                ApplyImageEffectContext(wpmat, wpimgobj.copybackground);
                 if (wpmat.textures.size() == 0) wpmat.textures.resize(1);
                 if (wpmat.textures.at(0).empty()) {
                     wpmat.textures[0] = inRT;

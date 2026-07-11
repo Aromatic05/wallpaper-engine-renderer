@@ -101,6 +101,7 @@ void TestImageSchema() {
         { "depthtest", "disabled" },
         { "backgroundcolor", { 0.1f, 0.2f, 0.3f } },
         { "backgroundbrightness", 0.5f },
+        { "alpha", 75.0f },
         { "animationlayers",
           { { { "animation", 5 },
               { "id", 42 },
@@ -132,8 +133,9 @@ void TestImageSchema() {
             "image feature flags were not preserved");
     Require(image.depthtest == "disabled"
                 && image.backgroundcolor == std::array<float, 3> { 0.1f, 0.2f, 0.3f }
-                && image.backgroundbrightness == 0.5f,
-            "image render metadata mismatch");
+                && image.backgroundbrightness == 0.5f
+                && image.alpha == 0.75f,
+            "image render metadata or legacy alpha normalization mismatch");
     Require(image.puppet_layers.size() == 1,
             "animation layer count mismatch");
     const auto& layer = image.puppet_layers.front();

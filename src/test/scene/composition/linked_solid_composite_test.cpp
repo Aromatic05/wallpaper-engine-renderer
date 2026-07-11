@@ -140,7 +140,7 @@ void MountAssets(wallpaper::fs::VFS& vfs) {
             "failed to mount linked-solid assets");
 }
 
-std::shared_ptr<wallpaper::Scene> ParseScene(bool source_visible) {
+std::shared_ptr<wallpaper::Scene> ParseScene(bool source_visible, bool color_blend) {
     wallpaper::WPSceneParser parser;
     wallpaper::fs::VFS vfs;
     wallpaper::audio::SoundManager sound_manager;
@@ -170,6 +170,8 @@ std::shared_ptr<wallpaper::Scene> ParseScene(bool source_visible) {
                 "scale": [1, 1, 1],
                 "visible": )")
         + (source_visible ? "true" : "false")
+        + (color_blend ? R"(,
+                "colorBlendMode": 9)" : "")
         + R"(
             },
             {
@@ -241,18 +243,23 @@ const vk::CustomShaderPass::Desc* FindVisibleSourcePublisher(rg::RenderGraph& gr
     return nullptr;
 }
 
-void Verify(bool source_visible) {
-    auto scene = ParseScene(source_visible);
+void Verify(bool source_visible, bool color_blend = false) {
+    auto scene = ParseScene(source_visible, color_blend);
     Require(scene != nullptr, "linked-solid scene failed to parse");
     Require(scene->offscreenDependencyLayerIds.count(10) == 1,
             "linked solid source was not classified as an offscreen dependency");
 
     auto* effect_layer = FindSourceEffectLayer(*scene);
     Require(effect_layer != nullptr, "linked solid source has no effect bridge");
-    Require(effect_layer->EffectCount() == 1,
-            "linked solid source must receive exactly one synthetic passthrough effect");
+    Require(effect_layer->EffectCount() == (color_blend ? 2U : 1U),
+            "linked solid source received the wrong number of final-owner effects");
     Require(effect_layer->GetEffect(0)->EffectName() == "__hanabi_linked_solid_passthrough",
             "linked solid source received the wrong synthetic effect");
+    if (color_blend) {
+        Require(effect_layer->GetEffect(1)->EffectName() ==
+                    "__hanabi_synthetic_color_blend_effect__",
+                "linked solid color blend did not move to the actual final owner");
+    }
     const auto consumer_nodes_it = scene->objectRuntimeNodes.find(20);
     Require(consumer_nodes_it != scene->objectRuntimeNodes.end(),
             "linked solid consumer has no runtime node");
@@ -297,5 +304,6 @@ void Verify(bool source_visible) {
 int main() {
     Verify(true);
     Verify(false);
+    Verify(true, true);
     return 0;
 }

@@ -3,6 +3,9 @@
 #include "fs/VFS.h"
 #include "WPTexImageParser.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 using namespace wallpaper::wpscene;
 
 // Shared effect parsing lives in WPEffect.cpp. This file now owns only image-object parsing, which
@@ -51,6 +54,12 @@ void ReadVisibleProperty(const nlohmann::json& json, bool* visible,
         *visible = parsed_visible;
         binding->value = parsed_visible;
     }
+}
+
+float NormalizeImageAlpha(float value) {
+    if (! std::isfinite(value)) return 0.0f;
+    if (value > 1.0f && value <= 100.0f) value /= 100.0f;
+    return std::clamp(value, 0.0f, 1.0f);
 }
 
 void ApplyImageInstanceMaterialOverride(const nlohmann::json& object_json, WPMaterial& material) {
@@ -128,6 +137,7 @@ bool WPImageObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
     GET_JSON_NAME_VALUE_NOWARN(jImage, "nopadding", nopadding);
     GET_JSON_NAME_VALUE_NOWARN(json, "color", color);
     GET_JSON_NAME_VALUE_NOWARN(json, "alpha", alpha);
+    alpha = NormalizeImageAlpha(alpha);
     GET_JSON_NAME_VALUE_NOWARN(json, "brightness", brightness);
 
 	GET_JSON_NAME_VALUE_NOWARN(jImage, "puppet", puppet);	

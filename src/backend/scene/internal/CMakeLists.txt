@@ -16,6 +16,7 @@ add_library(
   parser/WPShaderParser.cpp
   parser/WPSceneParser.cpp
   parser/effect/FinalComposite.cpp
+  parser/effect/ColorBlend.cpp
   shader/WPShaderValueUpdater.cpp
   parser/WPSceneLayerMetadata.cpp
   parser/WPSyntheticImageParser.cpp
