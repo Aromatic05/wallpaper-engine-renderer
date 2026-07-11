@@ -61,8 +61,7 @@ Eigen::Vector3d GenSphereIn(TFUNC&& random) noexcept {
 }
 
 constexpr double DragForce(double speed, double strength, double density) {
-    // return -0.5 * speed*speed * strength * density;
-    return -2.0 * speed * strength * density;
+    return -speed * strength * density;
 }
 inline Eigen::Vector3d DragForce(Eigen::Vector3d v, double strength,
                                  double density = 1.0) noexcept {

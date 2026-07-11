@@ -123,7 +123,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 |---|---|---|---|
 | `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
 | `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
-| `1691a07` | hidden particles and rain drag | `REVIEW` | Validate hidden-state simulation and drag independently. |
+| `1691a07` | hidden particles and rain drag | `PARTIAL` | Drag now uses the authored linear strength without the previous extra factor of two. Hidden generated particle subtree elision remains separate work; font fallback belongs to Stage 5. |
 | `ebd56ee` | node field animations | `REVIEW` | Compare with local property animation path. |
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
@@ -151,6 +151,9 @@ Particle instance overrides now use a shared production/test resolver. Root subs
 authored override, while child presets receive only enabled/alpha/color/colorn state. Regression tests
 execute with assertions enabled and verify both the copied tint result and the reset child-owned
 emission, lifetime, size, velocity, and control-point fields.
+
+Particle drag now evaluates `-speed * strength * density`. Scalar and vector regression assertions
+lock the authored coefficient and direction, preventing the previous doubled damping from returning.
 
 ### Stage 4 — RenderGraph and visual composition
 

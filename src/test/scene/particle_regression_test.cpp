@@ -2,6 +2,7 @@
 #include "backend/scene/internal/parser/WPSceneParserTestHooks.hpp"
 #include "backend/scene/internal/particle/include/particle/ParticleSystem.h"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
+#include "utils/Algorism.h"
 
 #include <cassert>
 #include <cmath>
@@ -197,6 +198,14 @@ void TestPaddedSpriteSheetUsesContentRegion() {
     assert(resolution[2] == 4);
     assert(resolution[3] == 4);
 }
+void TestDragForceMatchesAuthoredStrength() {
+    assert(std::abs(wallpaper::algorism::DragForce(4.0, 0.25, 2.0) + 2.0) < 1e-9);
+
+    const Eigen::Vector3d velocity { 3.0, 4.0, 0.0 };
+    const auto drag = wallpaper::algorism::DragForce(velocity, 0.5, 1.0);
+    assert((drag - Eigen::Vector3d { -1.5, -2.0, 0.0 }).norm() < 1e-9);
+}
+
 } // namespace
 
 int main() {
@@ -205,5 +214,6 @@ int main() {
     TestRuntimeSizeOverrideDoesNotCompound();
     TestRuntimeRateOverridePropagatesToChild();
     TestPaddedSpriteSheetUsesContentRegion();
+    TestDragForceMatchesAuthoredStrength();
     return 0;
 }
