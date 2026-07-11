@@ -28,6 +28,7 @@ struct Particle {
     Eigen::Vector3f acceleration { 0.0f, 0.0f, 0.0f };
     Eigen::Vector3f angularVelocity { 0.0f, 0.0f, 0.0f };
     Eigen::Vector3f angularAcceleration { 0.0f, 0.0f, 0.0f };
+    float           random { 0.0f };
 
     bool      mark_new { true };
     bool      hasRenderVelocity { false };

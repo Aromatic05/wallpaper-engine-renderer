@@ -1,5 +1,6 @@
 #include "backend/scene/internal/parser/WPParticleParser.hpp"
 #include "backend/scene/internal/parser/WPSceneParserTestHooks.hpp"
+#include "backend/scene/internal/parser/particle/Animation.hpp"
 #include "backend/scene/internal/particle/include/particle/ParticleSystem.h"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "utils/Algorism.h"
@@ -206,6 +207,42 @@ void TestDragForceMatchesAuthoredStrength() {
     assert((drag - Eigen::Vector3d { -1.5, -2.0, 0.0 }).norm() < 1e-9);
 }
 
+void TestRandomFrameUsesStableSpawnRandom() {
+    Particle low;
+    low.random = -1.0f;
+    assert(wallpaper::ResolveParticleRandomFrameLifetime(low) == 0.0f);
+
+    Particle selected;
+    selected.random = 0.375f;
+    assert(Near(wallpaper::ResolveParticleRandomFrameLifetime(selected), 0.375f));
+
+    Particle high;
+    high.random = 1.0f;
+    const float upper = wallpaper::ResolveParticleRandomFrameLifetime(high);
+    assert(upper < 1.0f && upper > 0.99f);
+
+    Scene scene;
+    scene.paritileSys->gener = std::make_unique<DummyRawGener>();
+    scene.PassFrameTime(1.0);
+
+    auto subsystem = MakeSubsystem(scene, ParticleSubSystem::SpawnType::STATIC, 1.0, 8);
+    subsystem->AddEmitter(WPParticleParser::genParticleEmittOp(MakeBoxEmitter(1.0f, 8)));
+    subsystem->Emitt();
+
+    assert(subsystem->InstanceCount() == 1);
+    const auto particles = subsystem->InstanceAt(0)->Particles();
+    assert(particles.size() == 8);
+
+    bool differs_from_first = false;
+    const float first = particles.front().random;
+    for (const auto& particle : particles) {
+        assert(particle.random >= 0.0f && particle.random < 1.0f);
+        assert(Near(wallpaper::ResolveParticleRandomFrameLifetime(particle), particle.random));
+        differs_from_first = differs_from_first || particle.random != first;
+    }
+    assert(differs_from_first);
+}
+
 } // namespace
 
 int main() {
@@ -215,5 +252,6 @@ int main() {
     TestRuntimeRateOverridePropagatesToChild();
     TestPaddedSpriteSheetUsesContentRegion();
     TestDragForceMatchesAuthoredStrength();
+    TestRandomFrameUsesStableSpawnRandom();
     return 0;
 }

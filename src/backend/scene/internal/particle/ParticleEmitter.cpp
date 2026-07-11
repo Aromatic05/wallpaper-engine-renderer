@@ -72,6 +72,7 @@ inline u32 Emitt(std::vector<Particle>& particles, u32 num, u32 maxcount, bool s
 inline Particle Spwan(GenParticleOp gen, std::vector<ParticleInitOp>& inis,
                       const ParticleInitInfo& info) {
     auto particle = gen();
+    particle.random = Random::get(0.0f, 1.0f);
     // Cherry_Blossoms_2.json relies on all initializers for one spawned particle seeing the same
     // control-point snapshot and sequence slot; otherwise the five cursor petals drift into noise.
     for (auto& el : inis) el(particle, info);

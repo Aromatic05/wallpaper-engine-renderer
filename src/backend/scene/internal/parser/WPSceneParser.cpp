@@ -16,6 +16,7 @@
 #include "WPTexImageParser.hpp"
 #include "WPSyntheticImageParser.hpp"
 #include "WPParticleParser.hpp"
+#include "particle/Animation.hpp"
 #include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
 #include "WPMdlParser.hpp"
@@ -77,39 +78,6 @@ double ResolveSceneTextAuthoringScale(i32 ortho_w, i32 ortho_h) {
     return std::max(1.0, std::min(scene_width / default_width, scene_height / default_height));
 }
 
-uint32_t HashParticleFrameFloat(uint32_t seed, float value) {
-    uint32_t bits { 0 };
-    std::memcpy(&bits, &value, sizeof(bits));
-    // Cherry_Blossoms_2.json uses animationmode=randomframe on a 13-frame GIF atlas. The shader
-    // only receives one float named "lifetime", so randomframe needs a stable per-particle value
-    // encoded into that float instead of the current age-based lifetime. Hashing immutable
-    // initializer output keeps each petal on one visual frame for its whole life while still
-    // distributing petals across the atlas.
-    seed ^= bits + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-    return seed;
-}
-
-float RandomParticleFrameLifetime(const Particle& p, float sprite_frame_count_value) {
-    const auto sprite_frame_count =
-        static_cast<uint32_t>(std::max(1.0f, std::round(sprite_frame_count_value)));
-    if (sprite_frame_count <= 1u) return 0.0f;
-
-    uint32_t seed = 2166136261u;
-    seed          = HashParticleFrameFloat(seed, p.init.lifetime);
-    seed          = HashParticleFrameFloat(seed, p.init.size);
-    seed          = HashParticleFrameFloat(seed, p.init.color.x());
-    seed          = HashParticleFrameFloat(seed, p.init.color.y());
-    seed          = HashParticleFrameFloat(seed, p.init.color.z());
-    seed          = HashParticleFrameFloat(seed, p.renderVelocity.x());
-    seed          = HashParticleFrameFloat(seed, p.renderVelocity.y());
-    seed          = HashParticleFrameFloat(seed, p.renderVelocity.z());
-
-    const uint32_t frame = seed % sprite_frame_count;
-    // Center the encoded value inside the chosen atlas cell. That matches the way
-    // linux-wallpaperengine avoids boundary precision issues for randomframe sprites and prevents
-    // frame blending from sampling the neighboring petal shape.
-    return (static_cast<float>(frame) + 0.5f) / static_cast<float>(sprite_frame_count);
-}
 
 std::string DescribeIndexVec(const std::vector<usize>& values) {
     std::ostringstream oss;
@@ -5741,16 +5709,6 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
     auto& mesh               = *spMesh;
     auto  animationmode      = ToAnimMode(particle_obj.animationmode);
     auto  sequencemultiplier = particle_obj.sequencemultiplier;
-    bool  hasSprite          = material.hasSprite;
-    (void)hasSprite;
-    float sprite_frame_count = 0.0f;
-    if (const auto it = material.customShader.constValues.find("g_RenderVar1");
-        it != material.customShader.constValues.end() && it->second.size() >= 3) {
-        // g_RenderVar1.z is filled from the current particle texture's SpriteAnimation. For the
-        // cursor blossom material this is the 13-frame particle/3.gif atlas, and randomframe must
-        // pick one of those petal silhouettes per emitted particle.
-        sprite_frame_count = it->second[2];
-    }
 
     bool thick_format = render_rope || material.hasSprite || hastrail;
     {
@@ -5780,12 +5738,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
             }
             switch (animationmode) {
             case ParticleAnimationMode::RANDOMONE:
-                // Only sprite-atlas particles, such as Cherry_Blossoms_2.json's particle/3.gif,
-                // need encoded random frame selection. Non-sprite randomframe content keeps the
-                // previous fallback so this petal fix does not alter unrelated particle materials.
-                lifetime = sprite_frame_count > 1.0f
-                               ? RandomParticleFrameLifetime(p, sprite_frame_count)
-                               : std::floor(p.init.lifetime);
+                lifetime = ResolveParticleRandomFrameLifetime(p);
                 break;
             case ParticleAnimationMode::SEQUENCE:
                 lifetime = (1.0f - (p.lifetime / p.init.lifetime)) * sequencemultiplier;
