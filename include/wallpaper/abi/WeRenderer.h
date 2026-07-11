@@ -104,6 +104,11 @@ WE_RENDERER_API int32_t we_session_set_render_config(we_session_t* session,
                                                      const we_render_config_v1* config);
 WE_RENDERER_API int32_t we_session_set_user_properties_json(we_session_t* session,
                                                             const char* properties_json);
+// Two-call JSON retrieval: pass buffer=NULL to query the required size, including the trailing NUL.
+// Returns -2 when the provided buffer is too small and updates *inout_size to the required size.
+WE_RENDERER_API int32_t we_session_get_diagnostics_json(we_session_t* session,
+                                                        char* buffer,
+                                                        uint32_t* inout_size);
 WE_RENDERER_API int32_t we_session_play(we_session_t* session);
 WE_RENDERER_API int32_t we_session_pause(we_session_t* session);
 WE_RENDERER_API int32_t we_session_stop(we_session_t* session);

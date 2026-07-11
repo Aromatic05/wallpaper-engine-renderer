@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 #include <unistd.h>
 
 namespace
@@ -26,6 +27,23 @@ struct SceneFixture {
         std::filesystem::remove_all(dir, ec);
     }
 };
+std::string ReadDiagnostics(we_session_t* session) {
+    uint32_t size = 0;
+    assert(we_session_get_diagnostics_json(session, nullptr, &size) == 0);
+    assert(size > 1);
+
+    std::vector<char> tooSmall(size - 1);
+    uint32_t          tooSmallSize = static_cast<uint32_t>(tooSmall.size());
+    assert(we_session_get_diagnostics_json(session, tooSmall.data(), &tooSmallSize) == -2);
+    assert(tooSmallSize == size);
+
+    std::vector<char> buffer(size);
+    uint32_t          bufferSize = static_cast<uint32_t>(buffer.size());
+    assert(we_session_get_diagnostics_json(session, buffer.data(), &bufferSize) == 0);
+    assert(bufferSize == size);
+    return std::string(buffer.data());
+}
+
 } // namespace
 
 int main() {
@@ -69,6 +87,11 @@ int main() {
     assert(we_session_set_user_properties_json(session, "[]")
            == static_cast<std::int32_t>(wallpaper::ResultCode::InvalidArgument) + 1);
 
+    const auto liveDiagnostics = ReadDiagnostics(session);
+    assert(liveDiagnostics.find("\"version\":1") != std::string::npos);
+    assert(liveDiagnostics.find("abi.user-properties") != std::string::npos);
+    assert(liveDiagnostics.find("must be a JSON object") != std::string::npos);
+
     we_session_destroy(session);
 
     we_session_t* invalidSession = we_session_create();
@@ -77,6 +100,9 @@ int main() {
     source.options_json = invalidOptions;
     assert(we_session_set_source(invalidSession, &source)
            == static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
+    const auto invalidDiagnostics = ReadDiagnostics(invalidSession);
+    assert(invalidDiagnostics.find("abi.source.options") != std::string::npos);
+    assert(invalidDiagnostics.find("unsupported source options version") != std::string::npos);
     we_session_destroy(invalidSession);
 
     return 0;

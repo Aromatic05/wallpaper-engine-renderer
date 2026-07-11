@@ -2,6 +2,7 @@
 #include "WeRendererOptions.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
+#include "wallpaper/Diagnostics.hpp"
 #include "wallpaper/InputEvent.hpp"
 #include "backend/BuiltinSessionFactory.hpp"
 #include "wallpaper/WallpaperRuntime.hpp"
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <new>
 #include <unistd.h>
@@ -40,6 +42,7 @@ struct WeSessionState {
     bool                       sourceSet { false };
     std::shared_ptr<wallpaper::OutputTargetBinding> binding;
     uint64_t                  frameSerial { 0 };
+    wallpaper::DiagnosticsSnapshot abiDiagnostics;
 };
 
 we_session_t* as_handle(WeSessionState* state) {
@@ -57,6 +60,30 @@ int32_t to_error(const wallpaper::Result<void>& result) {
 template<typename T>
 int32_t to_error(const wallpaper::Result<T>& result) {
     return result ? 0 : static_cast<int32_t>(result.error().code) + 1;
+}
+
+const char* diagnostic_severity_name(wallpaper::DiagnosticSeverity severity) {
+    switch (severity) {
+    case wallpaper::DiagnosticSeverity::Info: return "info";
+    case wallpaper::DiagnosticSeverity::Warning: return "warning";
+    case wallpaper::DiagnosticSeverity::Error: return "error";
+    }
+    return "unknown";
+}
+
+void append_abi_error(WeSessionState* state, std::string source, const wallpaper::Error& error) {
+    if (! state) return;
+    state->abiDiagnostics.append(wallpaper::DiagnosticSeverity::Error,
+                                 std::move(source),
+                                 error.message);
+}
+
+template<typename T>
+int32_t to_error_with_diagnostic(WeSessionState* state,
+                                 std::string     source,
+                                 const wallpaper::Result<T>& result) {
+    if (! result) append_abi_error(state, std::move(source), result.error());
+    return to_error(result);
 }
 
 bool source_has_field(const we_source_v1* source, std::size_t field_offset, std::size_t field_size) {
@@ -285,7 +312,7 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
         return -1;
     }
     auto parsed = parse_project_source(source->uri);
-    if (! parsed) return to_error(parsed);
+    if (! parsed) return to_error_with_diagnostic(state, "abi.source", parsed);
 
     state->sourceType = parsed.value().type;
     wallpaper::WallpaperSource normalized = make_source(source);
@@ -297,11 +324,13 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
         && source->options_json && *source->options_json) {
         auto optionsResult =
             wallpaper::ApplyRendererSourceOptionsJson(source->options_json, normalized);
-        if (! optionsResult) return to_error(optionsResult);
+        if (! optionsResult) {
+            return to_error_with_diagnostic(state, "abi.source.options", optionsResult);
+        }
     }
     auto result = state->session->load(normalized);
     state->sourceSet = result.ok();
-    return to_error(result);
+    return to_error_with_diagnostic(state, "abi.source.load", result);
 }
 
 int32_t we_session_set_render_config(we_session_t* session, const we_render_config_v1* config) {
@@ -375,9 +404,43 @@ int32_t we_session_set_user_properties_json(we_session_t* session,
     }
 
     auto normalized = wallpaper::NormalizeUserPropertiesJson(properties_json);
-    if (! normalized) return to_error(normalized);
-    return to_error(state->session->setProperty(
-        wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES_JSON, normalized.value()));
+    if (! normalized) {
+        return to_error_with_diagnostic(state, "abi.user-properties", normalized);
+    }
+    auto result = state->session->setProperty(
+        wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES_JSON, normalized.value());
+    return to_error_with_diagnostic(state, "abi.user-properties", result);
+}
+
+int32_t we_session_get_diagnostics_json(we_session_t* session,
+                                        char* buffer,
+                                        uint32_t* inout_size) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! inout_size) return -1;
+
+    nlohmann::json entries = nlohmann::json::array();
+    const auto appendSnapshot = [&entries](const wallpaper::DiagnosticsSnapshot& snapshot) {
+        for (const auto& entry : snapshot.entries) {
+            entries.push_back({ { "severity", diagnostic_severity_name(entry.severity) },
+                                { "source", entry.source },
+                                { "message", entry.message } });
+        }
+    };
+    appendSnapshot(state->abiDiagnostics);
+    appendSnapshot(state->session->diagnostics());
+
+    const std::string payload =
+        nlohmann::json { { "version", 1 }, { "entries", std::move(entries) } }.dump();
+    if (payload.size() >= std::numeric_limits<uint32_t>::max()) return -1;
+
+    const uint32_t required = static_cast<uint32_t>(payload.size() + 1);
+    const uint32_t provided = *inout_size;
+    *inout_size = required;
+    if (! buffer) return 0;
+    if (provided < required) return -2;
+
+    std::memcpy(buffer, payload.c_str(), required);
+    return 0;
 }
 
 int32_t we_session_play(we_session_t* session) {

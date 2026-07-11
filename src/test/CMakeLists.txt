@@ -48,7 +48,7 @@ add_executable(
 
 target_link_libraries(we-renderer-scene-options-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(we-renderer-scene-options-test PRIVATE ..)
-target_compile_options(we-renderer-scene-options-test PRIVATE ${warn_opts})
+target_compile_options(we-renderer-scene-options-test PRIVATE ${warn_opts} -UNDEBUG)
 
 add_test(NAME we-renderer-scene-options-test COMMAND we-renderer-scene-options-test)
 
