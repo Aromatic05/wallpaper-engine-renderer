@@ -4399,9 +4399,13 @@ std::optional<Eigen::Affine3f> GetBoneLocalTransform(const WPSceneScriptHost::Op
 
     const auto& bone       = puppet->bones[bone_index];
     const auto& bone_model = puppet->BoneModelTransform(bone_index);
-    if (bone.noParent()) return bone_model;
-    if (bone.parent >= puppet->bones.size()) return std::nullopt;
-    return puppet->BoneModelTransform(bone.parent).inverse() * bone_model;
+    if (bone.noAnimParent()) return bone_model;
+    if (bone.anim_parent >= puppet->bones.size()) return std::nullopt;
+    Eigen::Affine3f parent_model = puppet->BoneModelTransform(bone.anim_parent);
+    if (puppet->world_anchored_bones) {
+        parent_model = parent_model * puppet->bones[bone.anim_parent].inv_bind.matrix();
+    }
+    return parent_model.inverse() * bone_model;
 }
 
 bool SetBoneLocalTransform(const WPSceneScriptHost::Opaque* opaque, SceneNode* node,
@@ -7293,7 +7297,7 @@ JSValue NativeLayerCall(JSContext* context, JSValueConst, int argc, JSValueConst
         if (argc < 3) return JS_NewInt32(context, -1);
         const auto bone_index = ResolveBoneReference(context, argv[2], *puppet);
         if (! bone_index.has_value()) return JS_NewInt32(context, -1);
-        const auto parent_index = puppet->bones[*bone_index].parent;
+        const auto parent_index = puppet->bones[*bone_index].file_parent;
         return JS_NewInt32(context,
                            parent_index == 0xFFFFFFFFu ? -1 : static_cast<int32_t>(parent_index));
     }
@@ -7354,10 +7358,13 @@ JSValue NativeLayerCall(JSContext* context, JSValueConst, int argc, JSValueConst
         const Eigen::Affine3f desired_model((layer_inverse * *world_matrix).cast<float>());
 
         Eigen::Affine3f local_transform = desired_model;
-        const auto      parent_index    = puppet->bones[*bone_index].parent;
-        if (parent_index != 0xFFFFFFFFu && parent_index < puppet->bones.size()) {
-            const auto parent_transform = GetBoneModelTransform(opaque, node, parent_index);
+        const auto      parent_index    = puppet->bones[*bone_index].anim_parent;
+        if (parent_index != WPPuppet::NO_PARENT && parent_index < puppet->bones.size()) {
+            auto parent_transform = GetBoneModelTransform(opaque, node, parent_index);
             if (! parent_transform.has_value()) return JS_FALSE;
+            if (puppet->world_anchored_bones) {
+                *parent_transform = *parent_transform * puppet->bones[parent_index].inv_bind.matrix();
+            }
             local_transform = parent_transform->inverse() * desired_model;
         }
 

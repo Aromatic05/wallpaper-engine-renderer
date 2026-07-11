@@ -128,10 +128,13 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
 
-Modern MDL migration now has bounded header, mesh, and section contracts shared by the production
-parser. Multi-mesh geometry, MDLV21 parts, MDLV23 masks, legacy marker fallback, uint32 runtime
-indices, MDLS/MDAT/MDLA dispatch, preserved MDMP records, and MDLE world-bind matrices are covered.
-Morph rendering and MDLV21 bind/animation semantics remain Stage 3 work.
+Stage 3 now separates authored, bind, and animation bone relationships as `file_parent`,
+`bind_parent`, and `anim_parent`. Normal models keep the original hierarchy for both bind and
+animation. MDLV21 flattens only the bind hierarchy, computes area-weighted vertex centroid pivots,
+and still inherits animated parent deltas. SceneScript local/model transform conversion follows the
+same parent contract. MDLE world-bind matrices remain preserved but observational because their
+runtime meaning is not yet validated. Synthetic MDLV17/21 tests cover bind-pose identity, centroid
+pivots, inherited root motion, and ordinary-model non-regression.
 
 ### Stage 4 — RenderGraph and visual composition
 

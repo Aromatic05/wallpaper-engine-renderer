@@ -1,5 +1,6 @@
 #include "WPMdlParser.hpp"
 #include "mdl/Section.hpp"
+#include "mdl/PuppetSemantics.hpp"
 #include "fs/VFS.h"
 #include "fs/IBinaryStream.h"
 #include "fs/MemBinaryStream.h"
@@ -533,22 +534,23 @@ Result<void> ParseSkeletonSection(fs::IBinaryStream& f,
                                          "truncated MDLS bone record");
         }
         f.ReadInt32();
-        bone.parent = f.ReadUint32();
-        if (bone.parent >= index && ! bone.noParent()) {
+        bone.file_parent = f.ReadUint32();
+        if (bone.file_parent >= index && ! bone.noFileParent()) {
             LOG_INFO("mdl bone %u has out-of-order parent index %u, fallback to root",
-                     index, bone.parent);
-            bone.parent = 0xFFFFFFFFu;
+                     index, bone.file_parent);
+            bone.file_parent = WPPuppet::NO_PARENT;
         }
+        bone.bind_parent = bone.file_parent;
+        bone.anim_parent = bone.file_parent;
         const uint32_t transformBytes = f.ReadUint32();
         if (transformBytes != 64 || ! CanReadSectionBytes(f, section, transformBytes)) {
             return Result<void>::failure(ResultCode::InvalidArgument,
                                          "unsupported or truncated MDLS bone matrix");
         }
-        for (auto column : bone.transform.matrix().colwise()) {
+        for (auto column : bone.local_bind.matrix().colwise()) {
             for (auto& value : column) value = f.ReadFloat();
         }
-        std::string simulationJson;
-        if (! ReadSectionCString(f, section, simulationJson)) {
+        if (! ReadSectionCString(f, section, bone.simulation_json)) {
             return Result<void>::failure(ResultCode::InvalidArgument,
                                          "truncated MDLS bone simulation JSON");
         }
@@ -591,8 +593,13 @@ Result<void> ParseSkeletonSection(fs::IBinaryStream& f,
                 return Result<void>::failure(ResultCode::InvalidArgument,
                                              "MDLS offset-transform payload exceeds section bounds");
             }
-            for (uint32_t bone = 0; bone < bonesNum; ++bone)
-                for (uint32_t value = 0; value < 19; ++value) f.ReadFloat();
+            for (auto& bone : bones) {
+                for (auto& value : bone.file_skin_pivot) value = f.ReadFloat();
+                for (auto column : bone.file_skin_matrix.colwise()) {
+                    for (auto& value : column) value = f.ReadFloat();
+                }
+                bone.has_file_skin_pivot = true;
+            }
         }
         if (! CanReadSectionBytes(f, section, 1)) {
             return Result<void>::failure(ResultCode::InvalidArgument,
@@ -1036,6 +1043,7 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
         }
     }
 
+    ApplyWPMdlPuppetSemantics(mdl);
     mdl.puppet->prepared();
 
     LOG_INFO("read puppet: mdlv=%d mdls=%d mdla=%d mdmp=%d mdle=%d bones=%zu anims=%zu",

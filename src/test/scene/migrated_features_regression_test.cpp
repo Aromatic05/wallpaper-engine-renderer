@@ -230,7 +230,7 @@ int main() {
         auto puppet = std::make_shared<wallpaper::WPPuppet>();
         puppet->bones.resize(1);
         puppet->bones[0].name = "root";
-        puppet->bones[0].transform.pretranslate(Eigen::Vector3f(10.0f, 0.0f, 0.0f));
+        puppet->bones[0].local_bind.pretranslate(Eigen::Vector3f(10.0f, 0.0f, 0.0f));
 
         wallpaper::WPPuppet::Animation animation;
         animation.id     = 1;
@@ -267,8 +267,8 @@ int main() {
         auto puppet = std::make_shared<wallpaper::WPPuppet>();
         puppet->bones.resize(1);
         puppet->bones[0].name = "root";
-        puppet->bones[0].transform = Eigen::Affine3f::Identity();
-        puppet->bones[0].transform.linear() =
+        puppet->bones[0].local_bind = Eigen::Affine3f::Identity();
+        puppet->bones[0].local_bind.linear() =
             Eigen::DiagonalMatrix<float, 3>(2.0f, 3.0f, 1.0f).toDenseMatrix();
         puppet->prepared();
 

@@ -152,6 +152,25 @@ target_compile_options(mdl-parser-integration-test PRIVATE ${warn_opts})
 add_test(NAME mdl-parser-integration-test COMMAND mdl-parser-integration-test)
 
 add_executable(
+  mdl-puppet-semantics-test
+  scene/mdl/puppet_semantics_test.cpp)
+
+target_link_libraries(mdl-puppet-semantics-test PRIVATE wpSceneBackend)
+target_include_directories(
+  mdl-puppet-semantics-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/scene
+  ../common/fs/include)
+target_compile_options(mdl-puppet-semantics-test PRIVATE ${warn_opts})
+
+add_test(NAME mdl-puppet-semantics-test COMMAND mdl-puppet-semantics-test)
+
+add_executable(
   scene-object-schema-test
   scene/schema/object_schema_test.cpp)
 

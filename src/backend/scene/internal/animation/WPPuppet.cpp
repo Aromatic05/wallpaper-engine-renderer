@@ -60,24 +60,33 @@ static bool HasAuthoredTrack(const WPPuppet::Animation::BoneFrames& track) {
 }
 
 void WPPuppet::prepared() {
-    std::vector<Affine3f> combined_tran(bones.size());
     for (uint i = 0; i < bones.size(); i++) {
-        auto& b = bones[i];
-        if (!b.noParent() && b.parent >= i) {
-            LOG_ERROR("puppet bone %u has invalid parent index %u during prepare, fallback to root", i, b.parent);
-            b.parent = 0xFFFFFFFFu;
+        auto& bone = bones[i];
+        if (! bone.noFileParent() && bone.file_parent >= i) {
+            LOG_ERROR("puppet bone %u has invalid file parent %u during prepare, fallback to root",
+                      i, bone.file_parent);
+            bone.file_parent = NO_PARENT;
         }
-        combined_tran[i] =
-            (b.noParent() ? Affine3f::Identity() : combined_tran[b.parent]) * b.transform;
+        if (! bone.noBindParent() && bone.bind_parent >= i) {
+            LOG_ERROR("puppet bone %u has invalid bind parent %u during prepare, fallback to root",
+                      i, bone.bind_parent);
+            bone.bind_parent = NO_PARENT;
+        }
+        if (! bone.noAnimParent() && bone.anim_parent >= i) {
+            LOG_ERROR("puppet bone %u has invalid animation parent %u during prepare, fallback to root",
+                      i, bone.anim_parent);
+            bone.anim_parent = NO_PARENT;
+        }
 
-        b.offset_trans = combined_tran[i].inverse();
-        /*
-        b.world_axis_x = (b.offset_trans.linear() *
-        Vector3f::UnitX()).normalized(); b.world_axis_y =
-        (b.offset_trans.linear() * Vector3f::UnitY()).normalized();
-        b.world_axis_z = (b.offset_trans.linear() *
-        Vector3f::UnitZ()).normalized();
-        */
+        if (bone.noBindParent()) {
+            bone.world_bind = bone.local_bind;
+            if (world_anchored_bones) {
+                bone.world_bind.pretranslate(bone.vertex_centroid_offset);
+            }
+        } else {
+            bone.world_bind = bones[bone.bind_parent].world_bind * bone.local_bind;
+        }
+        bone.inv_bind = bone.world_bind.inverse();
     }
     for (auto& anim : anims) {
         anim.frame_time = 1.0f / anim.fps;
@@ -95,17 +104,22 @@ void WPPuppet::prepared() {
 
 std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
                                                     double         time) noexcept {
-    double global_blend = puppet_layer.m_global_blend;
+    (void)puppet_layer.m_global_blend;
 
     puppet_layer.updateInterpolation(time);
 
     for (uint i = 0; i < m_final_affines.size(); i++) {
         const auto& bone   = bones[i];
         auto&       affine = m_final_affines[i];
-
         affine = Affine3f::Identity();
-        const Affine3f parent =
-            (bone.noParent() || bone.parent >= i) ? Affine3f::Identity() : m_final_affines[bone.parent];
+
+        Affine3f parent = Affine3f::Identity();
+        if (! bone.noAnimParent() && bone.anim_parent < i) {
+            parent = m_final_affines[bone.anim_parent];
+            if (world_anchored_bones) {
+                parent = parent * bones[bone.anim_parent].inv_bind.matrix();
+            }
+        }
 
         const WPPuppet::BoneFrame* replace_base_frame { nullptr };
         for (const auto& layer : puppet_layer.m_layers) {
@@ -117,9 +131,9 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
             break;
         }
 
-        const BindLinear  bind_linear = DecomposeBindLinear(bone.transform.linear());
+        const BindLinear  bind_linear = DecomposeBindLinear(bone.local_bind.linear());
         Vector3f          trans { replace_base_frame != nullptr ? replace_base_frame->position
-                                                                : bone.transform.translation() };
+                                                                : bone.local_bind.translation() };
         Vector3f          scale { replace_base_frame != nullptr ? replace_base_frame->scale
                                                                 : bind_linear.scale };
         Quaterniond       quat { replace_base_frame != nullptr ? replace_base_frame->quaternion
@@ -139,22 +153,28 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
             auto&  frame_a    = track.frames[(usize)info.frame_a];
             auto&  frame_b    = track.frames[(usize)info.frame_b];
 
-            double t = info.t;
-            double one_t   = 1.0f - info.t;
+            const double quat_t = info.t;
+            const float  t = static_cast<float>(info.t);
+            const float  one_t = 1.0f - t;
+            const float  blend = static_cast<float>(layer.anim_layer.blend);
 
-            auto frame_a_quat_delta = frame_a.quaternion * frame_base.quaternion.conjugate();
-            auto frame_b_quat_delta = frame_b.quaternion * frame_base.quaternion.conjugate();
-            quat *= frame_a_quat_delta.slerp(info.t, frame_b_quat_delta).slerp(
+            const auto frame_a_quat_delta =
+                frame_a.quaternion * frame_base.quaternion.conjugate();
+            const auto frame_b_quat_delta =
+                frame_b.quaternion * frame_base.quaternion.conjugate();
+            quat *= frame_a_quat_delta.slerp(quat_t, frame_b_quat_delta).slerp(
                 1.0 - layer.anim_layer.blend, ident);
 
-            auto frame_a_pos_delta = frame_a.position - frame_base.position;
-            auto frame_b_pos_delta = frame_b.position - frame_base.position;
-            trans += layer.anim_layer.blend * (frame_a_pos_delta * one_t + frame_b_pos_delta * t);
+            const auto frame_a_pos_delta = frame_a.position - frame_base.position;
+            const auto frame_b_pos_delta = frame_b.position - frame_base.position;
+            trans += blend * (frame_a_pos_delta * one_t + frame_b_pos_delta * t);
 
-            auto& frame_a_scale_delta = frame_a.scale - frame_base.scale;
-            auto& frame_b_scale_delta = frame_b.scale - frame_base.scale;
-            scale +=
-                layer.anim_layer.blend * (frame_a_scale_delta * one_t + frame_b_scale_delta * info.t);
+            const auto frame_a_scale_delta = frame_a.scale - frame_base.scale;
+            const auto frame_b_scale_delta = frame_b.scale - frame_base.scale;
+            scale += blend * (frame_a_scale_delta * one_t + frame_b_scale_delta * t);
+        }
+        if (bone.noBindParent() && world_anchored_bones) {
+            trans += bone.vertex_centroid_offset;
         }
         affine.pretranslate(trans);
         affine.rotate(quat.cast<float>());
@@ -167,7 +187,7 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
     }
 
     for (uint i = 0; i < m_final_affines.size(); i++) {
-        m_final_affines[i] *= bones[i].offset_trans.matrix();
+        m_final_affines[i] *= bones[i].inv_bind.matrix();
     }
     return m_final_affines;
 }

@@ -16,6 +16,8 @@ class WPPuppetLayer;
 
 class WPPuppet {
 public:
+    static constexpr uint32_t NO_PARENT = 0xFFFFFFFFu;
+
     enum class PlayMode
     {
         Loop,
@@ -24,19 +26,24 @@ public:
     };
     struct Bone {
         std::string     name;
-        Eigen::Affine3f transform { Eigen::Affine3f::Identity() };
-        uint32_t        parent { 0xFFFFFFFFu };
+        Eigen::Affine3f local_bind { Eigen::Affine3f::Identity() };
+        uint32_t        file_parent { NO_PARENT };
+        uint32_t        bind_parent { NO_PARENT };
+        uint32_t        anim_parent { NO_PARENT };
+        Eigen::Affine3f world_bind { Eigen::Affine3f::Identity() };
+        Eigen::Affine3f inv_bind { Eigen::Affine3f::Identity() };
+        Eigen::Vector3f vertex_centroid_offset { Eigen::Vector3f::Zero() };
+        Eigen::Vector3f file_skin_pivot { Eigen::Vector3f::Zero() };
+        Eigen::Matrix4f file_skin_matrix { Eigen::Matrix4f::Identity() };
+        bool            has_file_skin_pivot { false };
+        std::string     simulation_json;
         Eigen::Affine3f file_world_bind { Eigen::Affine3f::Identity() };
         bool            has_file_world_bind { false };
 
-        bool noParent() const { return parent == 0xFFFFFFFFu; }
-        // prepared
-        Eigen::Affine3f offset_trans { Eigen::Affine3f::Identity() };
-        /*
-        Eigen::Vector3f world_axis_x;
-        Eigen::Vector3f world_axis_y;
-        Eigen::Vector3f world_axis_z;
-        */
+        bool noFileParent() const { return file_parent == NO_PARENT; }
+        bool noBindParent() const { return bind_parent == NO_PARENT; }
+        bool noAnimParent() const { return anim_parent == NO_PARENT; }
+        bool noParent() const { return noAnimParent(); }
     };
     struct Attachment {
         std::string     name;
@@ -81,6 +88,7 @@ public:
     std::vector<Bone>      bones;
     std::vector<Attachment> attachments;
     std::vector<Animation> anims;
+    bool                      world_anchored_bones { false };
 
     std::span<const Eigen::Affine3f> genFrame(WPPuppetLayer&, double time) noexcept;
     void                             prepared();
