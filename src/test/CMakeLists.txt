@@ -1,6 +1,6 @@
 add_executable(
   wallpaper-session-contract-test
-  wallpaper_session_contract_test.cpp)
+  runtime/wallpaper_session_contract_test.cpp)
 
 target_link_libraries(wallpaper-session-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(wallpaper-session-contract-test PRIVATE ..)
@@ -10,7 +10,7 @@ add_test(NAME wallpaper-session-contract-test COMMAND wallpaper-session-contract
 
 add_executable(
   wallpaper-public-api-test
-  wallpaper_public_api_test.cpp)
+  runtime/wallpaper_public_api_test.cpp)
 
 target_link_libraries(wallpaper-public-api-test PRIVATE wallpaper-engine-renderer-internal)
 target_compile_options(wallpaper-public-api-test PRIVATE ${warn_opts})
@@ -19,7 +19,7 @@ add_test(NAME wallpaper-public-api-test COMMAND wallpaper-public-api-test)
 
 add_executable(
   we-renderer-options-test
-  we_renderer_options_test.cpp)
+  abi/we_renderer_options_test.cpp)
 
 target_link_libraries(we-renderer-options-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(we-renderer-options-test PRIVATE ..)
@@ -29,7 +29,7 @@ add_test(NAME we-renderer-options-test COMMAND we-renderer-options-test)
 
 add_executable(
   user-properties-json-test
-  user_properties_json_test.cpp)
+  scene/user_properties_json_test.cpp)
 
 target_link_libraries(user-properties-json-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(
@@ -44,7 +44,7 @@ add_test(NAME user-properties-json-test COMMAND user-properties-json-test)
 
 add_executable(
   we-renderer-scene-options-test
-  we_renderer_scene_options_test.cpp)
+  abi/we_renderer_scene_options_test.cpp)
 
 target_link_libraries(we-renderer-scene-options-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(we-renderer-scene-options-test PRIVATE ..)
@@ -54,7 +54,7 @@ add_test(NAME we-renderer-scene-options-test COMMAND we-renderer-scene-options-t
 
 add_executable(
   output-controller-contract-test
-  output_controller_contract_test.cpp)
+  output/output_controller_contract_test.cpp)
 
 target_link_libraries(output-controller-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(output-controller-contract-test PRIVATE ..)
@@ -64,7 +64,7 @@ add_test(NAME output-controller-contract-test COMMAND output-controller-contract
 
 add_executable(
   shm-frame-swapchain-test
-  shm_frame_swapchain_test.cpp)
+  output/shm_frame_swapchain_test.cpp)
 
 target_link_libraries(shm-frame-swapchain-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(shm-frame-swapchain-test PRIVATE ..)
@@ -75,7 +75,7 @@ add_test(NAME shm-frame-swapchain-test COMMAND shm-frame-swapchain-test)
 if(BUILD_WEVIDEO)
     add_executable(
       we-renderer-video-source-test
-      we_renderer_video_source_test.cpp
+      abi/we_renderer_video_source_test.cpp
       ../abi/WeRenderer.cpp)
 
     target_link_libraries(we-renderer-video-source-test PRIVATE wallpaper-engine-renderer-internal)
@@ -86,7 +86,7 @@ if(BUILD_WEVIDEO)
 
     add_executable(
       we-renderer-video-pipeline-test
-      we_renderer_video_pipeline_test.cpp
+      abi/we_renderer_video_pipeline_test.cpp
       ../abi/WeRenderer.cpp)
 
     target_link_libraries(we-renderer-video-pipeline-test PRIVATE wallpaper-engine-renderer-internal)
@@ -99,7 +99,7 @@ endif()
 if(BUILD_WEWEB)
     add_executable(
       web-backend-contract-test
-      web_backend_contract_test.cpp
+      web/web_backend_contract_test.cpp
       ../abi/WeRenderer.cpp)
 
     target_link_libraries(web-backend-contract-test PRIVATE wallpaper-engine-renderer-internal)
@@ -110,7 +110,7 @@ if(BUILD_WEWEB)
 
     add_executable(
       we-renderer-web-source-test
-      we_renderer_web_source_test.cpp
+      abi/we_renderer_web_source_test.cpp
       ../abi/WeRenderer.cpp)
 
     target_link_libraries(we-renderer-web-source-test PRIVATE wallpaper-engine-renderer-internal)
@@ -121,7 +121,7 @@ if(BUILD_WEWEB)
 
     add_executable(
       web-user-properties-test
-      web_user_properties_test.cpp
+      web/web_user_properties_test.cpp
       ../backend/web/internal/cef/PropertyBridge.cpp)
 
     target_include_directories(web-user-properties-test PRIVATE ..)
@@ -131,7 +131,7 @@ if(BUILD_WEWEB)
 
     add_executable(
       we-cef-helper-dlopen-test
-      we_cef_helper_dlopen_test.cpp)
+      web/we_cef_helper_dlopen_test.cpp)
 
     target_link_libraries(we-cef-helper-dlopen-test PRIVATE ${CMAKE_DL_LIBS})
     target_include_directories(we-cef-helper-dlopen-test PRIVATE ..)
@@ -143,7 +143,7 @@ if(BUILD_WEWEB)
 
     add_executable(
       we-renderer-input-event-test
-      we_renderer_input_event_test.cpp
+      abi/we_renderer_input_event_test.cpp
       ../abi/WeRenderer.cpp)
 
     target_link_libraries(we-renderer-input-event-test PRIVATE wallpaper-engine-renderer-internal)
@@ -160,7 +160,7 @@ endif()
 # on a machine that has staged CEF.
 option(WP_ENABLE_CEF_INTEGRATION_TEST "Build the real-CEF smoke test for the web backend" OFF)
 if(WP_ENABLE_CEF_INTEGRATION_TEST AND BUILD_WEWEB)
-    add_executable(web-cef-integration-test web_cef_integration_test.cpp)
+    add_executable(web-cef-integration-test web/web_cef_integration_test.cpp)
     target_link_libraries(web-cef-integration-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(web-cef-integration-test PRIVATE ..)
     target_compile_options(web-cef-integration-test PRIVATE ${warn_opts})
@@ -169,7 +169,7 @@ endif()
 
 add_executable(
   host-services-contract-test
-  host_services_contract_test.cpp)
+  host/host_services_contract_test.cpp)
 
 target_link_libraries(host-services-contract-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(host-services-contract-test PRIVATE ..)
@@ -179,7 +179,7 @@ add_test(NAME host-services-contract-test COMMAND host-services-contract-test)
 
 add_executable(
   sound-spectrum-dsp-test
-  sound_spectrum_dsp_test.cpp)
+  scene/sound_spectrum_dsp_test.cpp)
 
 target_include_directories(sound-spectrum-dsp-test PRIVATE ..)
 target_compile_options(sound-spectrum-dsp-test PRIVATE ${warn_opts})
@@ -188,7 +188,7 @@ add_test(NAME sound-spectrum-dsp-test COMMAND sound-spectrum-dsp-test)
 
 add_executable(
   resource-correctness-test
-  resource_correctness_test.cpp)
+  scene/resource_correctness_test.cpp)
 
 target_link_libraries(resource-correctness-test PRIVATE wallpaper-engine-renderer-internal)
 target_include_directories(
@@ -212,7 +212,7 @@ add_test(NAME resource-correctness-test COMMAND resource-correctness-test)
 
 add_executable(
   effect-rendergraph-correctness-test
-  effect_rendergraph_correctness_test.cpp)
+  scene/effect_rendergraph_correctness_test.cpp)
 
 target_link_libraries(effect-rendergraph-correctness-test PRIVATE wallpaper-engine-renderer-internal wpScene wpSceneBackend)
 target_include_directories(
@@ -235,7 +235,7 @@ add_test(NAME effect-rendergraph-correctness-test COMMAND effect-rendergraph-cor
 
 add_executable(
   particle-regression-test
-  particle_regression_test.cpp)
+  scene/particle_regression_test.cpp)
 
 target_link_libraries(particle-regression-test PRIVATE wallpaper-engine-renderer-internal wpScene wpSceneBackend)
 target_include_directories(
@@ -258,7 +258,7 @@ add_test(NAME particle-regression-test COMMAND particle-regression-test)
 
 add_executable(
   synthetic-image-parser-test
-  synthetic_image_parser_test.cpp)
+  scene/synthetic_image_parser_test.cpp)
 
 target_link_libraries(synthetic-image-parser-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -277,7 +277,7 @@ add_test(NAME synthetic-image-parser-test COMMAND synthetic-image-parser-test)
 
 add_executable(
   scene-parity-foundation-test
-  scene_parity_foundation_test.cpp)
+  scene/scene_parity_foundation_test.cpp)
 
 target_link_libraries(scene-parity-foundation-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -298,7 +298,7 @@ add_test(NAME scene-parity-foundation-test COMMAND scene-parity-foundation-test)
 
 add_executable(
   node-transform-resolver-test
-  node_transform_resolver_test.cpp)
+  scene/node_transform_resolver_test.cpp)
 
 target_link_libraries(node-transform-resolver-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -321,7 +321,7 @@ add_test(NAME node-transform-resolver-test COMMAND node-transform-resolver-test)
 
 add_executable(
   text-scene-model-test
-  text_scene_model_test.cpp)
+  scene/text/text_scene_model_test.cpp)
 
 target_link_libraries(text-scene-model-test PRIVATE ${PROJECT_NAME} wpScene wpSceneBackend)
 target_include_directories(
@@ -341,7 +341,7 @@ add_test(NAME text-scene-model-test COMMAND text-scene-model-test)
 
 add_executable(
   text-layer-runtime-test
-  text_layer_runtime_test.cpp)
+  scene/text/text_layer_runtime_test.cpp)
 
 target_link_libraries(text-layer-runtime-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -361,7 +361,7 @@ add_test(NAME text-layer-runtime-test COMMAND text-layer-runtime-test)
 
 add_executable(
   text-clear-pass-test
-  text_clear_pass_test.cpp)
+  scene/text/text_clear_pass_test.cpp)
 
 target_link_libraries(text-clear-pass-test PRIVATE ${PROJECT_NAME} wpVulkanRender wpRGraph)
 target_include_directories(
@@ -385,7 +385,7 @@ add_test(NAME text-clear-pass-test COMMAND text-clear-pass-test)
 
 add_executable(
   video-texture-cache-test
-  video_texture_cache_test.cpp)
+  video/video_texture_cache_test.cpp)
 
 target_link_libraries(video-texture-cache-test PRIVATE ${PROJECT_NAME} wpVulkan)
 target_include_directories(
@@ -405,7 +405,7 @@ add_test(NAME video-texture-cache-test COMMAND video-texture-cache-test)
 
 add_executable(
   migrated-features-regression-test
-  migrated_features_regression_test.cpp)
+  scene/migrated_features_regression_test.cpp)
 
 target_link_libraries(
   migrated-features-regression-test PRIVATE
@@ -436,7 +436,7 @@ add_test(NAME migrated-features-regression-test COMMAND migrated-features-regres
 
 add_executable(
   dynamic-value-user-setting-test
-  dynamic_value_user_setting_test.cpp)
+  scene/dynamic_value_user_setting_test.cpp)
 
 target_link_libraries(dynamic-value-user-setting-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -454,7 +454,7 @@ add_test(NAME dynamic-value-user-setting-test COMMAND dynamic-value-user-setting
 
 add_executable(
   property-animation-test
-  property_animation_test.cpp)
+  scene/property_animation_test.cpp)
 
 target_link_libraries(property-animation-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
 target_include_directories(
@@ -474,7 +474,7 @@ add_test(NAME property-animation-test COMMAND property-animation-test)
 if(WP_ENABLE_SCENESCRIPT_RUNTIME)
   add_executable(
     scenescript-host-test
-    scenescript_host_test.cpp)
+    scene/script/scenescript_host_test.cpp)
 
   target_link_libraries(scenescript-host-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
   target_include_directories(
@@ -498,7 +498,7 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
 
   add_executable(
     scenescript-viewport-vector-test
-    scenescript_viewport_vector_test.cpp)
+    scene/script/scenescript_viewport_vector_test.cpp)
 
   target_link_libraries(scenescript-viewport-vector-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
   target_include_directories(
@@ -520,7 +520,7 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
 
   add_executable(
     scenescript-runtime-test
-    scenescript_runtime_test.cpp)
+    scene/script/scenescript_runtime_test.cpp)
 
   target_link_libraries(scenescript-runtime-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
   target_include_directories(
@@ -546,4 +546,4 @@ add_test(
   NAME wallpaper-architecture-guard-test
   COMMAND ${CMAKE_COMMAND}
           -DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}
-          -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture_guard_test.cmake)
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/architecture/architecture_guard_test.cmake)
