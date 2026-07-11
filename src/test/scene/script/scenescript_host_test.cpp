@@ -11,8 +11,12 @@
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneMaterial.h"
 #include "backend/scene/internal/scene/include/scene/SceneMesh.h"
+#include "backend/scene/internal/scene/include/scene/SceneCamera.h"
+#include "backend/scene/internal/scene/include/scene/SceneImageEffectLayer.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
 #include "backend/scene/internal/scene/include/scene/SceneTexture.h"
+#include "backend/scene/internal/scene/include/scene/SceneTextPrimitive.h"
+#include "backend/scene/internal/text/WPTextLayer.hpp"
 #include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
 #include "common/fs/include/fs/Fs.h"
 #include "common/fs/include/fs/MemBinaryStream.h"
@@ -539,6 +543,166 @@ int main() {
         assert(alpha_it != material->customShader.constValues.end());
         assert(alpha_it->second.size() == 1);
         assert(NearlyEqual(alpha_it->second[0], 1.0));
+    }
+
+    {
+        Scene scene;
+        auto node = MakeLayerNode(80, "EffectOwner");
+        auto mesh = std::make_shared<SceneMesh>();
+        SceneMaterial material;
+        material.customShader.constValues["g_UserAlpha"] = ShaderValue(0.0f);
+        mesh->AddMaterial(std::move(material));
+        node->AddMesh(mesh);
+        node->SetCamera("effect-owner-camera");
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 80, node, R"({"id":80,"name":"EffectOwner"})");
+
+        auto camera_node = std::make_shared<wallpaper::SceneNode>();
+        auto camera = std::make_shared<wallpaper::SceneCamera>(64, 64, -1.0f, 1.0f);
+        camera->AttatchNode(camera_node);
+        auto effect_layer = std::make_shared<wallpaper::SceneImageEffectLayer>(
+            node.get(), 64.0f, 64.0f, "_rt_effect_name_a", "_rt_effect_name_b");
+        auto effect = std::make_shared<wallpaper::SceneImageEffect>();
+        effect->SetIdentity(80, 801, 0, "Glow");
+        effect->SetLocalVisible(true);
+        effect_layer->AddEffect(effect);
+        camera->AttatchImgEffect(effect_layer);
+        scene.cameras["effect-owner-camera"] = camera;
+        scene.objectRuntimeCameraNames[80].push_back("effect-owner-camera");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(80,
+                                             "EffectOwner",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(0.0f));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            export function update() {
+                const effect = thisLayer.getEffect('Glow');
+                if (!effect) return 0;
+                effect.visible = false;
+                return effect.visible ? 0 : 1;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        assert(!effect->LocalVisible());
+        const auto& alpha = node->Mesh()->Material()->customShader.constValues.at("g_UserAlpha");
+        assert(alpha.size() == 1 && NearlyEqual(alpha[0], 1.0));
+    }
+
+    {
+        Scene scene;
+        auto node = MakeLayerNode(90, "ShapeOwner");
+        node->SetScale(Eigen::Vector3f::Ones());
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 90, node, R"({"id":90,"name":"ShapeOwner"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(
+            90,
+            "ShapeOwner",
+            "scale",
+            WPSceneScriptTargetKind::Layer,
+            WPDynamicValue::Type::Float3,
+            WPDynamicValue(std::array<float, 3> { 1.0f, 1.0f, 1.0f }));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            let frame = 0;
+            export function update(value) {
+                frame += 1;
+                if (frame === 1) return 2;
+                const preserved = value.x === 2 && value.y === 2 && value.z === 2;
+                return preserved ? new Vec3(3, 4, 5) : new Vec3(0, 0, 0);
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+        assert(NearlyEqual(node->Scale().x(), 2.0));
+        assert(NearlyEqual(node->Scale().y(), 2.0));
+        assert(NearlyEqual(node->Scale().z(), 2.0));
+        host.FrameBegin(0.1);
+        assert(NearlyEqual(node->Scale().x(), 3.0));
+        assert(NearlyEqual(node->Scale().y(), 4.0));
+        assert(NearlyEqual(node->Scale().z(), 5.0));
+    }
+
+    {
+        Scene scene;
+        scene.vfs = std::make_unique<wallpaper::fs::VFS>();
+
+        wallpaper::TextLayerRuntimeState text_state;
+        text_state.object.id = 100;
+        text_state.object.name = "CalendarLabel";
+        text_state.object.text = "1";
+        text_state.object.font = "sans";
+        text_state.object.pointsize = 28.0f;
+        text_state.object.size = { 1.0f, 1.0f };
+        text_state.object.size_explicit = false;
+        std::string text_error;
+        assert(wallpaper::BuildSceneTextPrimitive(*scene.vfs,
+                                                  text_state.object,
+                                                  1,
+                                                  1.0,
+                                                  1.0,
+                                                  &text_state.primitive,
+                                                  &text_error));
+        assert(text_state.primitive != nullptr);
+        const auto initial_atlas_version = text_state.primitive->atlas_version;
+        const auto initial_width = text_state.primitive->layout.visible_display_size[0];
+
+        auto text_node = MakeLayerNode(100, "CalendarLabel");
+        text_node->AddText(text_state.primitive);
+        scene.sceneGraph->AppendChild(text_node);
+        RegisterLayer(scene, 100, text_node, R"({"id":100,"name":"CalendarLabel"})");
+        scene.textLayers[100] = text_state;
+        scene.textPrimitives[100] = text_state.primitive;
+
+        auto controller = MakeLayerNode(101, "CalendarController");
+        auto controller_mesh = std::make_shared<SceneMesh>();
+        SceneMaterial controller_material;
+        controller_material.customShader.constValues["g_UserAlpha"] = ShaderValue(1.0f);
+        controller_mesh->AddMaterial(std::move(controller_material));
+        controller->AddMesh(controller_mesh);
+        scene.sceneGraph->AppendChild(controller);
+        RegisterLayer(scene,
+                      101,
+                      controller,
+                      R"({"id":101,"name":"CalendarController"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(101,
+                                             "CalendarController",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = controller.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                const label = thisScene.getLayer('CalendarLabel');
+                label.text = 'Wednesday, September 30, 2026';
+                return value;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+
+        const auto text_it = scene.textLayers.find(100);
+        assert(text_it != scene.textLayers.end());
+        assert(text_it->second.object.text == "Wednesday, September 30, 2026");
+        assert(text_it->second.primitive != nullptr);
+        assert(text_it->second.primitive->object.text ==
+               "Wednesday, September 30, 2026");
+        assert(text_it->second.primitive->atlas_version > initial_atlas_version);
+        assert(text_it->second.primitive->layout.visible_display_size[0] > initial_width);
+        assert(scene.dirtyTextLayerIds.contains(100));
     }
 
     return 0;

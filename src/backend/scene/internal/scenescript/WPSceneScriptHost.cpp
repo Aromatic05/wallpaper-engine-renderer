@@ -1434,6 +1434,11 @@ std::string BuildPersistentScript(std::string_view script_source) {
         << "            : __native.resolveLayerAnimation(nodeId, name);\n"
         << "          return animationId > 0 ? createTimelineAnimation(animationId) : undefined;\n"
         << "        };\n"
+        << "        if (prop === 'getEffect') return (nameOrIndex = 0) => {\n"
+        << "          const index = __native.resolveEffect(nodeId, nameOrIndex);\n"
+        << "          return index >= 0 ? createEffectProxy(nodeId, index, instanceId) : "
+           "undefined;\n"
+        << "        };\n"
         << "        if (prop === 'getAnimationLayerCount') return () => "
            "__native.getAnimationLayerCount(nodeId);\n"
         << "        if (prop === 'getAnimationLayer') return (nameOrIndex = 0) => {\n"
@@ -6440,6 +6445,32 @@ JSValue NativeSetLayerProperty(JSContext* context, JSValueConst, int argc, JSVal
     return JS_NewBool(context, ApplyLayerPropertyValue(opaque, node, property_name, runtime_value));
 }
 
+JSValue NativeResolveEffect(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
+    auto* opaque = GetOpaque(context);
+    if (opaque == nullptr || opaque->scene == nullptr || argc < 2) return JS_NewInt32(context, -1);
+
+    int32_t layer_id = 0;
+    if (JS_ToInt32(context, &layer_id, argv[0]) != 0) return JS_NewInt32(context, -1);
+
+    if (JS_IsNumber(argv[1])) {
+        int32_t effect_index = -1;
+        if (JS_ToInt32(context, &effect_index, argv[1]) != 0 || effect_index < 0) {
+            return JS_NewInt32(context, -1);
+        }
+        return JS_NewInt32(
+            context,
+            opaque->scene->FindImageEffect(layer_id, static_cast<uint32_t>(effect_index)) != nullptr
+                ? effect_index
+                : -1);
+    }
+
+    std::string effect_name;
+    if (! ReadJSString(context, argv[1], &effect_name)) return JS_NewInt32(context, -1);
+    const auto effect_index = opaque->scene->ResolveImageEffectIndex(layer_id, effect_name);
+    return JS_NewInt32(context,
+                       effect_index.has_value() ? static_cast<int32_t>(*effect_index) : -1);
+}
+
 JSValue NativeHasEffect(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
     auto* opaque = GetOpaque(context);
     if (opaque == nullptr || opaque->scene == nullptr || argc < 2) return JS_FALSE;
@@ -6731,8 +6762,9 @@ JSValue NativeHasLayerMember(JSContext* context, JSValueConst, int argc, JSValue
     }
     if (member_name == "getTextureAnimation" || member_name == "getVideoTexture" ||
         member_name == "getAnimation" || member_name == "getAnimationLayerCount" ||
-        member_name == "getAnimationLayer" || member_name == "getParent" ||
-        member_name == "getChildren" || member_name == "rotateObjectSpace") {
+        member_name == "getAnimationLayer" || member_name == "getEffect" ||
+        member_name == "getParent" || member_name == "getChildren" ||
+        member_name == "rotateObjectSpace") {
         return JS_TRUE;
     }
     if (member_name == "setParent") {
@@ -8844,6 +8876,10 @@ WPSceneScriptHost::WPSceneScriptHost(Scene* scene): m_scene(scene), m_impl(new O
                       m_impl->native_bridge,
                       "hasLayerMember",
                       JS_NewCFunction(context, NativeHasLayerMember, "hasLayerMember", 2));
+    JS_SetPropertyStr(context,
+                      m_impl->native_bridge,
+                      "resolveEffect",
+                      JS_NewCFunction(context, NativeResolveEffect, "resolveEffect", 2));
     JS_SetPropertyStr(context,
                       m_impl->native_bridge,
                       "hasEffect",

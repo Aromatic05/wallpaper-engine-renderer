@@ -647,6 +647,31 @@ const SceneImageEffect* Scene::FindImageEffectById(int32_t owner_layer_id,
     return const_cast<Scene*>(this)->FindImageEffectById(owner_layer_id, effect_id);
 }
 
+std::optional<uint32_t> Scene::ResolveImageEffectIndex(int32_t owner_layer_id,
+                                                       std::string_view effect_name) const {
+    const auto camera_names_it = objectRuntimeCameraNames.find(owner_layer_id);
+    if (camera_names_it == objectRuntimeCameraNames.end()) return std::nullopt;
+
+    for (const auto& camera_name : camera_names_it->second) {
+        const auto camera_it = cameras.find(camera_name);
+        if (camera_it == cameras.end() || camera_it->second == nullptr ||
+            !camera_it->second->HasImgEffect()) {
+            continue;
+        }
+
+        const auto* effect_layer = camera_it->second->GetImgEffect().get();
+        if (effect_layer == nullptr) continue;
+        for (uint32_t effect_index = 0;
+             effect_index < static_cast<uint32_t>(effect_layer->EffectCount());
+             effect_index++) {
+            const auto& effect = effect_layer->GetEffect(effect_index);
+            if (effect != nullptr && effect->EffectName() == effect_name) return effect_index;
+        }
+    }
+
+    return std::nullopt;
+}
+
 bool Scene::SetEffectLocalVisibility(int32_t owner_layer_id, uint32_t effect_index,
                                      bool visible) {
     auto* effect = FindImageEffect(owner_layer_id, effect_index);

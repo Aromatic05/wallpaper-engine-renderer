@@ -133,6 +133,7 @@ public:
     const std::vector<SceneImageEffectNode>& PrefillNodes() const { return m_prefill_nodes; }
     std::size_t EffectCount() const { return m_effects.size(); }
     auto&       GetEffect(std::size_t index) { return m_effects.at(index); }
+    const auto& GetEffect(std::size_t index) const { return m_effects.at(index); }
     const auto& FirstTarget() const { return m_pingpong_a; }
     SceneMesh&  SourceMesh() const { return *m_source_mesh; }
     SceneMesh&  FinalMesh() const { return *m_final_mesh; }

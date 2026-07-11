@@ -283,16 +283,26 @@ reshow retention, and direct-final effect ownership. No parallel `SceneNode` alp
 
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
-| `707f4ef` | expose image effect visibility | `REVIEW` | Compare script field exposure and runtime updates. |
-| `e1b47fe` | preserve field value shape | `REVIEW` | Scalar/vector/object shape tests. |
-| `ebb7031` | dynamic audio setting | `REVIEW` | Compare with local audio property route. |
+| `707f4ef` | expose image effect visibility | `DONE` | Layer proxies resolve effects by name or index and reuse the existing effect visibility proxy/bypass path. |
+| `e1b47fe` | preserve field value shape | `DONE` | Cross-frame scalar returns are coerced back to the registered vector shape before the next script update. |
+| `ebb7031` | dynamic audio setting | `NOT_APPLICABLE` | Upstream change is confined to the Waywallen plugin/host audio gate; renderer ABI/source volume and mute remain host-neutral. |
 | `182340f` | initial user property strings | `DONE` | Stage 1 JSON path accepts strings and applies before source load. |
-| `3198eff` | calendar text layer scripts | `REVIEW` | Script/text integration fixture. |
+| `3198eff` | calendar text layer scripts | `DONE` | Cross-layer text writes rebuild the first-class text primitive, atlas, and auto-sized layout immediately. |
 | `a66f60d` | looped texture frames | `REVIEW` | Local GStreamer loop boundary test. |
 | `08da17e` | hardware video textures | `REVIEW` | Compare behavior, keep local VA/CUDA/SHM architecture. |
 | `c4cb8bb` | dynamic asset layers | `PORT` | Complete dynamic font/image asset lifetime and creation path. |
 | `07b26a1` | dynamic text loading | `REVIEW` | Consolidate with dynamic fonts/assets. |
 | `898d2b4` | MPRIS media events | `REVIEW` | Compare host media event contract; do not import Waywallen bridge. |
+
+SceneScript layer proxies now expose `getEffect(nameOrIndex)` and resolve authored effect names to the
+same index-based proxy already used by effect property scripts. Visibility writes therefore retain the
+existing conditional-pass and bypass-copy topology instead of rebuilding a second effect model. Field
+scripts continue to read the applied node state before every frame; a scalar result targeting a Vec3 is
+broadcast to all components and is observed as that Vec3 on the following update. Cross-layer calendar
+scripts can assign another layer's `text` property, which immediately rebuilds glyphs, increments the
+atlas revision, expands auto-sized layout, and marks the text resource dirty. The upstream dynamic-audio
+commit only adds a Waywallen plugin setting and daemon bridge call, so it is deliberately excluded from
+the renderer library and its stable host-neutral ABI.
 
 ## Migration rules
 
