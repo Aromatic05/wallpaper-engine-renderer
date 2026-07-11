@@ -121,7 +121,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
-| `8a07eeb` | degenerate node camera transforms | `TEST` | Add zero/degenerate transform regression before comparing behavior. |
+| `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
 | `1a19a32` | child particle override inheritance | `REVIEW` | Compare with local runtime override inheritance. |
 | `1691a07` | hidden particles and rain drag | `REVIEW` | Validate hidden-state simulation and drag independently. |
 | `ebd56ee` | node field animations | `REVIEW` | Compare with local property animation path. |
@@ -141,6 +141,11 @@ and reused by deferred/dynamic parsing. Both physically parented nodes and route
 retain their authored transform binding while omitting the parent parallax anchor. Parser integration
 tests compare enabled and disabled parents; resolver tests verify that child-local depth still moves
 independently.
+
+Node-attached cameras now derive their view from the inverse complete `ModelTrans`, so parent chains
+and authored scale no longer leak into camera-local clip space. A missing Z axis is reconstructed from
+X/Y when possible; non-finite or still-singular frames fall back to identity before inversion. Tests
+cover parented scale, zero Z, fully collapsed scale, and NaN input.
 
 ### Stage 4 — RenderGraph and visual composition
 

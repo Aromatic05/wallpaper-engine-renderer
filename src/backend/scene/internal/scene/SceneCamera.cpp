@@ -1,11 +1,40 @@
 #include "SceneCamera.h"
 #include "SceneNode.h"
 #include "utils/Logging.h"
-#include <iostream>
 #include "utils/Eigen.h"
+
+#include <cmath>
 
 using namespace wallpaper;
 using namespace Eigen;
+
+namespace
+{
+Matrix4d ResolveNodeCameraFrame(SceneNode& node) {
+    node.UpdateTrans();
+
+    Matrix4d frame = node.ModelTrans();
+    if (! frame.allFinite()) return Matrix4d::Identity();
+
+    constexpr double kAxisEpsilon = 1e-10;
+    const Vector3d   x            = frame.block<3, 1>(0, 0);
+    const Vector3d   y            = frame.block<3, 1>(0, 1);
+    Vector3d         z            = frame.block<3, 1>(0, 2);
+
+    if (! z.allFinite() || z.squaredNorm() <= kAxisEpsilon) {
+        z = x.cross(y);
+        if (! z.allFinite() || z.squaredNorm() <= kAxisEpsilon) {
+            z = Vector3d::UnitZ();
+        }
+        frame.block<3, 1>(0, 2) = z.normalized();
+    }
+
+    if (! frame.allFinite() || std::abs(frame.determinant()) <= kAxisEpsilon) {
+        return Matrix4d::Identity();
+    }
+    return frame;
+}
+} // namespace
 
 Vector3d SceneCamera::GetPosition() const {
 	if (m_hasExplicitView) {
@@ -55,12 +84,12 @@ void SceneCamera::CalculateViewProjectionMatrix() {
 			// only the model parser calls SetExplicitView().
 			m_viewMat = LookAt(m_explicitEye, m_explicitCenter, m_explicitUp);
 		} else if(m_node) {
-			Affine3d nodeTrans(m_node->GetLocalTrans());
-			Vector3d eye = nodeTrans * Vector3d::Zero();
-			Vector3d center = nodeTrans * (-Vector3d::UnitZ());
-			Vector3d up = Vector3d::UnitY();
-			m_viewMat = LookAt(eye, center, up);
-		} else 
+			// A node camera is the inverse of the complete authored world frame. Using only a
+			// LookAt derived from local translation drops parent transforms and scale, while directly
+			// inverting a zero-scale node produces NaN/Inf. Repair a missing Z axis when possible and
+			// otherwise fall back to an identity frame before inversion.
+			m_viewMat = ResolveNodeCameraFrame(*m_node).inverse();
+		} else
 			m_viewMat = Matrix4d::Identity();
 	};
 

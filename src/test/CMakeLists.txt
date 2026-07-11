@@ -535,6 +535,23 @@ target_compile_options(scene-parity-foundation-test PRIVATE ${warn_opts})
 add_test(NAME scene-parity-foundation-test COMMAND scene-parity-foundation-test)
 
 add_executable(
+  scene-camera-transform-test
+  scene/camera_transform_test.cpp)
+
+target_link_libraries(scene-camera-transform-test PRIVATE ${PROJECT_NAME} wpScene)
+target_include_directories(
+  scene-camera-transform-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/scene
+  ../common/utils/include)
+target_compile_options(scene-camera-transform-test PRIVATE ${warn_opts})
+
+add_test(NAME scene-camera-transform-test COMMAND scene-camera-transform-test)
+
+add_executable(
   node-transform-resolver-test
   scene/node_transform_resolver_test.cpp)
 
