@@ -28,6 +28,22 @@ target_compile_options(we-renderer-options-test PRIVATE ${warn_opts})
 add_test(NAME we-renderer-options-test COMMAND we-renderer-options-test)
 
 add_executable(
+  we-renderer-c-abi-test
+  abi/we_renderer_c_abi_test.c)
+
+target_link_libraries(we-renderer-c-abi-test PRIVATE ${PROJECT_NAME})
+target_compile_options(we-renderer-c-abi-test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME we-renderer-c-abi-test COMMAND we-renderer-c-abi-test)
+
+add_test(
+  NAME we-renderer-abi-symbols-test
+  COMMAND ${CMAKE_COMMAND}
+          -DLIBRARY=$<TARGET_FILE:${PROJECT_NAME}>
+          -DNM=${CMAKE_NM}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/abi/abi_symbols_test.cmake)
+
+add_executable(
   user-properties-json-test
   scene/user_properties_json_test.cpp)
 
