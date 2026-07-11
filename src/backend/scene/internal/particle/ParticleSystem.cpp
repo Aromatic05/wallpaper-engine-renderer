@@ -324,9 +324,9 @@ ParticleInstance* ParticleSubSystem::QueryNewInstance() {
 }
 
 void ParticleSubSystem::Emitt() {
-    double frameTime    = m_sys.scene.frameTime;
-    double particleTime = frameTime * m_rate;
-    m_time += particleTime;
+    const double frameTime      = m_sys.scene.frameTime;
+    const double simulationTime = frameTime * m_rate;
+    m_time += simulationTime;
 
     UpdateLinkedControlpoints();
 
@@ -383,7 +383,7 @@ void ParticleSubSystem::Emitt() {
         if (! inst->IsDeath()) {
             for (auto& emittOp : m_emiters) {
                 emittOp(inst->ParticlesVec(), m_initializers, m_controlpoints, m_maxcount,
-                        particleTime);
+                        frameTime);
             }
         }
 
@@ -394,7 +394,7 @@ void ParticleSubSystem::Emitt() {
             .particles     = inst->ParticlesVec(),
             .controlpoints = m_controlpoints,
             .time          = m_time,
-            .time_pass     = particleTime,
+            .time_pass     = simulationTime,
         };
 
         bool  has_live = false;
@@ -417,7 +417,7 @@ void ParticleSubSystem::Emitt() {
                 continue;
             }
             ParticleModify::Reset(p);
-            ParticleModify::ChangeLifetime(p, -particleTime);
+            ParticleModify::ChangeLifetime(p, -simulationTime);
             // Reset() restores particle color from its initializer snapshot every frame. Re-apply
             // the live instanceoverride color here so user-property color edits survive that reset
             // and run before later particle operators mutate the rendered state.

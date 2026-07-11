@@ -169,7 +169,7 @@ void TestRuntimeRateOverridePropagatesToChild() {
 
     auto parent = MakeSubsystem(scene, ParticleSubSystem::SpawnType::STATIC);
     auto child  = MakeSubsystem(scene, ParticleSubSystem::SpawnType::STATIC, 1.0, 8, 1);
-    child->AddEmitter(WPParticleParser::genParticleEmittOp(MakeBoxEmitter(1.0f)));
+    child->AddEmitter(WPParticleParser::genParticleEmittOp(MakeBoxEmitter(1.0f, 1)));
     auto* child_ptr = child.get();
     parent->AddChild(std::move(child));
 
@@ -178,7 +178,8 @@ void TestRuntimeRateOverridePropagatesToChild() {
 
     assert(Near(static_cast<float>(child_ptr->Rate()), 4.0f));
     assert(child_ptr->InstanceCount() == 1);
-    assert(child_ptr->InstanceAt(0)->Particles().size() == 2);
+    assert(child_ptr->InstanceAt(0)->Particles().size() == 1);
+    assert(Near(child_ptr->InstanceAt(0)->Particles().front().lifetime, -1.0f));
 }
 
 void TestPaddedSpriteSheetUsesContentRegion() {
@@ -243,6 +244,27 @@ void TestRandomFrameUsesStableSpawnRandom() {
     assert(differs_from_first);
 }
 
+void TestSimulationRateDoesNotChangeEmitterCadence() {
+    Scene scene;
+    scene.paritileSys->gener = std::make_unique<DummyRawGener>();
+    scene.PassFrameTime(1.0);
+
+    auto slow = MakeSubsystem(scene, ParticleSubSystem::SpawnType::STATIC, 0.5, 16);
+    auto fast = MakeSubsystem(scene, ParticleSubSystem::SpawnType::STATIC, 2.0, 16);
+    slow->AddEmitter(WPParticleParser::genParticleEmittOp(MakeBoxEmitter(4.0f)));
+    fast->AddEmitter(WPParticleParser::genParticleEmittOp(MakeBoxEmitter(4.0f)));
+
+    slow->Emitt();
+    fast->Emitt();
+
+    const auto slow_particles = slow->InstanceAt(0)->Particles();
+    const auto fast_particles = fast->InstanceAt(0)->Particles();
+    assert(slow_particles.size() == 4);
+    assert(fast_particles.size() == 4);
+    assert(Near(slow_particles.front().lifetime, 0.5f));
+    assert(Near(fast_particles.front().lifetime, -1.0f));
+}
+
 } // namespace
 
 int main() {
@@ -253,5 +275,6 @@ int main() {
     TestPaddedSpriteSheetUsesContentRegion();
     TestDragForceMatchesAuthoredStrength();
     TestRandomFrameUsesStableSpawnRandom();
+    TestSimulationRateDoesNotChangeEmitterCadence();
     return 0;
 }
