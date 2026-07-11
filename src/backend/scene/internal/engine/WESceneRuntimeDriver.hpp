@@ -4,6 +4,7 @@
 // New integrations should prefer WallpaperSession plus api/scene/WEScene.hpp helpers.
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <functional>
 #include "common/scene/WESceneContract.hpp"
@@ -39,8 +40,9 @@ struct RenderInitInfo;
 
 class WESceneRuntimeDriver : NoCopy {
 public:
-    explicit WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices = {},
-                                  std::shared_ptr<WESceneEngineServices> engineServices = {});
+    explicit WESceneRuntimeDriver(std::shared_ptr<HostServices>          hostServices   = {},
+                                  std::shared_ptr<WESceneEngineServices> engineServices = {},
+                                  std::string                            cachePath      = {});
     ~WESceneRuntimeDriver();
     bool init();
     bool inited() const;

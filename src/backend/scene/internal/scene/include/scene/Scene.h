@@ -253,7 +253,7 @@ public:
     std::array<float, 2>            mousePositionNormalized { 0.5f, 0.5f };
     bool                            cursorLeftDown { false };
 
-    SceneCamera* activeCamera;
+    SceneCamera*                   activeCamera { nullptr };
     std::shared_ptr<SceneNode> defaultGlobalCameraNode;
     double                     defaultGlobalCameraZoom { 1.0 };
     int32_t                    activeCameraLayerId { 0 };

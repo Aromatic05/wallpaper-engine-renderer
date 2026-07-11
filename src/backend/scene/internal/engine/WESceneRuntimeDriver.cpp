@@ -31,6 +31,7 @@
 
 #include "api/scene/WESceneOutput.hpp"
 #include <atomic>
+#include <chrono>
 #include <charconv>
 #include <cmath>
 #include <iterator>
@@ -267,8 +268,8 @@ public:
     };
 
 public:
-    MainHandler(std::shared_ptr<HostServices> hostServices,
-                std::shared_ptr<WESceneEngineServices> engineServices);
+    MainHandler(std::shared_ptr<HostServices>          hostServices,
+                std::shared_ptr<WESceneEngineServices> engineServices, std::string cachePath);
     virtual ~MainHandler() {};
 
     bool init();
@@ -322,6 +323,7 @@ private:
     UserPropertyMap                      m_user_properties;
     std::shared_ptr<std::vector<float>>  m_audio_samples;
     int32_t                              m_capture_frame_number { 1 };
+    std::chrono::steady_clock::time_point m_load_started_at {};
 
 private:
     std::shared_ptr<looper::Looper> m_main_loop;
@@ -464,6 +466,11 @@ private:
             if (! m_scene->first_frame_ok) {
                 m_scene->first_frame_ok = true;
                 main_handler.sendFirstFrameOk();
+            } else if (m_scene->scriptHost) {
+                // Hidden runtime branches are useful to pre-materialize for later visibility
+                // toggles, but doing all of them before the first frame made startup scale with
+                // every language/optional layer. Process one after each presented frame instead.
+                m_scene->scriptHost->MaterializeNextDeferredRuntimeLayerForResidency();
             }
         }
         m_frameTimer->FrameEnd();
@@ -503,7 +510,6 @@ private:
             if (main_handler.audioSamples()) {
                 m_scene->scriptHost->ApplyAudioSamples(*main_handler.audioSamples());
             }
-            m_scene->scriptHost->MaterializeDeferredRuntimeLayersForResidency();
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
             {
@@ -609,11 +615,13 @@ private:
 };
 } // namespace wallpaper
 
-WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices> hostServices,
-                                           std::shared_ptr<WESceneEngineServices> engineServices)
-    : m_hostServices(hostServices ? std::move(hostServices) : CreateDefaultHostServices())
-    , m_engineServices(std::move(engineServices))
-    , m_main_handler(std::make_shared<MainHandler>(m_hostServices, m_engineServices)) {}
+WESceneRuntimeDriver::WESceneRuntimeDriver(std::shared_ptr<HostServices>          hostServices,
+                                           std::shared_ptr<WESceneEngineServices> engineServices,
+                                           std::string                            cachePath)
+    : m_hostServices(hostServices ? std::move(hostServices) : CreateDefaultHostServices()),
+      m_engineServices(std::move(engineServices)),
+      m_main_handler(
+          std::make_shared<MainHandler>(m_hostServices, m_engineServices, std::move(cachePath))) {}
 
 WESceneRuntimeDriver::~WESceneRuntimeDriver() {
     /*
@@ -808,12 +816,21 @@ MHANDLER_CMD_IMPL(MainHandler, STOP) {
 }
 
 MHANDLER_CMD_IMPL(MainHandler, FIRST_FRAME) {
+    if (m_load_started_at.time_since_epoch().count() != 0) {
+        const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - m_load_started_at)
+                                    .count();
+        LOG_INFO("SceneStartupFirstFrame: load-to-first-frame=%.2fms",
+                 static_cast<double>(elapsed_us) / 1000.0);
+        m_load_started_at = {};
+    }
     if (m_first_frame_callback) m_first_frame_callback();
 }
 
 void MainHandler::loadScene() {
     if (m_source.empty() || m_assets.empty()) return;
 
+    m_load_started_at = std::chrono::steady_clock::now();
     LOG_INFO("loading scene: %s user-properties=%zu",
              m_source.c_str(),
              m_user_properties.size());
@@ -974,10 +991,12 @@ bool MainHandler::init() {
     m_inited = true;
     return true;
 }
-MainHandler::MainHandler(std::shared_ptr<HostServices> hostServices,
-                         std::shared_ptr<WESceneEngineServices> engineServices)
+MainHandler::MainHandler(std::shared_ptr<HostServices>          hostServices,
+                         std::shared_ptr<WESceneEngineServices> engineServices,
+                         std::string                            cachePath)
     : m_hostServices(std::move(hostServices)),
       m_engineServices(std::move(engineServices)),
+      m_cache_path(std::move(cachePath)),
       m_sound_manager(m_engineServices->createSoundManager()),
       m_main_loop(m_engineServices->createLooper()),
       m_render_loop(m_engineServices->createLooper()),

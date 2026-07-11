@@ -278,7 +278,8 @@ target_include_directories(
   ../backend/scene/internal/text
   ../common
   ../common/scene
-  ../common/utils/include)
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
 target_compile_options(node-transform-resolver-test PRIVATE ${warn_opts})
 
 add_test(NAME node-transform-resolver-test COMMAND node-transform-resolver-test)
@@ -454,7 +455,9 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
     ../common/scene
     ../common/utils/include
     ../../third_party/nlohmann/include)
-  target_compile_options(scenescript-host-test PRIVATE ${warn_opts})
+  # This test intentionally uses assert() around registration/mount calls whose return values are
+  # part of the contract. Keep those calls present even when the project build type defines NDEBUG.
+  target_compile_options(scenescript-host-test PRIVATE ${warn_opts} -UNDEBUG)
 
   add_test(NAME scenescript-host-test COMMAND scenescript-host-test)
 

@@ -9,6 +9,7 @@
 #include "wpscene/WPMaterial.h"
 #include "WPShaderParser.hpp"
 #include <algorithm>
+#include <limits>
 
 using namespace wallpaper;
 
@@ -71,6 +72,41 @@ constexpr std::array<StaticMdlFormat, 2> kStaticMdlFormats {{
       StaticHeaderFieldRole::GeometryAndMaterialPathCount,
       StaticMaterialPathLayout::InterleavedPerChunk },
 }};
+
+std::size_t RemainingBytes(const fs::IBinaryStream& file) {
+    const auto position = file.Tell();
+    const auto size     = file.Size();
+    if (position < 0 || size < position) return 0;
+    return static_cast<std::size_t>(size - position);
+}
+
+bool CanReadBytes(const fs::IBinaryStream& file, std::uint64_t bytes) {
+    return bytes <= static_cast<std::uint64_t>(RemainingBytes(file));
+}
+
+bool ValidateElementCount(const fs::IBinaryStream& file, std::string_view label,
+                          std::uint64_t count, std::uint64_t minimum_bytes_per_element,
+                          std::uint64_t hard_limit) {
+    if (count > hard_limit) {
+        LOG_ERROR("mdl %.*s count is implausible: %llu (limit=%llu)",
+                  static_cast<int>(label.size()),
+                  label.data(),
+                  static_cast<unsigned long long>(count),
+                  static_cast<unsigned long long>(hard_limit));
+        return false;
+    }
+    if (minimum_bytes_per_element != 0 &&
+        (count > std::numeric_limits<std::uint64_t>::max() / minimum_bytes_per_element ||
+         ! CanReadBytes(file, count * minimum_bytes_per_element))) {
+        LOG_ERROR("mdl %.*s count exceeds remaining payload: count=%llu remaining=%zu",
+                  static_cast<int>(label.size()),
+                  label.data(),
+                  static_cast<unsigned long long>(count),
+                  RemainingBytes(file));
+        return false;
+    }
+    return true;
+}
 
 WPPuppet::PlayMode ToPlayMode(std::string_view m) {
     if (m == "loop" || m.empty()) return WPPuppet::PlayMode::Loop;
@@ -478,6 +514,12 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     }
 
     uint32_t vertex_num = vertex_size / vertex_stride;
+    if (! CanReadBytes(f, vertex_size)) {
+        LOG_ERROR("mdl vertex payload exceeds file: bytes=%u remaining=%zu",
+                  vertex_size,
+                  RemainingBytes(f));
+        return false;
+    }
     mdl.vertexs.resize(vertex_num);
     for (auto& vert : mdl.vertexs) {
         if (static_image_mesh) {
@@ -508,6 +550,12 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     }
 
     uint32_t indices_num = indices_size / singile_indices;
+    if (! CanReadBytes(f, indices_size)) {
+        LOG_ERROR("mdl index payload exceeds file: bytes=%u remaining=%zu",
+                  indices_size,
+                  RemainingBytes(f));
+        return false;
+    }
     mdl.indices.resize(indices_num);
     for (auto& id : mdl.indices) {
         for (auto& v : id) v = f.ReadUint16();
@@ -539,6 +587,8 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     uint16_t bones_num = f.ReadUint16();
     // 1 byte
     f.ReadUint16(); // unk
+
+    if (! ValidateElementCount(f, "bone", bones_num, 74, 4096)) return false;
 
     mdl.puppet  = std::make_shared<WPPuppet>();
     auto& bones = mdl.puppet->bones;
@@ -580,10 +630,18 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
 
         uint8_t has_trans = f.ReadUint8();
         if (has_trans) {
+            const auto transform_bytes = static_cast<std::uint64_t>(bones_num) * 16 * sizeof(float);
+            if (! CanReadBytes(f, transform_bytes)) {
+                LOG_ERROR("mdl skeleton transform payload exceeds file: bytes=%llu remaining=%zu",
+                          static_cast<unsigned long long>(transform_bytes),
+                          RemainingBytes(f));
+                return false;
+            }
             for (uint i = 0; i < bones_num; i++)
                 for (uint j = 0; j < 16; j++) f.ReadFloat(); // mat
         }
         uint32_t size_unk = f.ReadUint32();
+        if (! ValidateElementCount(f, "skeleton metadata", size_unk, 12, 65536)) return false;
         for (uint i = 0; i < size_unk; i++)
             for (int j = 0; j < 3; j++) f.ReadUint32();
 
@@ -591,6 +649,14 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
 
         uint8_t has_offset_trans = f.ReadUint8();
         if (has_offset_trans) {
+            const auto offset_transform_bytes =
+                static_cast<std::uint64_t>(bones_num) * 19 * sizeof(float);
+            if (! CanReadBytes(f, offset_transform_bytes)) {
+                LOG_ERROR("mdl skeleton offset payload exceeds file: bytes=%llu remaining=%zu",
+                          static_cast<unsigned long long>(offset_transform_bytes),
+                          RemainingBytes(f));
+                return false;
+            }
             for (uint i = 0; i < bones_num; i++) {
                 for (uint j = 0; j < 3; j++) f.ReadFloat();  // like pos
                 for (uint j = 0; j < 16; j++) f.ReadFloat(); // mat
@@ -599,6 +665,13 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
 
         uint8_t has_index = f.ReadUint8();
         if (has_index) {
+            const auto index_bytes = static_cast<std::uint64_t>(bones_num) * sizeof(uint32_t);
+            if (! CanReadBytes(f, index_bytes)) {
+                LOG_ERROR("mdl skeleton index payload exceeds file: bytes=%llu remaining=%zu",
+                          static_cast<unsigned long long>(index_bytes),
+                          RemainingBytes(f));
+                return false;
+            }
             for (uint i = 0; i < bones_num; i++) {
                 f.ReadUint32();
             }
@@ -642,6 +715,9 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
             if(mdType == "MDAT"){
                 f.ReadUint32(); // skip 4 bytes
                 uint32_t num_attachments = f.ReadUint16(); // number of attachments in the MDAT section
+                if (! ValidateElementCount(f, "attachment", num_attachments, 67, 4096)) {
+                    return false;
+                }
 
                 for(int i = 0; i < num_attachments; i++){
                     WPPuppet::Attachment attachment;
@@ -664,6 +740,7 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
             (void)end_size;
 
             uint anim_num = f.ReadUint32();
+            if (! ValidateElementCount(f, "animation", anim_num, 26, 4096)) return false;
             anims.resize(anim_num);
             for (auto& anim : anims) {
                 // there can be a variable number of 32-bit 0s between animations
@@ -697,13 +774,22 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
                 f.ReadInt32();
 
                 uint32_t b_num = f.ReadUint32();
+                if (! ValidateElementCount(f, "animation bone-track", b_num, 8, 4096)) {
+                    return false;
+                }
                 anim.bframes_array.resize(b_num);
                 for (auto& bframes : anim.bframes_array) {
                     f.ReadInt32();
                     uint32_t byte_size = f.ReadUint32();
                     uint32_t num       = byte_size / singile_bone_frame;
                     if (byte_size % singile_bone_frame != 0) {
-                        LOG_ERROR("wrong bone frame size %d", byte_size);
+                        LOG_ERROR("wrong bone frame size %u", byte_size);
+                        return false;
+                    }
+                    if (! CanReadBytes(f, byte_size)) {
+                        LOG_ERROR("mdl bone frame payload exceeds file: bytes=%u remaining=%zu",
+                                  byte_size,
+                                  RemainingBytes(f));
                         return false;
                     }
                     bframes.frames.resize(num);

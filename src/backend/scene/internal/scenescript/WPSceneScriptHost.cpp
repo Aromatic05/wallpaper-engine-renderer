@@ -408,9 +408,12 @@ bool ApplyRegistrationValue(WPSceneScriptHost::Opaque*       opaque,
 void RebindLayerRegistrations(WPSceneScriptHost::Opaque* opaque, int32_t layer_id, SceneNode* node);
 void RegisterSceneRegistrationRange(WPSceneScriptHost::Opaque* opaque,
                                     const SceneRegistrationRange& range);
-bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id);
-bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id);
-bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id);
+bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                           bool mark_graph_dirty = true);
+bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                              bool mark_graph_dirty = true);
+bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                          bool mark_graph_dirty = true);
 bool MaterializeDeferredVisibleLayerTreeIfNeeded(WPSceneScriptHost::Opaque* opaque,
                                                  int32_t                    root_layer_id);
 void QueueHiddenLayerTreeResourceRelease(WPSceneScriptHost::Opaque* opaque,
@@ -2249,6 +2252,8 @@ struct WPSceneScriptHost::Opaque {
     std::unordered_set<uint32_t> hovered_instances;
     std::unordered_set<uint32_t> pressed_instances;
     std::vector<SceneRegistrationRange> pending_scene_registration_ranges;
+    std::vector<int32_t>                deferred_residency_warmup_layer_ids;
+    std::size_t                         deferred_residency_warmup_index { 0 };
 };
 
 std::optional<WPDynamicValue> ReadOriginalLayerPropertyValue(
@@ -2852,7 +2857,8 @@ void FlushPendingSceneRegistrationRanges(WPSceneScriptHost::Opaque* opaque) {
     }
 }
 
-bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id) {
+bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                              bool mark_graph_dirty) {
     if (opaque == nullptr || opaque->scene == nullptr) return false;
     if (opaque->scene->deferredRuntimeParticleLayerIds.count(layer_id) == 0) return true;
 
@@ -2877,12 +2883,15 @@ bool MaterializeDeferredParticleLayerIfNeeded(WPSceneScriptHost::Opaque* opaque,
     // render work that did not exist when the graph was compiled with only the hidden placeholder.
     // A resource refresh cannot add that missing pass, so the first false->true visibility toggle
     // must force a topology rebuild before the layer can become visible on screen.
-    opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_VERBOSE("DeferredRuntimeParticleRealize: materialized layer=%d topology-dirty=true", layer_id);
+    if (mark_graph_dirty) opaque->scene->MarkRenderGraphTopologyDirty();
+    LOG_VERBOSE("DeferredRuntimeParticleRealize: materialized layer=%d topology-dirty=%s",
+                layer_id,
+                mark_graph_dirty ? "true" : "false");
     return true;
 }
 
-bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id) {
+bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                           bool mark_graph_dirty) {
     if (opaque == nullptr || opaque->scene == nullptr) return false;
     if (opaque->scene->deferredRuntimeImageLayerIds.count(layer_id) == 0) return true;
 
@@ -2906,12 +2915,15 @@ bool MaterializeDeferredImageLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, in
     // Deferred image layers are the expensive case for multilingual scenes: the hidden placeholder
     // had no material/effect passes, so turning it visible changes graph topology and must rebuild
     // before any newly-created render targets or pipelines can contribute to the frame.
-    opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_VERBOSE("DeferredRuntimeImageRealize: materialized layer=%d topology-dirty=true", layer_id);
+    if (mark_graph_dirty) opaque->scene->MarkRenderGraphTopologyDirty();
+    LOG_VERBOSE("DeferredRuntimeImageRealize: materialized layer=%d topology-dirty=%s",
+                layer_id,
+                mark_graph_dirty ? "true" : "false");
     return true;
 }
 
-bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id) {
+bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int32_t layer_id,
+                                          bool mark_graph_dirty) {
     if (opaque == nullptr || opaque->scene == nullptr) return false;
     if (opaque->scene->deferredRuntimeTextLayerIds.count(layer_id) == 0) return true;
 
@@ -2936,8 +2948,10 @@ bool MaterializeDeferredTextLayerIfNeeded(WPSceneScriptHost::Opaque* opaque, int
     // while a hidden placeholder was present cannot draw the newly inserted text node until its
     // topology is rebuilt, even if ordinary uniforms or textures would only need a resource
     // refresh.
-    opaque->scene->MarkRenderGraphTopologyDirty();
-    LOG_VERBOSE("DeferredRuntimeTextRealize: materialized layer=%d topology-dirty=true", layer_id);
+    if (mark_graph_dirty) opaque->scene->MarkRenderGraphTopologyDirty();
+    LOG_VERBOSE("DeferredRuntimeTextRealize: materialized layer=%d topology-dirty=%s",
+                layer_id,
+                mark_graph_dirty ? "true" : "false");
     return true;
 }
 
@@ -9240,62 +9254,62 @@ void WPSceneScriptHost::Initialize() {
     ApplyGeneralSettings(m_impl->general_settings, true);
     ApplyUserProperties(m_impl->user_properties, true);
     ApplyMediaState(m_impl->media_state, true);
+
+    m_impl->deferred_residency_warmup_layer_ids.clear();
+    m_impl->deferred_residency_warmup_index = 0;
+    std::unordered_set<int32_t> queued;
+    auto                        append_if_deferred = [&](int32_t layer_id) {
+        if (layer_id == 0 || ! queued.insert(layer_id).second) return;
+        if (! IsDeferredRuntimeLayer(m_impl, layer_id)) return;
+        m_impl->deferred_residency_warmup_layer_ids.push_back(layer_id);
+    };
+    for (const auto layer_id : m_scene->layerOrder) append_if_deferred(layer_id);
+    for (const auto layer_id : m_scene->deferredRuntimeImageLayerIds) append_if_deferred(layer_id);
+    for (const auto layer_id : m_scene->deferredRuntimeParticleLayerIds)
+        append_if_deferred(layer_id);
+    for (const auto layer_id : m_scene->deferredRuntimeTextLayerIds) append_if_deferred(layer_id);
+    LOG_VERBOSE("DeferredRuntimeResidencyWarmupQueued: count=%zu",
+                m_impl->deferred_residency_warmup_layer_ids.size());
 }
 
-void WPSceneScriptHost::MaterializeDeferredRuntimeLayersForResidency() {
-    if (!Ready() || m_scene == nullptr) return;
+bool WPSceneScriptHost::MaterializeNextDeferredRuntimeLayerForResidency() {
+    if (! Ready() || m_scene == nullptr) return false;
 
-    std::vector<int32_t>        layer_ids;
-    std::unordered_set<int32_t> queued;
-    auto append_if_deferred = [&](int32_t layer_id) {
-        if (layer_id == 0 || !queued.insert(layer_id).second) return;
-        if (!IsDeferredRuntimeLayer(m_impl, layer_id)) return;
-        layer_ids.push_back(layer_id);
-    };
+    while (m_impl->deferred_residency_warmup_index <
+           m_impl->deferred_residency_warmup_layer_ids.size()) {
+        const auto layer_id =
+            m_impl->deferred_residency_warmup_layer_ids[m_impl->deferred_residency_warmup_index++];
+        if (! IsDeferredRuntimeLayer(m_impl, layer_id)) continue;
 
-    for (const auto layer_id : m_scene->layerOrder) {
-        append_if_deferred(layer_id);
-    }
-    for (const auto layer_id : m_scene->deferredRuntimeImageLayerIds) {
-        append_if_deferred(layer_id);
-    }
-    for (const auto layer_id : m_scene->deferredRuntimeParticleLayerIds) {
-        append_if_deferred(layer_id);
-    }
-    for (const auto layer_id : m_scene->deferredRuntimeTextLayerIds) {
-        append_if_deferred(layer_id);
-    }
-    if (layer_ids.empty()) return;
+        const auto started_at = std::chrono::steady_clock::now();
+        // Initial scripts already materialize any branch that must be visible for the first frame.
+        // Remaining queued layers are hidden, so inserting their CPU/runtime identity does not
+        // change the active graph. Keep the fallback for an unexpectedly visible layer correct.
+        const bool mark_graph_dirty = m_scene->IsLayerVisible(layer_id);
+        bool       materialized     = true;
+        materialized = MaterializeDeferredImageLayerIfNeeded(m_impl, layer_id, mark_graph_dirty) &&
+                       materialized;
+        materialized =
+            MaterializeDeferredParticleLayerIfNeeded(m_impl, layer_id, mark_graph_dirty) &&
+            materialized;
+        materialized = MaterializeDeferredTextLayerIfNeeded(m_impl, layer_id, mark_graph_dirty) &&
+                       materialized;
 
-    const auto started_at = std::chrono::steady_clock::now();
-    std::size_t materialized_layers = 0;
-
-    for (const auto layer_id : layer_ids) {
-        if (!IsDeferredRuntimeLayer(m_impl, layer_id)) continue;
-
-        // This is a residency warm-up: build the full CPU/runtime layer identity after init scripts
-        // have had a chance to settle visibility, but rely on render-graph pruning to keep hidden
-        // layers out of GPU memory. Later visible=true toggles then skip JSON/material parsing and
-        // only need to compile/prepare the graph resources for the newly visible branch.
-        if (!MaterializeDeferredImageLayerIfNeeded(m_impl, layer_id)) continue;
-        if (!MaterializeDeferredParticleLayerIfNeeded(m_impl, layer_id)) continue;
-        if (!MaterializeDeferredTextLayerIfNeeded(m_impl, layer_id)) continue;
-
-        materialized_layers++;
+        const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - started_at)
+                                    .count();
+        LOG_VERBOSE("DeferredRuntimeResidencyWarmupStep: layer=%d materialized=%s "
+                    "topology-dirty=%s remaining=%zu duration=%.2fms",
+                    layer_id,
+                    materialized ? "true" : "false",
+                    mark_graph_dirty ? "true" : "false",
+                    m_impl->deferred_residency_warmup_layer_ids.size() -
+                        m_impl->deferred_residency_warmup_index,
+                    static_cast<double>(elapsed_us) / 1000.0);
+        return true;
     }
 
-    const auto elapsed_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - started_at)
-            .count();
-    LOG_VERBOSE("DeferredRuntimeResidencyWarmup: requested=%zu materialized=%zu duration=%.2fms "
-                "remaining-image=%zu remaining-particle=%zu remaining-text=%zu",
-                layer_ids.size(),
-                materialized_layers,
-                elapsed_us / 1000.0,
-                m_scene->deferredRuntimeImageLayerIds.size(),
-                m_scene->deferredRuntimeParticleLayerIds.size(),
-                m_scene->deferredRuntimeTextLayerIds.size());
+    return false;
 }
 
 void WPSceneScriptHost::FrameBegin(double frame_time) {
