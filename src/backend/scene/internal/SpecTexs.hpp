@@ -58,7 +58,9 @@ constexpr std::string_view G_M { "g_ModelMatrix" };
 constexpr std::string_view G_VP { "g_ViewProjectionMatrix" };
 constexpr std::string_view G_MVP { "g_ModelViewProjectionMatrix" };
 constexpr std::string_view G_LMM { "g_LayerModelMatrix" };
+constexpr std::string_view G_EM { "g_EffectModelMatrix" };
 constexpr std::string_view G_EMVP { "g_EffectModelViewProjectionMatrix" };
+constexpr std::string_view G_EMVPI { "g_EffectModelViewProjectionMatrixInverse" };
 constexpr std::string_view G_AM { "g_AltModelMatrix" };
 constexpr std::string_view G_MI { "g_ModelMatrixInverse" };
 constexpr std::string_view G_MVPI { "g_ModelViewProjectionMatrixInverse" };
@@ -77,7 +79,8 @@ constexpr std::string_view G_VIEWRIGHT { "g_ViewRight" };
 constexpr std::string_view G_VIEWFORWARD { "g_ViewForward" };
 
 constexpr std::string_view G_TIME { "g_Time" };
-constexpr std::string_view G_DAYTIME { "g_DayTime" };
+constexpr std::string_view G_DAYTIME { "g_Daytime" };
+constexpr std::string_view G_DAYTIME_LEGACY { "g_DayTime" };
 // Wallpaper Engine feedback effects integrate their simulations with the current frame delta and
 // cursor history. Keep these global uniform names centralized so the parser and updater share the
 // same authored runtime contract instead of relying on ad-hoc string literals in effect fixes.

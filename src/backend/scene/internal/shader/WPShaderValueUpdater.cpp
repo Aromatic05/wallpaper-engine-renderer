@@ -313,7 +313,9 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, const ExistsUniformOp&
     info.has_AM                 = existsOp(G_AM);
     info.has_MVP                = existsOp(G_MVP);
     info.has_LMM                = existsOp(G_LMM);
+    info.has_EM                 = existsOp(G_EM);
     info.has_EMVP               = existsOp(G_EMVP);
+    info.has_EMVPI              = existsOp(G_EMVPI);
     info.has_MVPI               = existsOp(G_MVPI);
     info.has_ETVP               = existsOp(G_ETVP);
     info.has_ETVPI              = existsOp(G_ETVPI);
@@ -323,6 +325,7 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, const ExistsUniformOp&
     info.has_BONES            = existsOp(G_BONES);
     info.has_TIME             = existsOp(G_TIME);
     info.has_DAYTIME          = existsOp(G_DAYTIME);
+    info.has_DAYTIME_LEGACY   = existsOp(G_DAYTIME_LEGACY);
     info.has_FRAMETIME        = existsOp(G_FRAMETIME);
     info.has_POINTERPOSITION  = existsOp(G_POINTERPOSITION);
     info.has_POINTERPOSITIONLAST = existsOp(G_POINTERPOSITIONLAST);
@@ -552,7 +555,9 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
     bool reqAM    = info.has_AM;
     bool reqMVP   = info.has_MVP;
     bool reqLMM   = info.has_LMM;
+    bool reqEM    = info.has_EM;
     bool reqEMVP  = info.has_EMVP;
+    bool reqEMVPI = info.has_EMVPI;
     bool reqMVPI  = info.has_MVPI;
     bool reqETVP  = info.has_ETVP;
     bool reqETVPI = info.has_ETVPI;
@@ -562,7 +567,8 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
     if (info.has_VP) {
         updateOp(G_VP, ToDxcCBufferMatrixUniform(viewProTrans));
     }
-    if (reqM || reqMVP || reqLMM || reqEMVP || reqMI || reqMVPI || reqETVP || reqETVPI) {
+    if (reqM || reqAM || reqMVP || reqLMM || reqEM || reqEMVP || reqEMVPI || reqMI ||
+        reqMVPI || reqETVP || reqETVPI) {
         Matrix4d modelTrans =
             transformResolver.ResolveParallaxedModelTransform(
                 pNode, model_parallax_camera, uniform_cam_name != "effect");
@@ -575,11 +581,8 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
             if (source_camera_data != nullptr && source_camera_data->AppliesModelParallax()) {
                 // Composition-source routes project a child through the source camera, then the
                 // parent composition layer publishes that source texture through its own final
-                // scene-space writer. The child model therefore needs active-camera parallax minus
-                // the parallax already represented by the source camera's attached layer; otherwise
-                // parent depth is added twice for authored parallax groups, while source-camera
-                // relative parallax drops the root fallback movement for groups whose final writer
-                // deliberately suppresses its own model parallax.
+                // scene-space writer. Remove the parallax already represented by the source camera
+                // so the helper model retains exactly one camera-relative offset.
                 const auto source_parallax =
                     transformResolver.ResolveParallaxOffset(source_camera_node.get(),
                                                             model_parallax_camera);
@@ -589,29 +592,48 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
             }
         }
 
+        const WPShaderValueData* nodeDataPtr = hasNodeData ? &m_nodeDataMap.at(pNode) : nullptr;
+        Matrix4d layerModelTrans = modelTrans;
+        if (nodeDataPtr != nullptr && nodeDataPtr->effect_projection_node != nullptr) {
+            // Effect helpers are frequently identity meshes rendered through a private camera. The
+            // layer/effect matrix contract refers to the authored source layer, not that helper.
+            layerModelTrans =
+                transformResolver.ResolveRawModelTransform(nodeDataPtr->effect_projection_node);
+        }
+
         if (reqM) updateOp(G_M, ToDxcCBufferMatrixUniform(modelTrans));
         if (reqAM) updateOp(G_AM, ToDxcCBufferMatrixUniform(modelTrans));
-        if (reqLMM) updateOp(G_LMM, ToDxcCBufferMatrixUniform(modelTrans));
+        if (reqLMM) updateOp(G_LMM, ToDxcCBufferMatrixUniform(layerModelTrans));
+        if (reqEM) updateOp(G_EM, ToDxcCBufferMatrixUniform(layerModelTrans));
         if (reqMI) updateOp(G_MI, ToDxcCBufferMatrixUniform(modelTrans.inverse()));
-        if (reqMVP || reqEMVP) {
-            Matrix4d mvpTrans = viewProTrans * modelTrans;
+
+        if (reqMVP || reqMVPI) {
+            const Matrix4d mvpTrans = viewProTrans * modelTrans;
             if (reqMVP) updateOp(G_MVP, ToDxcCBufferMatrixUniform(mvpTrans));
-            if (reqEMVP) updateOp(G_EMVP, ToDxcCBufferMatrixUniform(mvpTrans));
             if (reqMVPI) updateOp(G_MVPI, ToDxcCBufferMatrixUniform(mvpTrans.inverse()));
         }
+        if (reqEMVP || reqEMVPI) {
+            const Matrix4d effectMvpTrans = viewProTrans * layerModelTrans;
+            if (reqEMVP) updateOp(G_EMVP, ToDxcCBufferMatrixUniform(effectMvpTrans));
+            if (reqEMVPI) {
+                if (std::abs(effectMvpTrans.determinant()) > 1e-12) {
+                    updateOp(G_EMVPI, ToDxcCBufferMatrixUniform(effectMvpTrans.inverse()));
+                } else {
+                    updateOp(G_EMVPI, ToDxcCBufferMatrixUniform(Matrix4d::Identity()));
+                }
+            }
+        }
         if (reqETVP || reqETVPI) {
-            const SceneNode* projectionNode      = pNode;
-            const SceneMesh* projectionMesh      = pNode->Mesh();
+            const SceneNode* projectionNode       = pNode;
+            const SceneMesh* projectionMesh       = pNode->Mesh();
             Matrix4d         projectionModelTrans = modelTrans;
             Matrix4d         projectionViewPro    = viewProTrans;
 
-            const WPShaderValueData* nodeDataPtr = hasNodeData ? &m_nodeDataMap.at(pNode) : nullptr;
             if (nodeDataPtr != nullptr && nodeDataPtr->effect_projection_node != nullptr &&
                 nodeDataPtr->effect_projection_mesh != nullptr && m_scene->activeCamera != nullptr) {
-                projectionNode = nodeDataPtr->effect_projection_node;
-                projectionMesh = nodeDataPtr->effect_projection_mesh;
-                const_cast<SceneNode*>(projectionNode)->UpdateTrans();
-                projectionModelTrans = projectionNode->ModelTrans();
+                projectionNode       = nodeDataPtr->effect_projection_node;
+                projectionMesh       = nodeDataPtr->effect_projection_mesh;
+                projectionModelTrans = layerModelTrans;
                 projectionViewPro    = m_scene->activeCamera->GetViewProjectionMatrix();
             }
 
@@ -636,6 +658,7 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
     if (info.has_TIME) updateOp(G_TIME, (float)m_scene->elapsingTime);
 
     if (info.has_DAYTIME) updateOp(G_DAYTIME, (float)m_dayTime);
+    if (info.has_DAYTIME_LEGACY) updateOp(G_DAYTIME_LEGACY, (float)m_dayTime);
 
     if (info.has_POINTERPOSITION) updateOp(G_POINTERPOSITION, m_mousePos);
     if (info.has_POINTERPOSITIONLAST) updateOp(G_POINTERPOSITIONLAST, m_mousePosLast);

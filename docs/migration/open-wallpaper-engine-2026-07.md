@@ -93,7 +93,7 @@ Reference branch:
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
 | `791f273` | audio bar shader compatibility | `DONE` | Packed two-dimensional spectrum accesses are flattened before DXC; scanner and end-to-end SPIR-V compilation tests cover the legacy form. |
-| `23e0b14` | update shader spec uniforms | `REVIEW` | Compare parsed uniform schema before modifying updater code. |
+| `23e0b14` | update shader spec uniforms | `DONE` | Added new/legacy Daytime names and source-layer effect matrix contracts with runtime matrix/inverse tests. |
 | `2728164` | discover non-standard pkg names | `DONE` | Shared resolver maps `project.file` to matching package names; default `scene.pkg`, nested paths, and traversal rejection are covered by tests. |
 | `3ace9c4` | add special shader names | `REVIEW` | Fold only missing names into current shader compatibility table. |
 | `9a7063d` | rename special names module | `EXCLUDE` | Structural rename has no behavioral value. |

@@ -29,7 +29,9 @@ struct WPUniformInfo {
     // depends on the authored layer transform. Track these matrix uniforms separately so effect
     // shaders get that contract without requiring a g_ModelViewProjectionMatrix declaration too.
     bool has_LMM { false };
+    bool has_EM { false };
     bool has_EMVP { false };
+    bool has_EMVPI { false };
     bool has_MVPI { false };
     bool has_ETVP { false };
     bool has_ETVPI { false };
@@ -38,6 +40,7 @@ struct WPUniformInfo {
     bool has_BONES { false };
     bool has_TIME { false };
     bool has_DAYTIME { false };
+    bool has_DAYTIME_LEGACY { false };
     // Cursor feedback shaders need these values as a coherent per-frame set. Tracking them beside
     // the older pointer position bit keeps UpdateUniforms data-driven: ordinary materials do not pay
     // for cursor state writes, while effects like cursorripple receive every uniform they declare.
