@@ -92,10 +92,25 @@ static TexNode::Desc createTexDesc(std::string path, const Scene* scene = nullpt
 }
 } // namespace wallpaper::rg
 
-static void TraverseNode(const std::function<void(SceneNode*)>& func, SceneNode* node) {
-    if (node == nullptr || ! node->Visible()) return;
+static bool IsOffscreenDependencySourceNode(const Scene& scene, const SceneNode* node) {
+    if (node == nullptr || node->Mesh() == nullptr || node->Camera().empty()) return false;
+    const auto owner_it = scene.nodeOwners.find(const_cast<SceneNode*>(node));
+    if (owner_it == scene.nodeOwners.end() ||
+        scene.offscreenDependencyLayerIds.count(owner_it->second) == 0) {
+        return false;
+    }
+    const auto camera_it = scene.cameras.find(node->Camera());
+    return camera_it != scene.cameras.end() && camera_it->second != nullptr &&
+           camera_it->second->HasImgEffect();
+}
+
+static void TraverseNode(const std::function<void(SceneNode*)>& func, SceneNode* node,
+                         const Scene& scene) {
+    if (node == nullptr || (! node->Visible() && ! IsOffscreenDependencySourceNode(scene, node))) {
+        return;
+    }
     func(node);
-    for (auto& child : node->GetChildren()) TraverseNode(func, child.get());
+    for (auto& child : node->GetChildren()) TraverseNode(func, child.get(), scene);
 }
 
 static void TraverseNodeForWarmup(const std::function<void(SceneNode*)>& func, SceneNode* node) {
@@ -126,6 +141,7 @@ struct DelayLinkInfo {
 struct ExtraInfo {
     Map<size_t, rg::TexNode*>  id_link_map {};
     std::vector<DelayLinkInfo> link_info {};
+    Map<size_t, rg::TexNode*>  published_link_map {};
     rg::RenderGraph*           rgraph { nullptr };
     Scene*                     scene { nullptr };
 };
@@ -141,18 +157,45 @@ static rg::TexNode* AddMipFramebufferCopy(rg::RenderGraph&        rgraph,
     return rg::addCopyPass(rgraph, source, &copy_desc);
 }
 
+static rg::TexNode* AddLayerLinkPublication(rg::RenderGraph& rgraph, Scene& scene,
+                                            std::string source, i32 layer_id) {
+    rg::TexNode* published { nullptr };
+    rgraph.addPass<vulkan::CopyPass>(
+        "layer-link-publish",
+        rg::PassNode::Type::Copy,
+        [&published, &scene, source = std::move(source), layer_id](
+            rg::RenderGraphBuilder& builder, vulkan::CopyPass::Desc& desc) {
+            auto* input = builder.createTexNode(rg::createTexDesc(source, &scene));
+            auto output_desc = rg::createTexDesc(GenLinkTex(static_cast<idx>(layer_id)), &scene);
+            auto* output = builder.createTexNode(output_desc, true);
+            rg::doCopy(builder, desc, input, output);
+            published = output;
+        });
+    return published;
+}
+
 static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, ExtraInfo& extra,
                         const SceneImageEffectNode* effect_node = nullptr,
                         const SceneImageEffect* effect_owner = nullptr,
                         std::string_view camera_override = {}, bool clear_before_draw = false,
                         bool force_alpha_write = false,
-                        bool premultiplied_source_blend = false) {
+                        bool premultiplied_source_blend = false,
+                        std::function<bool()> pass_gate = {}) {
     auto& rgraph = *extra.rgraph;
     auto& scene  = *extra.scene;
 
     auto loadEffect = [node, &rgraph, &scene, &extra](SceneImageEffectLayer* effs) {
-        effs->ResolveEffect(scene.default_effect_mesh, "effect", {}, SpecTex_Default);
-
+        const bool publish_link =
+            scene.offscreenDependencyLayerIds.count(node->ID()) != 0;
+        effs->ResolveEffect(
+            scene.default_effect_mesh,
+            "effect",
+            {},
+            SpecTex_Default,
+            false,
+            nullptr,
+            publish_link ? SceneImageEffectLayer::FinalOutputPolicy::PrivateAuthoredThenComposite
+                         : SceneImageEffectLayer::FinalOutputPolicy::AuthoredWriter);
         for (usize i = 0; i < effs->EffectCount(); i++) {
             auto& eff     = effs->GetEffect(i);
             auto  cmdItor = eff->commands.begin();
@@ -192,7 +235,20 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                         effs->FinalNode().Camera(),
                         false,
                         false,
-                        true);
+                        true,
+                        [effs] {
+                            const auto* world_node = effs->WorldNode();
+                            return (world_node == nullptr || world_node->Visible()) &&
+                                   effs->ShouldRunFinalComposite();
+                        });
+        }
+
+        if (publish_link && ! effs->ResolvedPrivateOutputTarget().empty()) {
+            extra.published_link_map[static_cast<size_t>(node->ID())] =
+                AddLayerLinkPublication(rgraph,
+                                        scene,
+                                        effs->ResolvedPrivateOutputTarget(),
+                                        node->ID());
         }
     };
 
@@ -283,15 +339,20 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
          clear_before_draw,
          force_alpha_write,
          premultiplied_source_blend,
+         pass_gate = std::move(pass_gate),
          &output,
          &imgId,
          &rgraph,
          &scene,
          &extra](
             rg::RenderGraphBuilder& builder, vulkan::CustomShaderPass::Desc& pdesc) {
-            const auto& pass = builder.workPassNode();
-            pdesc.node       = node;
-            pdesc.output     = output;
+            const auto& pass             = builder.workPassNode();
+            pdesc.scene                  = &scene;
+            pdesc.node                   = node;
+            pdesc.layer_id               = imgId;
+            pdesc.execute_when_hidden    =
+                scene.offscreenDependencyLayerIds.count(imgId) != 0;
+            pdesc.output                 = output;
             if (effect_node != nullptr) {
                 pdesc.camera_override = effect_node->camera_override;
                 pdesc.clear_before_draw = effect_node->clear_before_draw;
@@ -304,6 +365,7 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
                 pdesc.clear_before_draw          = clear_before_draw;
                 pdesc.force_alpha_write          = force_alpha_write;
                 pdesc.premultiplied_source_blend = premultiplied_source_blend;
+                if (pass_gate) pdesc.should_execute = pass_gate;
             }
             CheckAndSetSprite(scene, pdesc, material->textures);
             for (usize i = 0; i < material->textures.size(); i++) {
@@ -364,30 +426,45 @@ static std::unique_ptr<rg::RenderGraph> BuildWESceneRenderPlanImpl(Scene& scene,
                                                                    bool include_hidden) {
     std::unique_ptr<rg::RenderGraph> rgraph = std::make_unique<rg::RenderGraph>();
     ExtraInfo                        extra { .rgraph = rgraph.get(), .scene = &scene };
-    const auto traverse = include_hidden ? TraverseNodeForWarmup : TraverseNode;
-    traverse(
-        [&extra](SceneNode* node) {
-            ToGraphPass(node, SpecTex_Default, node->ID(), extra);
-        },
-        scene.sceneGraph.get());
+    if (include_hidden) {
+        TraverseNodeForWarmup(
+            [&extra](SceneNode* node) {
+                ToGraphPass(node, SpecTex_Default, node->ID(), extra);
+            },
+            scene.sceneGraph.get());
+    } else {
+        TraverseNode(
+            [&extra](SceneNode* node) {
+                ToGraphPass(node, SpecTex_Default, node->ID(), extra);
+            },
+            scene.sceneGraph.get(),
+            scene);
+    }
 
     for (auto& info : extra.link_info) {
-        if (! exists(extra.id_link_map, info.link_id)) {
-            LOG_ERROR("link tex %d not found", info.link_id);
-            continue;
-        }
         rgraph->afterBuild(
             info.id, [&rgraph, &extra, &info](rg::RenderGraphBuilder& builder, rg::Pass& rgpass) {
                 auto& pass = static_cast<vulkan::CustomShaderPass&>(rgpass);
 
+                if (exists(extra.published_link_map, info.link_id)) {
+                    auto* published = extra.published_link_map.at(info.link_id);
+                    builder.read(published);
+                    pass.setDescTex(static_cast<u32>(info.tex_index), published->key());
+                    return true;
+                }
+
+                if (! exists(extra.id_link_map, info.link_id)) {
+                    LOG_ERROR("link tex %d not found", info.link_id);
+                    return false;
+                }
                 auto* link_tex_node = extra.id_link_map.at(info.link_id);
                 auto  copy_desc     = link_tex_node->genDesc();
-                copy_desc.key       = GenLinkTex((idx)info.link_id);
+                copy_desc.key       = GenLinkTex(static_cast<idx>(info.link_id));
                 copy_desc.name      = copy_desc.key;
 
                 auto new_in = rg::addCopyPass(*rgraph, link_tex_node, &copy_desc);
                 builder.read(new_in);
-                pass.setDescTex((u32)info.tex_index, new_in->key());
+                pass.setDescTex(static_cast<u32>(info.tex_index), new_in->key());
                 return true;
             });
     }

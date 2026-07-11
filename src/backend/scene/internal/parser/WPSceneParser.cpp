@@ -1893,6 +1893,24 @@ bool LoadCopyBackgroundSourceHelperMaterial(fs::VFS& vfs, wpscene::WPMaterial& m
     return true;
 }
 
+bool AppendLinkedSolidPassthroughEffect(fs::VFS& vfs, wpscene::WPImageObject& image) {
+    nlohmann::json helper_json;
+    if (! PARSE_JSON(fs::GetFileContent(vfs, "/assets/materials/util/effectpassthrough.json"),
+                     helper_json)) {
+        return false;
+    }
+
+    wpscene::WPMaterial material;
+    if (! material.FromJson(helper_json)) return false;
+    material.blending = "disabled";
+
+    wpscene::WPImageEffect effect;
+    effect.name = "__hanabi_linked_solid_passthrough";
+    effect.materials.push_back(std::move(material));
+    image.effects.push_back(std::move(effect));
+    return true;
+}
+
 struct ImageEffectCameraClipRange {
     float near_clip { -1.0f };
     float far_clip { 1.0f };
@@ -4417,7 +4435,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             BuildEffectVisibilityContract(wpeffobj, context.user_properties);
         if (! effect_visibility.can_prune_at_parse_time) count_eff++;
     }
-    const bool hasAuthoredEffect = count_eff > 0;
+    bool       hasAuthoredEffect = count_eff > 0;
     bool       isCompose         = (wpimgobj.image == "models/util/composelayer.json");
     const bool isProjectLayer =
         wpimgobj.projectlayer || wpimgobj.image == "models/util/projectlayer.json";
@@ -4426,6 +4444,15 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     const bool is_offscreen_dependency_source =
         context.scene != nullptr &&
         context.scene->offscreenDependencyLayerIds.count(wpimgobj.id) != 0;
+    if (isSolidLayer && is_offscreen_dependency_source && ! hasAuthoredEffect) {
+        // A linked solid layer needs two outputs from the same local result: its private
+        // `_rt_imageLayerComposite_<id>` publication and, when visible, its normal scene
+        // contribution. A neutral passthrough gives the effect bridge a concrete final writer so
+        // RenderPlanBuilder can keep that writer private and publish it through the layer's final
+        // composite without sampling the cumulative `_rt_default` framebuffer.
+        if (! AppendLinkedSolidPassthroughEffect(vfs, wpimgobj)) return;
+        hasAuthoredEffect = true;
+    }
     // Wallpaper Engine `dependencies` expose a layer through `_rt_imageLayerComposite_<id>`
     // even when the source layer has no authored effects. Such layers still need a private source
     // render target because the visible consumer samples that source while the layer itself remains
@@ -4825,11 +4852,10 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             }
         }
         if (hasAuthoredEffect) {
-            // The neutral final composite is only useful when an authored effect chain can have a
-            // hidden final output pass. Dependency-only sources intentionally stop at the first
-            // ping-pong target so `_rt_imageLayerComposite_<id>` samples the raw source texture
-            // instead of adding an unreachable screen-space fallback node that could overwrite the
-            // link-source bookkeeping.
+            // Every authored/synthetic chain gets a neutral final publisher. Linked dependency
+            // sources resolve the authored final pass privately and use this node only for their
+            // visible scene contribution; unlinked layers retain the historical hidden-effect
+            // fallback behavior.
             const auto finalCompositeTransformData = BuildEffectWriterTransformData(
                 context,
                 BuildImageEffectFinalCompositeContract(wpimgobj,

@@ -607,6 +607,7 @@ void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
     m_resolved_output_node = nullptr;
     m_resolved_output_follows_world = true;
     m_resolved_output_mesh_follows_final_mesh = true;
+    m_resolved_private_output_target.clear();
     m_final_composite.ResetForResolve();
     SyncResolvedNodeForRoute(resolved_world_affine);
 
@@ -624,7 +625,10 @@ void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
                               ppong_a,
                               resolved_world_affine);
 
-    if (fallback_last_output == nullptr) return;
+    if (fallback_last_output == nullptr) {
+        m_resolved_private_output_target = m_pingpong_a;
+        return;
+    }
     if (!final_decision.keep_authored_final_private) {
         ResolveVisibleFinalOutput(*fallback_last_output,
                                   default_mesh,
@@ -642,4 +646,5 @@ void SceneImageEffectLayer::ResolveEffect(const SceneMesh& default_mesh,
                               layer_surface_cam,
                               final_decision.private_final_uses_layer_surface,
                               resolved_world_affine);
+    m_resolved_private_output_target = fallback_last_output->output;
 }

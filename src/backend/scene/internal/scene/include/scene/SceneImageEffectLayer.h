@@ -157,6 +157,9 @@ public:
     void        SyncResolvedOutputMesh();
     void        SyncResolvedNodeToWorld();
     void        SyncResolvedNodeToMatrix(const Eigen::Affine3f& world_affine);
+    const std::string& ResolvedPrivateOutputTarget() const {
+        return m_resolved_private_output_target;
+    }
 
     void ResolveEffect(const SceneMesh& defualt_mesh, std::string_view effect_cam,
                        std::string_view layer_surface_cam,
@@ -219,6 +222,7 @@ private:
     // camera's local fullscreen space or `_rt_imageLayerComposite_<id>` samples a shifted source.
     bool                       m_resolved_output_follows_world { true };
     bool                       m_resolved_output_mesh_follows_final_mesh { true };
+    std::string                m_resolved_private_output_target;
     bool                       m_clear_source_before_owner_draw { false };
     FinalCompositeState        m_final_composite;
     BlendMode                  m_final_blend;

@@ -188,7 +188,7 @@ its independent node-alignment layout contract.
 
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
-| `c50269f` | solid layer link composites | `REVIEW` | Linked-source/final-owner fixture. |
+| `c50269f` | solid layer link composites | `DONE` | Explicit private link publication plus visible/hidden final-owner regression. |
 | `5431b87` | preserve text color in glyph seed | `REVIEW` | Text seed pass color assertion. |
 | `f721e8c` | composite final perspective effects | `REVIEW` | Perspective effect final-writer test. |
 | `f7406a4` | media thumbnail image fallback | `TEST` | Local implementation exists; add/retain exact fallback regression. |
@@ -213,6 +213,16 @@ its independent node-alignment layout contract.
 | `4cab330` | dynamic text effect sizing | `REVIEW` | Consolidate with dynamic target extent work. |
 | `082ba2c` | image alpha visibility | `REVIEW` | Visibility and alpha must remain separate. |
 | `faf188d` | image alpha user bindings | `REVIEW` | User property binding plus final alpha fixture. |
+
+Linked solid layers without authored effects now receive a neutral passthrough only when they are
+used as offscreen dependency sources. The authored/synthetic final effect remains on a private local
+target; RenderGraph publishes that result explicitly as `_rt_link_<id>` and consumers bind that
+publication instead of copying the cumulative `_rt_default` framebuffer. A separate neutral final
+composite writes the source back to the scene only while its world node is visible. Hidden dependency
+sources still execute their private shader passes through `execute_when_hidden`, so link consumers
+remain live without leaking the source layer into the visible frame. The parser-to-RenderGraph test
+covers instance texture normalization, private source ownership, consumer binding, and both visibility
+states.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

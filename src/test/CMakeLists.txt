@@ -472,6 +472,35 @@ target_compile_options(effect-rendergraph-correctness-test PRIVATE ${warn_opts} 
 add_test(NAME effect-rendergraph-correctness-test COMMAND effect-rendergraph-correctness-test)
 
 add_executable(
+  linked-solid-composite-test
+  scene/composition/linked_solid_composite_test.cpp)
+
+target_link_libraries(
+  linked-solid-composite-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend)
+target_include_directories(
+  linked-solid-composite-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../../third_party/nlohmann/include)
+target_compile_options(linked-solid-composite-test PRIVATE ${warn_opts})
+
+add_test(NAME linked-solid-composite-test COMMAND linked-solid-composite-test)
+
+add_executable(
   particle-regression-test
   scene/particle_regression_test.cpp)
 
