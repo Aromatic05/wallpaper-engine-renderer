@@ -23,6 +23,7 @@ add_library(
   settings/WPUserSetting.cpp
   parser/WPSoundParser.cpp
   parser/WPMdlParser.cpp
+  parser/mdl/Format.cpp
   animation/WPPuppet.cpp
   wpscene/WPImageObject.cpp
   wpscene/WPEffect.cpp

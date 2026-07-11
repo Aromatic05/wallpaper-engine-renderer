@@ -379,6 +379,17 @@ constexpr uint32_t static_image_singile_vertex          = 4 * (3 + 3 + 4 + 2);
 
 constexpr uint32_t singile_bone_frame = 4 * 9;
 
+Result<WPMdlHeader> WPMdlParser::ParseHeader(std::string_view path, fs::VFS& vfs) {
+    const std::string assetPath = "/assets/" + std::string(path);
+    auto file = vfs.Open(assetPath);
+    if (! file) {
+        return Result<WPMdlHeader>::failure(ResultCode::NotFound,
+                                            "model file was not found: " + assetPath);
+    }
+    auto stream = fs::MemBinaryStream(*file);
+    return ParseWPMdlHeader(stream);
+}
+
 bool WPMdlParser::ParseStaticModel(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     auto str_path = std::string(path);
     auto pfile    = vfs.Open("/assets/" + str_path);
@@ -399,6 +410,10 @@ bool WPMdlParser::ParseStaticModel(std::string_view path, fs::VFS& vfs, WPMdl& m
 
     StaticMdlHeader header;
     if (! ReadStaticMdlHeader(f, mdl.mdlv, str_path, header)) return false;
+    mdl.header.mdlv = mdl.mdlv;
+    mdl.header.mdl_flag = header.mdl_flag;
+    mdl.header.unk_a = header.reserved;
+    mdl.header.mesh_count = header.geometry_chunk_count;
 
     const uint32_t mdl_flag = header.mdl_flag;
     const uint32_t chunk_count = header.geometry_chunk_count;
@@ -449,15 +464,29 @@ bool WPMdlParser::ParseStaticModel(std::string_view path, fs::VFS& vfs, WPMdl& m
 }
 
 bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
-    auto str_path = std::string(path);
-    auto pfile    = vfs.Open("/assets/" + str_path);
+    const auto str_path = std::string(path);
+    auto pfile = vfs.Open("/assets/" + str_path);
     if (! pfile) return false;
-    auto memfile  = fs::MemBinaryStream(*pfile);
+    auto memfile = fs::MemBinaryStream(*pfile);
     auto& f = memfile;
 
-    mdl.mdlv = ReadMDLVesion(f);
-
-    int32_t mdl_flag = f.ReadInt32();
+    auto headerResult = ParseWPMdlHeader(f);
+    if (! headerResult) {
+        LOG_ERROR("mdl header parse failed for '%s': %s",
+                  str_path.c_str(),
+                  headerResult.error().message.c_str());
+        return false;
+    }
+    mdl = WPMdl {};
+    mdl.header = headerResult.value();
+    mdl.mdlv = mdl.header.mdlv;
+    const int32_t mdl_flag = static_cast<int32_t>(mdl.header.mdl_flag);
+    if (mdl.header.mesh_count != 1) {
+        LOG_ERROR("mdl multi-mesh body is not migrated yet: path='%s' mesh-count=%u",
+                  str_path.c_str(),
+                  mdl.header.mesh_count);
+        return false;
+    }
     const bool static_image_mesh = mdl_flag == 9;
     if (static_image_mesh) {
         // Flag 9 image puppet files are authored static image meshes, not broken animated

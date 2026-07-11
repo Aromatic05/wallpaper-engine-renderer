@@ -85,6 +85,22 @@ target_compile_options(wp-pkg-index-test PRIVATE ${warn_opts})
 add_test(NAME wp-pkg-index-test COMMAND wp-pkg-index-test)
 
 add_executable(
+  mdl-format-test
+  scene/mdl/format_test.cpp)
+
+target_link_libraries(mdl-format-test PRIVATE wpSceneBackend)
+target_include_directories(
+  mdl-format-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../common
+  ../common/fs/include)
+target_compile_options(mdl-format-test PRIVATE ${warn_opts})
+
+add_test(NAME mdl-format-test COMMAND mdl-format-test)
+
+add_executable(
   tex-header-parser-test
   scene/tex/tex_header_parser_test.cpp)
 

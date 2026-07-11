@@ -95,7 +95,7 @@ Reference branch:
 | `791f273` | audio bar shader compatibility | `DONE` | Packed two-dimensional spectrum accesses are flattened before DXC; scanner and end-to-end SPIR-V compilation tests cover the legacy form. |
 | `23e0b14` | update shader spec uniforms | `DONE` | Added new/legacy Daytime names and source-layer effect matrix contracts with runtime matrix/inverse tests. |
 | `2728164` | discover non-standard pkg names | `DONE` | Shared resolver maps `project.file` to matching package names; default `scene.pkg`, nested paths, and traversal rejection are covered by tests. |
-| `3ace9c4` | add special shader names | `REVIEW` | Fold only missing names into current shader compatibility table. |
+| `3ace9c4` | add special shader names | `PARTIAL` | Existing runtime names remain string-compatible; model/morph-only attributes and uniforms are deferred to the MDL/morph data-path migration instead of being declared without consumers. |
 | `9a7063d` | rename special names module | `EXCLUDE` | Structural rename has no behavioral value. |
 | `f15539a` | remove workshop scene runtime tests | `EXCLUDE` | Local project intentionally keeps an optional workshop corpus. |
 
@@ -110,8 +110,9 @@ Reference branch:
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
 
-Modern MDL/MDLV21 support is required by the wider upstream history even though it is not isolated
-in these 55 commit subjects. It remains a Stage 2/3 blocking deliverable.
+Modern MDL migration is now underway with a bounded MDLV header/layout contract shared by the
+production puppet parser. Multi-mesh bodies and MDLS/MDMP/MDLE dispatch remain Stage 2 work; MDLV21
+bind/animation semantics remain Stage 3 work.
 
 ### Stage 4 — RenderGraph and visual composition
 

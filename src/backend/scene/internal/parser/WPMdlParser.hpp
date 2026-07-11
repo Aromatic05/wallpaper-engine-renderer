@@ -7,6 +7,7 @@
 #include <Eigen/Dense>
 
 #include "WPPuppet.hpp"
+#include "mdl/Format.hpp"
 
 namespace wallpaper
 {
@@ -31,6 +32,8 @@ struct WPMdl {
         Puppet,
     };
 
+    WPMdlHeader header;
+    // Legacy mirrors remain until all scene consumers move to header/meshes.
     i32 mdlv { 13 };
     i32 mdls { 1 };
     i32 mdla { 1 };
@@ -87,6 +90,7 @@ class SceneMesh;
 
 class WPMdlParser {
 public:
+    static Result<WPMdlHeader> ParseHeader(std::string_view path, fs::VFS&);
     static bool Parse(std::string_view path, fs::VFS&, WPMdl&);
     static bool ParseStaticModel(std::string_view path, fs::VFS&, WPMdl&);
 
