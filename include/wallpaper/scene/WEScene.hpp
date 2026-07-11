@@ -21,6 +21,8 @@ struct WESceneSourceConfig {
     float        volume { 1.0f };
     bool         muted { false };
     bool         graphviz { false };
+    std::string  graphvizPath;
+    std::string  userPropertiesJson;
 };
 
 std::unique_ptr<WallpaperSession> CreateWESceneSession(WallpaperRuntime& runtime,
@@ -35,6 +37,8 @@ Result<void> SetWESceneSpeed(WallpaperSession& session, float speed);
 Result<void> SetWESceneVolume(WallpaperSession& session, float volume);
 Result<void> SetWESceneMuted(WallpaperSession& session, bool muted);
 Result<void> SetWESceneGraphviz(WallpaperSession& session, bool enabled);
+Result<void> SetWESceneGraphvizPath(WallpaperSession& session, std::string path);
+Result<void> SetWESceneUserPropertiesJson(WallpaperSession& session, std::string json);
 Result<void> SetWESceneFirstFrameCallback(WallpaperSession&                   session,
                                           std::shared_ptr<FirstFrameCallback> callback);
 

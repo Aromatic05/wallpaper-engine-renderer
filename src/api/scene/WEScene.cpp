@@ -38,7 +38,15 @@ Result<void> SetWESceneMuted(WallpaperSession& session, bool muted) {
 }
 
 Result<void> SetWESceneGraphviz(WallpaperSession& session, bool enabled) {
-    return session.setProperty(WE_SCENE_PROPERTY_GRAPHIVZ, enabled);
+    return session.setProperty(WE_SCENE_PROPERTY_GRAPHVIZ, enabled);
+}
+
+Result<void> SetWESceneGraphvizPath(WallpaperSession& session, std::string path) {
+    return session.setProperty(WE_SCENE_PROPERTY_GRAPHVIZ_PATH, std::move(path));
+}
+
+Result<void> SetWESceneUserPropertiesJson(WallpaperSession& session, std::string json) {
+    return session.setProperty(WE_SCENE_PROPERTY_USER_PROPERTIES_JSON, std::move(json));
 }
 
 Result<void> SetWESceneFirstFrameCallback(WallpaperSession&                   session,

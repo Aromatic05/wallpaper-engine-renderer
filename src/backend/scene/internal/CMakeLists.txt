@@ -4,6 +4,7 @@ add_library(
   ${LIB_NAME} STATIC
   resources/CreateScenePackageFs.cpp
   settings/WPDynamicValue.cpp
+  settings/WPUserPropertiesJson.cpp
   resources/WPJson.cpp
   resources/WPPkgFs.cpp
   transform/WPNodeTransformResolver.cpp

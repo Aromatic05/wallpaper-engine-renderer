@@ -18,6 +18,31 @@ target_compile_options(wallpaper-public-api-test PRIVATE ${warn_opts})
 add_test(NAME wallpaper-public-api-test COMMAND wallpaper-public-api-test)
 
 add_executable(
+  we-renderer-options-test
+  we_renderer_options_test.cpp)
+
+target_link_libraries(we-renderer-options-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-options-test PRIVATE ..)
+target_compile_options(we-renderer-options-test PRIVATE ${warn_opts})
+
+add_test(NAME we-renderer-options-test COMMAND we-renderer-options-test)
+
+add_executable(
+  user-properties-json-test
+  user_properties_json_test.cpp)
+
+target_link_libraries(user-properties-json-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(
+  user-properties-json-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/scene/include)
+target_compile_options(user-properties-json-test PRIVATE ${warn_opts})
+
+add_test(NAME user-properties-json-test COMMAND user-properties-json-test)
+
+add_executable(
   output-controller-contract-test
   output_controller_contract_test.cpp)
 

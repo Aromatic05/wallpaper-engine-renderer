@@ -10,6 +10,7 @@
 #include "scenescript/WPSceneScriptHost.hpp"
 #include "scene/Scene.h"
 #include "settings/WPUserProperties.hpp"
+#include "settings/WPUserPropertiesJson.hpp"
 #include "text/WPTextLayer.hpp"
 #include "particle/ParticleSystem.h"
 #include "interface/IShaderValueUpdater.h"
@@ -112,16 +113,6 @@ UserPropertyMap LoadProjectUserPropertyDefaults(const std::filesystem::path& pro
     return defaults;
 }
 
-UserPropertyMap MergeUserPropertiesWithDefaults(const UserPropertyMap& defaults,
-                                                const UserPropertyMap& current) {
-    if (defaults.empty()) return current;
-
-    UserPropertyMap merged = defaults;
-    for (const auto& [name, property] : current) {
-        merged[name] = property;
-    }
-    return merged;
-}
 
 template<typename T>
 void AddMsgCmd(looper::Message& msg, T cmd) {
@@ -294,6 +285,10 @@ public:
     void sendCmdLoadScene();
     void sendFirstFrameOk();
     bool isGenGraphviz() const { return m_gen_graphviz; }
+    std::string_view graphvizPath() const {
+        return m_graphviz_path.empty() ? std::string_view("graph.dot")
+                                       : std::string_view(m_graphviz_path);
+    }
     const auto& audioSamples() const { return m_audio_samples; }
 
 private:
@@ -315,6 +310,7 @@ private:
     std::string m_source;
     std::string m_cache_path;
     bool        m_gen_graphviz { false };
+    std::string m_graphviz_path;
 
     WPSceneParser                        m_scene_parser;
     std::unique_ptr<audio::SoundManager> m_sound_manager;
@@ -450,7 +446,7 @@ private:
             if (m_scene->renderGraphTopologyDirty) {
                 if (m_rg) m_render->clearLastRenderGraph();
                 m_rg = sceneToRenderGraph(*m_scene);
-                if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
+                if (main_handler.isGenGraphviz()) m_rg->ToGraphviz(main_handler.graphvizPath());
                 m_render->compileRenderGraph(*m_scene, *m_rg);
                 m_scene->ClearRenderGraphDirty();
             } else if (m_scene->renderGraphResourcesDirty) {
@@ -518,7 +514,7 @@ private:
             }
             m_rg = sceneToRenderGraph(*m_scene);
 
-            if (main_handler.isGenGraphviz()) m_rg->ToGraphviz("graph.dot");
+            if (main_handler.isGenGraphviz()) m_rg->ToGraphviz(main_handler.graphvizPath());
             m_render->compileRenderGraph(*m_scene, *m_rg);
             m_scene->ClearRenderGraphDirty();
             m_render->UpdateCameraFillMode(*m_scene, m_fillmode);
@@ -727,8 +723,10 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                 nmsg->setInt32("value", value);
                 nmsg->post();
             }
-        } else if (property == PROPERTY_GRAPHIVZ) {
+        } else if (property == PROPERTY_GRAPHVIZ || property == PROPERTY_GRAPHIVZ) {
             msg->findBool("value", &m_gen_graphviz);
+        } else if (property == PROPERTY_GRAPHVIZ_PATH) {
+            msg->findString("value", &m_graphviz_path);
         } else if (property == PROPERTY_MUTED) {
             bool muted { false };
             msg->findBool("value", &muted);
@@ -745,6 +743,20 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             std::shared_ptr<FirstFrameCallback> cb;
             msg->findObject("value", &cb);
             m_first_frame_callback = *cb;
+        } else if (property == PROPERTY_LOAD_USER_PROPERTIES_JSON) {
+            std::string json;
+            if (msg->findString("value", &json)) {
+                auto parsed = ParseUserPropertiesJson(json);
+                if (! parsed) {
+                    LOG_ERROR("invalid staged user-properties JSON: %s",
+                              parsed.error().message.c_str());
+                } else {
+                    m_user_properties =
+                        MergeUserPropertiesWithDefaults(m_default_user_properties, parsed.value());
+                    LOG_INFO("staged load user-properties JSON count=%zu",
+                             m_user_properties.size());
+                }
+            }
         } else if (property == PROPERTY_LOAD_USER_PROPERTIES) {
             std::shared_ptr<UserPropertyMap> user_properties;
             if (msg->findObject("value", &user_properties) && user_properties) {
@@ -754,6 +766,24 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                 m_user_properties = m_default_user_properties;
             }
             LOG_INFO("staged load user-properties count=%zu", m_user_properties.size());
+        } else if (property == PROPERTY_USER_PROPERTIES_JSON) {
+            std::string json;
+            if (msg->findString("value", &json)) {
+                auto parsed = ParseUserPropertiesJson(json);
+                if (! parsed) {
+                    LOG_ERROR("invalid live user-properties JSON: %s",
+                              parsed.error().message.c_str());
+                } else {
+                    m_user_properties =
+                        MergeUserPropertiesWithDefaults(m_default_user_properties, parsed.value());
+                    LOG_INFO("live user-properties JSON count=%zu", m_user_properties.size());
+                    auto nmsg = CreateMsgWithCmd(
+                        m_render_handler, RenderHandler::CMD::CMD_APPLY_USER_PROPERTIES);
+                    nmsg->setObject("value",
+                                    std::make_shared<UserPropertyMap>(m_user_properties));
+                    nmsg->post();
+                }
+            }
         } else if (property == PROPERTY_USER_PROPERTIES) {
             std::shared_ptr<UserPropertyMap> user_properties;
             if (msg->findObject("value", &user_properties) && user_properties) {
