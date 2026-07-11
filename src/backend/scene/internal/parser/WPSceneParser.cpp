@@ -1,4 +1,5 @@
 #include "WPSceneParser.hpp"
+#include "WPSceneLayerMetadata.hpp"
 #include "WPJson.hpp"
 #include "WPUserProperties.hpp"
 
@@ -2160,7 +2161,8 @@ void AttachNodeToScene(ParseContext& context, const std::shared_ptr<SceneNode>& 
     }
 
     parent->AppendChild(node);
-    if (node_data != nullptr) {
+    if (node_data != nullptr &&
+        context.scene->parallaxPropagationDisabledLayerIds.count(parent_id) == 0) {
         node_data->SetParallaxAnchor(parent.get());
     }
 }
@@ -2236,10 +2238,14 @@ void ApplyParentTransformContract(ParseContext& context, const ParentTransformCo
     auto parent = FindParentNode(context, contract.parent_id);
     if (! parent) return;
 
+    const bool parent_allows_parallax =
+        context.scene == nullptr ||
+        context.scene->parallaxPropagationDisabledLayerIds.count(contract.parent_id) == 0;
     const bool inherit_parent_parallax =
-        contract.parallax_anchor == ParentParallaxAnchorContract::ForceAuthoredParent ||
-        (contract.parallax_anchor == ParentParallaxAnchorContract::InheritWhenCompatible &&
-         ShouldInheritParentParallax(context, *parent, node_data));
+        parent_allows_parallax &&
+        (contract.parallax_anchor == ParentParallaxAnchorContract::ForceAuthoredParent ||
+         (contract.parallax_anchor == ParentParallaxAnchorContract::InheritWhenCompatible &&
+          ShouldInheritParentParallax(context, *parent, node_data)));
 
     if (contract.transform_binding ==
         ParentTransformBindingContract::InheritAuthoredParent) {
@@ -7786,9 +7792,13 @@ bool wallpaper::CreateDynamicSceneLayer(
         layer_id                     = AllocateDynamicLayerId(scene);
         normalized_object_json["id"] = layer_id;
     }
-
     if (! ParseDynamicSceneObject(context, normalized_object_json, user_properties, &layer_id)) {
         return false;
+    }
+    if (SceneLayerDisablesParallaxPropagation(normalized_object_json)) {
+        scene.parallaxPropagationDisabledLayerIds.insert(layer_id);
+    } else {
+        scene.parallaxPropagationDisabledLayerIds.erase(layer_id);
     }
 
     auto       node_it = context.object_nodes.find(layer_id);
@@ -8069,6 +8079,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     }
 
     InitContext(context, vfs, sc, scene_id);
+    context.scene->parallaxPropagationDisabledLayerIds =
+        CollectParallaxPropagationDisabledLayerIds(json);
     context.layer_visibility_contracts = std::move(layer_visibility_contracts);
     context.scene->soundManager        = &sm;
     // Parse text layers at the final renderer scale whenever the caller already knows it.

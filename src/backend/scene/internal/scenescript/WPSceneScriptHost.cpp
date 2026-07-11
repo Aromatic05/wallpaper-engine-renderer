@@ -4097,6 +4097,7 @@ void ProcessPendingSceneLayerDestroy(WPSceneScriptHost::Opaque* opaque) {
         opaque->scene->deferredRuntimeTextLayerIds.erase(layer_id);
         opaque->scene->layerNodes.erase(layer_id);
         opaque->scene->initialLayerConfigJson.erase(layer_id);
+        opaque->scene->parallaxPropagationDisabledLayerIds.erase(layer_id);
         opaque->scene->scriptRegistrations.erase(
             std::remove_if(opaque->scene->scriptRegistrations.begin(),
                            opaque->scene->scriptRegistrations.end(),

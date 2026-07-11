@@ -110,7 +110,7 @@ Stage 2 schema coverage is split by behavior rather than by field presence:
 | image perspective/solid/opaque/clamp/shadow/depth/background metadata | `PRESERVED` | Parsed without claiming render behavior. |
 | animation layer id/name/additive/blend transitions | `PRESERVED` | Stored separately from the existing animation id/blend runtime contract. |
 | sound block alignment/spatialization/queue mode | `PRESERVED` | Stored for later media-runtime migration. |
-| `disablepropagation` | `PRESERVED` | Runtime transform semantics are Stage 3 work. |
+| `disablepropagation` | `RUNTIME` | Image parents block only descendant parallax anchors; normal parent transforms and child-authored depth remain active. |
 
 The corpus manifest retains representative scene-format 0/4/6 workshop IDs. Object-level synthetic
 fixtures cover the cross-version field surface without requiring copyrighted workshop assets. Text
@@ -135,6 +135,12 @@ and still inherits animated parent deltas. SceneScript local/model transform con
 same parent contract. MDLE world-bind matrices remain preserved but observational because their
 runtime meaning is not yet validated. Synthetic MDLV17/21 tests cover bind-pose identity, centroid
 pivots, inherited root motion, and ordinary-model non-regression.
+
+Image-layer `disablepropagation` is collected into Scene-owned metadata before layer materialization
+and reused by deferred/dynamic parsing. Both physically parented nodes and routed effect/world nodes
+retain their authored transform binding while omitting the parent parallax anchor. Parser integration
+tests compare enabled and disabled parents; resolver tests verify that child-local depth still moves
+independently.
 
 ### Stage 4 — RenderGraph and visual composition
 

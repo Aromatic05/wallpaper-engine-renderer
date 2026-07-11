@@ -3,6 +3,7 @@
 #include "backend/scene/internal/wpscene/WPSoundObject.h"
 #include "backend/scene/internal/wpscene/WPTextObject.h"
 #include "backend/scene/internal/resources/WPJson.hpp"
+#include "backend/scene/internal/parser/WPSceneLayerMetadata.hpp"
 #include "fs/Fs.h"
 #include "fs/MemBinaryStream.h"
 #include "fs/VFS.h"
@@ -258,6 +259,27 @@ void TestDependencyArrayValidation() {
             "out-of-range dependency must not update the destination");
 }
 
+void TestParallaxPropagationMetadata() {
+    const json scene = {
+        { "objects",
+          {
+              { { "id", 10 }, { "image", "images/a.json" }, { "disablepropagation", true } },
+              { { "id", 11 }, { "image", "images/b.json" }, { "disablepropagation", false } },
+              { { "id", 12 }, { "particle", "particles/a.json" }, { "disablepropagation", true } },
+              { { "id", -1 }, { "image", "images/c.json" }, { "disablepropagation", true } },
+              { { "id", 13 }, { "image", "images/d.json" }, { "disablepropagation", "true" } },
+          } },
+    };
+
+    const auto disabled = wallpaper::CollectParallaxPropagationDisabledLayerIds(scene);
+    Require(disabled.size() == 1 && disabled.count(10) == 1,
+            "only valid image-layer disablepropagation metadata should be collected");
+    Require(wallpaper::SceneLayerDisablesParallaxPropagation(scene.at("objects").at(0)),
+            "enabled image layer should disable propagation");
+    Require(! wallpaper::SceneLayerDisablesParallaxPropagation(scene.at("objects").at(2)),
+            "non-image layer must not acquire image propagation semantics");
+}
+
 } // namespace
 
 int main() {
@@ -266,5 +288,6 @@ int main() {
     TestTextSchema();
     TestSoundSchema();
     TestDependencyArrayValidation();
+    TestParallaxPropagationMetadata();
     return 0;
 }

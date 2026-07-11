@@ -16,6 +16,7 @@ add_library(
   parser/WPShaderParser.cpp
   parser/WPSceneParser.cpp
   shader/WPShaderValueUpdater.cpp
+  parser/WPSceneLayerMetadata.cpp
   parser/WPSyntheticImageParser.cpp
   parser/WPTexImageParser.cpp
   parser/WPTexHeaderParser.cpp

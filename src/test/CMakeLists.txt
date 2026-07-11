@@ -558,6 +558,29 @@ target_compile_options(node-transform-resolver-test PRIVATE ${warn_opts})
 add_test(NAME node-transform-resolver-test COMMAND node-transform-resolver-test)
 
 add_executable(
+  parallax-propagation-test
+  scene/parallax_propagation_test.cpp)
+
+target_link_libraries(parallax-propagation-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  parallax-propagation-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/shader
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(parallax-propagation-test PRIVATE ${warn_opts})
+
+add_test(NAME parallax-propagation-test COMMAND parallax-propagation-test)
+
+add_executable(
   text-scene-model-test
   scene/text/text_scene_model_test.cpp)
 

@@ -227,6 +227,7 @@ int main() {
         scene.sceneGraph->AppendChild(front_node);
         RegisterLayer(scene, 31, back_node, R"({"id":31,"name":"Back"})");
         RegisterLayer(scene, 32, front_node, R"({"id":32,"name":"Front"})");
+        scene.parallaxPropagationDisabledLayerIds.insert(32);
 
         WPSceneScriptHost sort_host(&scene);
         auto sort_registration = MakeRegistration(31,
@@ -275,6 +276,7 @@ int main() {
         layer_host.FrameBegin(0.1);
 
         assert(scene.layerNameToId.count("Front") == 0);
+        assert(scene.parallaxPropagationDisabledLayerIds.count(32) == 0);
         assert(scene.renderGraphTopologyDirty);
     }
 

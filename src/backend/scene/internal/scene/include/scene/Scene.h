@@ -188,6 +188,7 @@ public:
     std::unordered_map<int32_t, std::string> initialLayerConfigJson;
     std::unordered_map<std::string, int32_t> layerNameToId;
     std::unordered_set<int32_t>              offscreenDependencyLayerIds;
+    std::unordered_set<int32_t>              parallaxPropagationDisabledLayerIds;
     // Some runtime nodes must stay root-owned for transform correctness, effect-camera routing, or
     // deferred materialization, but Wallpaper Engine still orders them as children of their
     // authored parent layer. These maps keep physical ownership separate from authored render
