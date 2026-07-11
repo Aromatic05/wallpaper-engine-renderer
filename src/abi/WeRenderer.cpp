@@ -1,4 +1,5 @@
 #include "wallpaper/abi/WeRenderer.h"
+#include "WeRendererOptions.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
 #include "wallpaper/InputEvent.hpp"
@@ -287,11 +288,19 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     if (! parsed) return to_error(parsed);
 
     state->sourceType = parsed.value().type;
-    state->sourceSet  = true;
     wallpaper::WallpaperSource normalized = make_source(source);
     normalized.type = parsed.value().type;
     normalized.uri  = parsed.value().backendUri;
+    if (source_has_field(source,
+                         offsetof(we_source_v1, options_json),
+                         sizeof(source->options_json))
+        && source->options_json && *source->options_json) {
+        auto optionsResult =
+            wallpaper::ApplyRendererSourceOptionsJson(source->options_json, normalized);
+        if (! optionsResult) return to_error(optionsResult);
+    }
     auto result = state->session->load(normalized);
+    state->sourceSet = result.ok();
     return to_error(result);
 }
 
@@ -355,6 +364,20 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     default:
         return 1;
     }
+}
+int32_t we_session_set_user_properties_json(we_session_t* session,
+                                            const char* properties_json) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! properties_json) return -1;
+    if (! state->sourceSet) return -1;
+    if (state->sourceType != wallpaper::BackendType::WEScene) {
+        return static_cast<int32_t>(wallpaper::ResultCode::NotSupported) + 1;
+    }
+
+    auto normalized = wallpaper::NormalizeUserPropertiesJson(properties_json);
+    if (! normalized) return to_error(normalized);
+    return to_error(state->session->setProperty(
+        wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES_JSON, normalized.value()));
 }
 
 int32_t we_session_play(we_session_t* session) {

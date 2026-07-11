@@ -43,6 +43,16 @@ target_compile_options(user-properties-json-test PRIVATE ${warn_opts})
 add_test(NAME user-properties-json-test COMMAND user-properties-json-test)
 
 add_executable(
+  we-renderer-scene-options-test
+  we_renderer_scene_options_test.cpp)
+
+target_link_libraries(we-renderer-scene-options-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-scene-options-test PRIVATE ..)
+target_compile_options(we-renderer-scene-options-test PRIVATE ${warn_opts})
+
+add_test(NAME we-renderer-scene-options-test COMMAND we-renderer-scene-options-test)
+
+add_executable(
   output-controller-contract-test
   output_controller_contract_test.cpp)
 
