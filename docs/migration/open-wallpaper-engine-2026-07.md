@@ -124,7 +124,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 | `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
 | `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
 | `1691a07` | hidden particles and rain drag | `DONE` | Drag uses authored linear strength. Local node-visibility traversal already skips generated descendants by subtree, now covered with assertions enabled. Font fallback is tracked separately in Stage 5. |
-| `ebd56ee` | node field animations | `REVIEW` | Compare with local property animation path. |
+| `ebd56ee` | node field animations | `DONE` | The shared property-animation registry already covers node origin/angles/scale across SceneNode-backed layers; an end-to-end light fixture verifies parser registration and midpoint runtime writes. Sound transforms remain part of Stage 5 spatialization. |
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
 
@@ -159,6 +159,11 @@ Render-plan traversal stops at an invisible node before visiting children, so an
 particle descendants do not need layer IDs to be elided. The render-graph regression now toggles a
 hidden particle parent with an ID-less child and verifies both passes disappear and return together.
 The target explicitly undefines `NDEBUG`, making its existing and new assertions effective.
+
+Node field animations reuse the existing `propertyAnimationRegistrations` and SceneScriptHost writer
+instead of introducing a second curve state on `SceneNode`. A synthetic light layer proves authored
+origin, angles, and scale are registered by the parser and reach their expected midpoint after a
+0.5-second runtime step.
 
 ### Stage 4 — RenderGraph and visual composition
 
