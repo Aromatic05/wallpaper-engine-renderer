@@ -184,6 +184,15 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     auto& rgraph = *extra.rgraph;
     auto& scene  = *extra.scene;
 
+    SceneImageEffectLayer* imgeff { nullptr };
+    if (node != nullptr && ! node->Camera().empty()) {
+        const auto camera_it = scene.cameras.find(node->Camera());
+        if (camera_it != scene.cameras.end() && camera_it->second != nullptr &&
+            camera_it->second->HasImgEffect()) {
+            imgeff = camera_it->second->GetImgEffect().get();
+        }
+    }
+
     auto loadEffect = [node, &rgraph, &scene, &extra](SceneImageEffectLayer* effs) {
         const bool publish_link =
             scene.offscreenDependencyLayerIds.count(node->ID()) != 0;
@@ -252,79 +261,83 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
         }
     };
 
-    auto addTextPass = [node, output, imgId, &rgraph, &scene]() {
-        if (node == nullptr || scene.textPrimitives.count(imgId) == 0 ||
+    auto addTextPass = [node, imgId, &rgraph, &scene](std::string_view target,
+                                                     bool             clear_output) {
+        if (node == nullptr || node->Text() == nullptr ||
+            scene.textPrimitives.count(imgId) == 0 ||
             scene.textPrimitives.at(imgId) == nullptr) {
-            return;
+            return false;
         }
-        if (scene.renderTargets.count(std::string(output)) == 0) {
+        if (scene.renderTargets.count(std::string(target)) == 0) {
             LOG_ERROR("TextPass: output render target not found while building graph: %.*s",
-                      static_cast<int>(output.size()),
-                      output.data());
-            return;
+                      static_cast<int>(target.size()),
+                      target.data());
+            return false;
         }
 
         rgraph.addPass<vulkan::TextPass>(
             "text",
             rg::PassNode::Type::Text,
-            [node, output = std::string(output), imgId, &scene](
+            [node, target = std::string(target), imgId, clear_output, &scene](
                 rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
-                pdesc.scene    = &scene;
-                pdesc.node     = node;
-                pdesc.layer_id = imgId;
-                pdesc.output   = output;
+                pdesc.scene        = &scene;
+                pdesc.node         = node;
+                pdesc.layer_id     = imgId;
+                pdesc.output       = target;
+                pdesc.clear_output = clear_output;
 
-                auto* output_node =
-                    builder.createTexNode(rg::TexNode::Desc { .name = output,
-                                                              .key  = output,
-                                                              .type = rg::TexNode::TexType::Temp },
-                                          true);
+                const rg::TexNode::Desc target_desc {
+                    .name = target,
+                    .key  = target,
+                    .type = rg::TexNode::TexType::Temp,
+                };
+                if (! clear_output) {
+                    // A background prefill or the accumulated scene already owns the previous
+                    // target version. Model the attachment LOAD as a real graph read so the text
+                    // pass cannot be reordered before its seed writer.
+                    builder.read(builder.createTexNode(target_desc));
+                }
+                auto* output_node = builder.createTexNode(target_desc, true);
                 builder.write(output_node);
             });
+        return true;
     };
 
-    addTextPass();
-
-    if (auto primitive_it = scene.textPrimitives.find(imgId);
-        primitive_it != scene.textPrimitives.end() && primitive_it->second != nullptr &&
-        primitive_it->second->bridge.enabled) {
-        for (const auto& target : primitive_it->second->bridge.render_targets) {
-            if (target.name.empty() || scene.renderTargets.count(target.name) == 0) continue;
-            rg::addClearPass(rgraph, rg::createTexDesc(target.name, &scene));
-            rgraph.addPass<vulkan::TextPass>(
-                "text",
-                rg::PassNode::Type::Text,
-                [node, target_name = target.name, imgId, &scene](
-                    rg::RenderGraphBuilder& builder, vulkan::TextPass::Desc& pdesc) {
-                    pdesc.scene        = &scene;
-                    pdesc.node         = node;
-                    pdesc.layer_id     = imgId;
-                    pdesc.output       = target_name;
-                    pdesc.clear_output = true;
-
-                    auto* output_node =
-                        builder.createTexNode(rg::TexNode::Desc { .name = target_name,
-                                                                  .key  = target_name,
-                                                                  .type = rg::TexNode::TexType::Temp },
-                                              true);
-                    builder.write(output_node);
-                });
+    bool effect_loaded { false };
+    if (node != nullptr && node->Text() != nullptr) {
+        const std::string_view text_output =
+            imgeff != nullptr ? std::string_view(imgeff->FirstTarget()) : output;
+        const bool has_background_prefill =
+            imgeff != nullptr && ! imgeff->PrefillNodes().empty();
+        if (has_background_prefill) {
+            for (const auto& prefill : imgeff->PrefillNodes()) {
+                if (prefill.sceneNode == nullptr) continue;
+                ToGraphPass(prefill.sceneNode.get(),
+                            prefill.output,
+                            imgId,
+                            extra,
+                            &prefill,
+                            nullptr,
+                            prefill.camera_override,
+                            prefill.clear_before_draw,
+                            prefill.force_alpha_write);
+            }
+        }
+        const bool clear_text_source =
+            text_output != SpecTex_Default && ! has_background_prefill;
+        addTextPass(text_output, clear_text_source);
+        if (imgeff != nullptr) {
+            loadEffect(imgeff);
+            effect_loaded = true;
         }
     }
 
-    if (node->Mesh() == nullptr) return;
+    if (node == nullptr || node->Mesh() == nullptr) return;
     auto* mesh = node->Mesh();
     if (mesh->Material() == nullptr) return;
     auto* material = mesh->Material();
 
-    SceneImageEffectLayer* imgeff = nullptr;
-    if (! node->Camera().empty()) {
-        auto& cam = scene.cameras.at(node->Camera());
-        if (cam->HasImgEffect()) {
-            imgeff = cam->GetImgEffect().get();
-            output = imgeff->FirstTarget();
-        }
-    }
+    if (imgeff != nullptr) output = imgeff->FirstTarget();
 
     std::string passName = material->name;
 
@@ -418,8 +431,9 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
             }
         });
 
-    // load effect
-    if (imgeff != nullptr) loadEffect(imgeff);
+    // Image-like nodes load their effect chain after the authored source draw. Text bridges already
+    // loaded it immediately after their single glyph seed pass above.
+    if (imgeff != nullptr && ! effect_loaded) loadEffect(imgeff);
 }
 
 static std::unique_ptr<rg::RenderGraph> BuildWESceneRenderPlanImpl(Scene& scene,

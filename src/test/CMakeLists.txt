@@ -501,6 +501,35 @@ target_compile_options(linked-solid-composite-test PRIVATE ${warn_opts})
 add_test(NAME linked-solid-composite-test COMMAND linked-solid-composite-test)
 
 add_executable(
+  text-effect-composition-test
+  scene/text/text_effect_composition_test.cpp)
+
+target_link_libraries(
+  text-effect-composition-test PRIVATE
+  ${PROJECT_NAME}
+  wpSceneBackend)
+target_include_directories(
+  text-effect-composition-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../../third_party/nlohmann/include)
+target_compile_options(text-effect-composition-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME text-effect-composition-test COMMAND text-effect-composition-test)
+
+add_executable(
   particle-regression-test
   scene/particle_regression_test.cpp)
 

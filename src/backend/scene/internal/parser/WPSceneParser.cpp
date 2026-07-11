@@ -5201,13 +5201,14 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             BuildEffectVisibilityContract(wp_effect, context.user_properties);
         if (! effect_visibility.can_prune_at_parse_time) text_effect_count++;
     }
-    const bool has_effect  = text_effect_count > 0;
-    auto       spWorldNode = std::make_shared<SceneNode>(Vector3f(text_obj.origin.data()),
-                                                         Vector3f(text_obj.scale.data()),
-                                                         Vector3f(text_obj.angles.data()),
-                                                         text_obj.name);
-    spWorldNode->ID()      = text_obj.id;
-    auto spTextNode        = has_effect ? std::make_shared<SceneNode>() : spWorldNode;
+    const bool has_effect       = text_effect_count > 0;
+    const bool uses_text_bridge = has_effect || text_obj.copybackground;
+    auto       spWorldNode      = std::make_shared<SceneNode>(Vector3f(text_obj.origin.data()),
+                                                              Vector3f(text_obj.scale.data()),
+                                                              Vector3f(text_obj.angles.data()),
+                                                              text_obj.name);
+    spWorldNode->ID()           = text_obj.id;
+    auto spTextNode             = uses_text_bridge ? std::make_shared<SceneNode>() : spWorldNode;
     spTextNode->SetName(text_obj.name);
     spTextNode->ID() = text_obj.id;
     spTextNode->AddText(primitive);
@@ -5222,7 +5223,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                             text_obj.name,
                             worldNodeData);
 
-    if (has_effect) {
+    if (uses_text_bridge) {
         auto&             scene       = *context.scene;
         const std::string camera_name = getAddr(spTextNode.get());
         primitive->bridge.enabled     = true;
@@ -5245,12 +5246,17 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             -1.0f,
             1.0f);
         scene.cameras.at(camera_name)->AttatchNode(context.effect_camera_node);
-        std::optional<WPShaderValueData> copybackground_helper_node_data;
+        std::shared_ptr<SceneNode>       background_seed_node;
+        std::optional<WPShaderValueData> background_seed_node_data;
 
-        if (text_obj.copybackground) {
+        // Effect-backed text is composited from a private source image. Wallpaper Engine seeds
+        // that source with the current framebuffer RGB and zero alpha before drawing glyphs, even
+        // when the layer does not explicitly set copybackground. This preserves the background
+        // colors sampled by blur/glow passes while keeping glyph coverage authoritative.
+        {
             wpscene::WPMaterial source_material;
             if (! LoadCopyBackgroundSourceHelperMaterial(*context.vfs, source_material)) {
-                LOG_ERROR("load textobj '%s' copybackground source helper material faild",
+                LOG_ERROR("load textobj '%s' background seed material faild",
                           text_obj.name.c_str());
                 return;
             }
@@ -5267,33 +5273,36 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
 
             SceneMaterial     helper_material;
             WPShaderValueData helper_node_data;
+            background_seed_node = std::make_shared<SceneNode>();
+            background_seed_node->SetName(text_obj.name + "__background_seed");
+            background_seed_node->ID() = text_obj.id;
             if (! LoadMaterial(*context.vfs,
                                source_material,
                                context.scene.get(),
-                               spTextNode.get(),
+                               background_seed_node.get(),
                                &helper_material,
                                &helper_node_data,
                                context.user_properties,
                                &helper_shader_info)) {
-                LOG_ERROR("load textobj '%s' copybackground source material faild",
+                LOG_ERROR("load textobj '%s' background seed shader faild",
                           text_obj.name.c_str());
                 return;
             }
 
-            auto helper_mesh = std::make_shared<SceneMesh>(true);
-            RebuildTextPrimitiveVisibleMesh(helper_mesh.get(), *primitive);
+            auto helper_mesh = std::make_shared<SceneMesh>();
+            helper_mesh->ChangeMeshDataFrom(scene.default_effect_mesh);
             helper_mesh->AddMaterial(std::move(helper_material));
-            spTextNode->AddMesh(helper_mesh);
-            copybackground_helper_node_data = std::move(helper_node_data);
+            background_seed_node->AddMesh(helper_mesh);
+            background_seed_node_data = std::move(helper_node_data);
+            context.scene->nodeOwners[background_seed_node.get()] = text_obj.id;
         }
+
         // Effect-backed text draws the canonical glyph primitive into an isolated source target
         // before authored image effects sample it. Keep that source node on an explicit identity
         // shader-data contract instead of relying on the visible world node's parallax/attachment
         // data: the world node is only the final composited output transform, while this node must
         // fill the bridge camera exactly in local text space.
-        WPShaderValueData text_source_node_data =
-            copybackground_helper_node_data.value_or(WPShaderValueData {});
-        context.shader_updater->SetNodeData(spTextNode.get(), text_source_node_data);
+        context.shader_updater->SetNodeData(spTextNode.get(), WPShaderValueData {});
         scene.objectRuntimeCameraNames[text_obj.id].push_back(camera_name);
         spTextNode->SetCamera(camera_name);
 
@@ -5303,8 +5312,24 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                                                                       primitive->bridge.pingpong_a,
                                                                       primitive->bridge.pingpong_b);
         imgEffectLayer->SetFinalBlend(BlendMode::Translucent);
-        imgEffectLayer->SetClearSourceBeforeOwnerDraw(text_obj.copybackground);
+        imgEffectLayer->AddPrefillNode(SceneImageEffectNode {
+            .authored_output = primitive->bridge.pingpong_a,
+            .output = primitive->bridge.pingpong_a,
+            .authored_textures = {},
+            .sceneNode = background_seed_node,
+            .camera_override = "effect",
+            .use_active_camera_for_parallax = false,
+            .clear_before_draw = false,
+            .force_alpha_write = false,
+            .private_final_output_uses_layer_surface = false,
+        });
         imgEffectLayer->FinalMesh().ChangeMeshDataFrom(effect_final_mesh);
+        if (background_seed_node_data.has_value()) {
+            background_seed_node_data->SetEffectProjection(
+                spWorldNode.get(), &imgEffectLayer->FinalMesh());
+            context.shader_updater->SetNodeData(
+                background_seed_node.get(), *background_seed_node_data);
+        }
         imgEffectLayer->FinalNode().CopyTrans(*spWorldNode);
         scene.cameras.at(camera_name)->AttatchImgEffect(imgEffectLayer);
 

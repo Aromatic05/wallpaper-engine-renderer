@@ -6,6 +6,7 @@
 #include "render/vulkanrender/TextPass.hpp"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
+#include "backend/scene/internal/scene/include/scene/SceneTextPrimitive.h"
 
 #include <array>
 #include <cassert>
@@ -35,6 +36,21 @@ public:
 } // namespace
 
 int main() {
+    wallpaper::SceneTextPrimitive color_primitive;
+    color_primitive.object.color = { 0.25f, 0.5f, 0.75f };
+    color_primitive.object.alpha = 0.625f;
+    color_primitive.object.backgroundcolor = { 0.125f, 0.25f, 0.5f };
+    color_primitive.object.backgroundbrightness = 2.0f;
+    const auto glyph_color =
+        wallpaper::vulkan::ResolveTextPassColor(color_primitive, false);
+    assert((glyph_color == std::array<float, 4> { 0.25f, 0.5f, 0.75f, 0.625f }));
+    const auto background_color =
+        wallpaper::vulkan::ResolveTextPassColor(color_primitive, true);
+    assert((background_color == std::array<float, 4> { 0.25f, 0.5f, 1.0f, 0.625f }));
+    assert(wallpaper::vulkan::ResolveTextPassBlendMode(false) ==
+           wallpaper::BlendMode::Translucent);
+    assert(wallpaper::vulkan::ResolveTextPassBlendMode(true) == wallpaper::BlendMode::Normal);
+
     wallpaper::rg::RenderGraph graph;
 
     auto* clear_node = graph.addPass<wallpaper::vulkan::ClearPass>(

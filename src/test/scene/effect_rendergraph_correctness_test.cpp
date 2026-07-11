@@ -315,6 +315,7 @@ int main() {
         scene.sceneGraph->AppendChild(node);
         auto primitive = std::make_shared<wallpaper::SceneTextPrimitive>();
         primitive->object.id = 77;
+        node->AddText(primitive);
         scene.textPrimitives[77] = primitive;
 
         auto graph = wallpaper::BuildWESceneRenderPlan(scene);
@@ -335,13 +336,24 @@ int main() {
         scene.sceneGraph->AppendChild(node);
         auto primitive = std::make_shared<wallpaper::SceneTextPrimitive>();
         primitive->object.id = 88;
-        primitive->bridge.enabled = true;
+        node->AddText(primitive);
+        primitive->bridge.enabled    = true;
+        primitive->bridge.pingpong_a = bridge_target;
+        primitive->bridge.pingpong_b = "_rt_text_bridge_b";
         primitive->bridge.render_targets.push_back(
             wallpaper::TextBridgeRenderTarget { .name = bridge_target, .scale = 1 });
+        scene.renderTargets[primitive->bridge.pingpong_b] = { 32, 16, true };
+        const std::string camera_name = "text-bridge-camera";
+        node->SetCamera(camera_name);
+        auto camera = std::make_shared<wallpaper::SceneCamera>(32, 16, -1.0f, 1.0f);
+        camera->AttatchNode(node);
+        camera->AttatchImgEffect(std::make_shared<wallpaper::SceneImageEffectLayer>(
+            node.get(), 32.0f, 16.0f, bridge_target, primitive->bridge.pingpong_b));
+        scene.cameras[camera_name] = std::move(camera);
         scene.textPrimitives[88] = primitive;
 
         auto graph = wallpaper::BuildWESceneRenderPlan(scene);
-        assert(findClearPass(*graph, bridge_target) != nullptr);
+        assert(findClearPass(*graph, bridge_target) == nullptr);
         auto* bridged_text = findTextPass(*graph, 88, bridge_target);
         assert(bridged_text != nullptr);
         assert(bridged_text->desc().clear_output);

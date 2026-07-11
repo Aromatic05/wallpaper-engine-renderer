@@ -189,28 +189,28 @@ its independent node-alignment layout contract.
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
 | `c50269f` | solid layer link composites | `DONE` | Explicit private link publication plus visible/hidden final-owner regression. |
-| `5431b87` | preserve text color in glyph seed | `REVIEW` | Text seed pass color assertion. |
+| `5431b87` | preserve text color in glyph seed | `DONE` | First-class TextPass preserves authored glyph RGB independently from background brightness. |
 | `f721e8c` | composite final perspective effects | `REVIEW` | Perspective effect final-writer test. |
 | `f7406a4` | media thumbnail image fallback | `TEST` | Local implementation exists; add/retain exact fallback regression. |
 | `ba993dd` | image color blend final owner | `REVIEW` | Validate final render target ownership. |
-| `9165e37` | seed text effects with background | `REVIEW` | Distinguish clear/previous/background seed modes. |
+| `9165e37` | seed text effects with background | `DONE` | Framebuffer RGB/zero-alpha prefill precedes one private glyph seed. |
 | `1a6251c` | unresolved layers script-safe | `REVIEW` | Validate deferred materialization and unresolved references. |
-| `c52a28e` | resize dynamic text effect targets | `REVIEW` | Dynamic text extent and rerasterization test. |
+| `c52a28e` | resize dynamic text effect targets | `DONE` | Runtime text rebuild grows bridge/FBO resources and marks only affected targets dirty. |
 | `a03db48` | color blend alpha compositing | `REVIEW` | Pixel/ROI comparison. |
 | `7556026` | transparent previous effects | `REVIEW` | Transparent intermediate target fixture. |
 | `1362b6d` | simplify copybackground color blend | `REVIEW` | Behavior only; do not copy structural simplification blindly. |
 | `fdce1ee` | copybackground effect color blend | `REVIEW` | Copybackground and alpha ownership fixture. |
-| `680b3d8` | dynamic effect text clipping | `REVIEW` | Logical versus physical extent test. |
+| `680b3d8` | dynamic effect text clipping | `DONE` | Cropped visible source metrics drive bridge targets and final mesh placement. |
 | `26fc451` | atmosphere effect rendering | `REVIEW` | Real wallpaper and synthetic pass graph. |
 | `40c60bb` | spin effect final quad center | `REVIEW` | Transform center regression. |
 | `73342e3` | clock highlight rendering | `REVIEW` | Calendar/clock visual fixture. |
-| `9c7ef47` | text alpha composition | `REVIEW` | Text alpha and parent opacity fixture. |
+| `9c7ef47` | text alpha composition | `DONE` | Private glyph source uses straight RGBA; translucent final composite applies alpha once. |
 | `e366bc0` | copybackground video blend | `REVIEW` | Video-backed copybackground fixture. |
 | `c79db16` | scroll effect final composite | `REVIEW` | Final writer and UV bounds test. |
 | `fdfd195` | copybackground color blend | `REVIEW` | Consolidate with the other copybackground cases. |
 | `f0eb7c1` | clamp image effect render targets | `REVIEW` | Oversized/negative target extent fixture. |
 | `77bcea2` | transform effect final composite | `REVIEW` | Transform final writer test. |
-| `4cab330` | dynamic text effect sizing | `REVIEW` | Consolidate with dynamic target extent work. |
+| `4cab330` | dynamic text effect sizing | `DONE` | Camera, final mesh, source target, and dependent FBOs synchronize after text layout changes. |
 | `082ba2c` | image alpha visibility | `REVIEW` | Visibility and alpha must remain separate. |
 | `faf188d` | image alpha user bindings | `REVIEW` | User property binding plus final alpha fixture. |
 
@@ -223,6 +223,17 @@ sources still execute their private shader passes through `execute_when_hidden`,
 remain live without leaking the source layer into the visible frame. The parser-to-RenderGraph test
 covers instance texture normalization, private source ownership, consumer binding, and both visibility
 states.
+
+Effect-backed text now has one explicit source pipeline: copy the accumulated framebuffer RGB with
+zero alpha into the first private target, draw the glyph atlas once into that target, execute the
+authored effect chain, then publish through the translucent final composite. Offscreen glyph passes
+store straight RGBA with `Normal` blending, while direct scene text and the final publisher retain
+source-over blending, so text alpha is not multiplied twice. Glyph color remains the authored RGB and
+is no longer coupled to background brightness. The first-class text runtime continues to use cropped
+visible-source metrics for clipping and effect sizing; dynamic text rebuilds update the bridge camera,
+final mesh, ping-pong targets, and authored effect FBOs, then mark only those resources dirty. A
+parser-to-RenderGraph regression verifies prefill/glyph/effect/final order, one glyph seed, background
+sampling, blend contracts, and target growth after a live text update.
 
 ### Stage 5 — SceneScript, dynamic assets, audio, and media
 

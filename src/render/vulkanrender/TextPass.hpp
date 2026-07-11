@@ -2,6 +2,7 @@
 
 #include "VulkanPass.hpp"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -20,6 +21,10 @@ class SceneMesh;
 
 namespace vulkan
 {
+
+std::array<float, 4> ResolveTextPassColor(const SceneTextPrimitive& primitive,
+                                          bool                      background);
+BlendMode ResolveTextPassBlendMode(bool offscreen_output);
 
 class TextPass : public VulkanPass {
 public:

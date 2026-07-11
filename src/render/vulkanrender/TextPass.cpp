@@ -19,13 +19,15 @@ namespace
 {
 constexpr std::string_view kTextBackgroundTextureKey { "__text_layer_background_white" };
 
-std::string TextPipelineCompatibilityKey(bool offscreen_output) {
+std::string TextPipelineCompatibilityKey(bool clear_output, bool offscreen_output) {
     // Text PSOs are shared by render-pass compatibility plus the full GraphicsPipeline descriptor,
-    // not by the layer that first requested them. This keeps visibility toggles on the same model
-    // as engine-level PSO caches while still letting hidden text release atlas/framebuffer memory.
+    // not by the layer that first requested them. Offscreen glyph seeds use straight RGBA while
+    // direct scene text uses source-over blending, so both blend and load contracts belong here.
     return "TextPass|format=rgba8|final=shader-read|load=" +
-           std::to_string(static_cast<int>(offscreen_output ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                                            : VK_ATTACHMENT_LOAD_OP_LOAD));
+           std::to_string(static_cast<int>(clear_output ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                                        : VK_ATTACHMENT_LOAD_OP_LOAD)) +
+           "|blend=" +
+           std::to_string(static_cast<int>(ResolveTextPassBlendMode(offscreen_output)));
 }
 
 struct TextPassUniforms {
@@ -280,12 +282,14 @@ bool CreateTextPipelineForPrimitive(const Device&                         device
                                     RenderingResources&                   rr,
                                     const wallpaper::SceneTextPrimitive&  primitive,
                                     bool                                  offscreen_output,
+                                    bool                                  clear_output,
                                     std::string                           debug_name,
                                     PipelineParameters&                   pipeline_parameters) {
     auto render_pass =
         CreateTextRenderPass(device.handle(),
                              VK_FORMAT_R8G8B8A8_UNORM,
-                             offscreen_output ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD);
+                             clear_output ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                          : VK_ATTACHMENT_LOAD_OP_LOAD);
     if (!render_pass.has_value()) return false;
 
     const auto compiled_shaders = CompileTextShaders();
@@ -314,12 +318,12 @@ bool CreateTextPipelineForPrimitive(const Device&                         device
     VkPipelineColorBlendAttachmentState blend_state {};
     blend_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    SetBlend(wallpaper::BlendMode::Translucent, blend_state);
+    SetBlend(ResolveTextPassBlendMode(offscreen_output), blend_state);
 
     GraphicsPipeline pipeline;
     pipeline.toDefault();
     pipeline_parameters.debug_name = std::move(debug_name);
-    pipeline_parameters.cache_key  = TextPipelineCompatibilityKey(offscreen_output);
+    pipeline_parameters.cache_key  = TextPipelineCompatibilityKey(clear_output, offscreen_output);
     pipeline.addDescriptorSetInfo(std::span<const DescriptorSetInfo>(&descriptor_info, 1))
         .setColorBlendStates(std::span<const VkPipelineColorBlendAttachmentState>(&blend_state, 1))
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
@@ -334,8 +338,8 @@ bool CreateTextPipelineForPrimitive(const Device&                         device
     return pipeline.create(device, *render_pass, pipeline_parameters, rr.pipeline_cache.get());
 }
 
-std::array<float, 4> ResolveTextColor(const wallpaper::SceneTextPrimitive& primitive,
-                                      bool                                 background) {
+std::array<float, 4> ResolveTextColorImpl(const wallpaper::SceneTextPrimitive& primitive,
+                                          bool                                 background) {
     if (background) {
         return {
             primitive.object.backgroundcolor[0] * primitive.object.backgroundbrightness,
@@ -352,6 +356,18 @@ std::array<float, 4> ResolveTextColor(const wallpaper::SceneTextPrimitive& primi
     };
 }
 } // namespace
+
+std::array<float, 4> wallpaper::vulkan::ResolveTextPassColor(
+    const wallpaper::SceneTextPrimitive& primitive,
+    bool                                 background) {
+    return ResolveTextColorImpl(primitive, background);
+}
+
+wallpaper::BlendMode wallpaper::vulkan::ResolveTextPassBlendMode(bool offscreen_output) {
+    // Private glyph seeds must store straight RGBA. Their final translucent composite applies alpha
+    // exactly once; blending here as well would premultiply coverage into RGB and alpha twice.
+    return offscreen_output ? wallpaper::BlendMode::Normal : wallpaper::BlendMode::Translucent;
+}
 
 TextPass::TextPass(const Desc& desc) {
     // The pass description intentionally stores only the authored/runtime identity fields here.
@@ -541,12 +557,16 @@ void TextPass::prepare(Scene& scene, const Device& device, RenderingResources& r
     m_desc.vk_output = output.value();
 
     const bool offscreen_output = m_desc.output != wallpaper::SpecTex_Default;
-    m_desc.clear_output = offscreen_output;
     const auto debug_name =
         "TextPass[node=" + (m_desc.node != nullptr ? m_desc.node->Name() : std::string("(null)")) +
         ",output=" + m_desc.output + "]";
-    if (!CreateTextPipelineForPrimitive(
-            device, rr, *primitive, offscreen_output, debug_name, m_desc.pipeline)) {
+    if (!CreateTextPipelineForPrimitive(device,
+                                        rr,
+                                        *primitive,
+                                        offscreen_output,
+                                        m_desc.clear_output,
+                                        debug_name,
+                                        m_desc.pipeline)) {
         return;
     }
     if (!recreateFramebuffer(device)) return;
@@ -602,8 +622,13 @@ bool TextPass::warmupPipeline(Scene& scene, const Device& device, RenderingResou
         "TextPassWarmup[node=" +
         (m_desc.node != nullptr ? m_desc.node->Name() : std::string("(null)")) +
         ",output=" + m_desc.output + "]";
-    return CreateTextPipelineForPrimitive(
-        device, rr, *primitive, offscreen_output, debug_name, m_desc.pipeline);
+    return CreateTextPipelineForPrimitive(device,
+                                          rr,
+                                          *primitive,
+                                          offscreen_output,
+                                          m_desc.clear_output,
+                                          debug_name,
+                                          m_desc.pipeline);
 }
 
 void TextPass::refreshResources(Scene& scene, const Device& device, RenderingResources& rr) {
@@ -830,14 +855,14 @@ void TextPass::execute(const Device& device, RenderingResources& rr) {
     if (primitive->object.opaquebackground && primitive->background_mesh != nullptr) {
         draw_mesh(m_background_buffers,
                   m_desc.background_texture,
-                  ResolveTextColor(*primitive, true));
+                  ResolveTextPassColor(*primitive, true));
     }
 
     for (size_t page_index = 0; page_index < primitive->glyph_pages.size(); page_index++) {
         if (page_index >= m_desc.page_textures.size()) break;
         draw_mesh(m_page_buffers[page_index],
                   m_desc.page_textures[page_index],
-                  ResolveTextColor(*primitive, false));
+                  ResolveTextPassColor(*primitive, false));
     }
 
     rr.command.EndRenderPass();

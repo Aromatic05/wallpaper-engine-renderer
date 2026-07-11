@@ -123,6 +123,8 @@ public:
                           std::string_view pingpong_b);
 
     void AddEffect(const std::shared_ptr<SceneImageEffect>& node) { m_effects.push_back(node); }
+    void AddPrefillNode(SceneImageEffectNode node) { m_prefill_nodes.push_back(std::move(node)); }
+    const std::vector<SceneImageEffectNode>& PrefillNodes() const { return m_prefill_nodes; }
     std::size_t EffectCount() const { return m_effects.size(); }
     auto&       GetEffect(std::size_t index) { return m_effects.at(index); }
     const auto& FirstTarget() const { return m_pingpong_a; }
@@ -227,6 +229,7 @@ private:
     FinalCompositeState        m_final_composite;
     BlendMode                  m_final_blend;
 
+    std::vector<SceneImageEffectNode> m_prefill_nodes;
     std::vector<std::shared_ptr<SceneImageEffect>> m_effects;
 
     bool HasRuntimeVisibilityContract() const;
