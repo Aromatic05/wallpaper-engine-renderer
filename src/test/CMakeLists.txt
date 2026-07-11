@@ -143,6 +143,15 @@ target_compile_options(host-services-contract-test PRIVATE ${warn_opts})
 add_test(NAME host-services-contract-test COMMAND host-services-contract-test)
 
 add_executable(
+  sound-spectrum-dsp-test
+  sound_spectrum_dsp_test.cpp)
+
+target_include_directories(sound-spectrum-dsp-test PRIVATE ..)
+target_compile_options(sound-spectrum-dsp-test PRIVATE ${warn_opts})
+
+add_test(NAME sound-spectrum-dsp-test COMMAND sound-spectrum-dsp-test)
+
+add_executable(
   resource-correctness-test
   resource_correctness_test.cpp)
 
@@ -447,6 +456,28 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
   target_compile_options(scenescript-host-test PRIVATE ${warn_opts})
 
   add_test(NAME scenescript-host-test COMMAND scenescript-host-test)
+
+  add_executable(
+    scenescript-viewport-vector-test
+    scenescript_viewport_vector_test.cpp)
+
+  target_link_libraries(scenescript-viewport-vector-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+  target_include_directories(
+    scenescript-viewport-vector-test PRIVATE
+    ..
+    ../backend/scene/internal
+    ../backend/scene/internal/animation
+    ../backend/scene/internal/scene/include
+    ../backend/scene/internal/scenescript
+    ../backend/scene/internal/settings
+    ../backend/scene/internal/text
+    ../common
+    ../common/scene
+    ../common/utils/include
+    ../../third_party/nlohmann/include)
+  target_compile_options(scenescript-viewport-vector-test PRIVATE ${warn_opts})
+
+  add_test(NAME scenescript-viewport-vector-test COMMAND scenescript-viewport-vector-test)
 
   add_executable(
     scenescript-runtime-test
