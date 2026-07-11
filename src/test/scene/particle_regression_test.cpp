@@ -55,7 +55,7 @@ wpscene::Emitter MakeBoxEmitter(float rate, uint32_t instantaneous = 0) {
     return emitter;
 }
 
-void TestChildColorRandomSurvivesRootColorOverride() {
+void TestChildInheritsOnlyLayerOpacityAndTint() {
     Scene scene;
     scene.paritileSys->gener = std::make_unique<DummyRawGener>();
     scene.PassFrameTime(1.0);
@@ -71,13 +71,34 @@ void TestChildColorRandomSurvivesRootColorOverride() {
 
     wpscene::ParticleInstanceoverride root_override;
     root_override.enabled    = true;
+    root_override.alpha      = 0.35f;
+    root_override.count      = 7.0f;
+    root_override.lifetime   = 2.0f;
+    root_override.rate       = 3.0f;
+    root_override.speed      = 4.0f;
+    root_override.size       = 5.0f;
     root_override.overColorn = true;
     root_override.colorn     = { 0.9f, 0.1f, 0.2f };
+    root_override.controlpointOffsets[0] = std::array<float, 3> { 8.0f, 9.0f, 10.0f };
+
+    const auto root_result =
+        wallpaper::ResolveParticleSubsystemOverride(root_override, false);
+    assert(root_result.count == 7.0f && root_result.lifetime == 2.0f &&
+           root_result.rate == 3.0f && root_result.speed == 4.0f && root_result.size == 5.0f);
+    assert(root_result.controlpointOffsets[0].has_value());
 
     const auto child_override =
         wallpaper::ResolveParticleSubsystemOverride(root_override, true);
-    assert(! child_override.overColor);
-    assert(! child_override.overColorn);
+    assert(child_override.enabled);
+    assert(Near(child_override.alpha, root_override.alpha));
+    assert(child_override.overColorn);
+    assert(child_override.colorn == root_override.colorn);
+    assert(child_override.count == 1.0f);
+    assert(child_override.lifetime == 1.0f);
+    assert(child_override.rate == 1.0f);
+    assert(child_override.speed == 1.0f);
+    assert(child_override.size == 1.0f);
+    assert(! child_override.controlpointOffsets[0].has_value());
 
     wallpaper::LoadParticleInitializers(*child, child_particle, child_override);
     child->Emitt();
@@ -88,10 +109,10 @@ void TestChildColorRandomSurvivesRootColorOverride() {
     assert(instance->Particles().size() == 1);
     const auto& particle = instance->Particles().front();
 
-    assert(Near(particle.color.x(), 64.0f / 255.0f));
-    assert(Near(particle.color.y(), 128.0f / 255.0f));
-    assert(Near(particle.color.z(), 192.0f / 255.0f));
-    assert(! Near(particle.color.x(), root_override.colorn[0]));
+    assert(Near(particle.color.x(), root_override.colorn[0]));
+    assert(Near(particle.color.y(), root_override.colorn[1]));
+    assert(Near(particle.color.z(), root_override.colorn[2]));
+    assert(Near(particle.alpha, root_override.alpha));
 }
 
 void TestStaticChildOnlyAllocatesOneInstance() {
@@ -179,7 +200,7 @@ void TestPaddedSpriteSheetUsesContentRegion() {
 } // namespace
 
 int main() {
-    TestChildColorRandomSurvivesRootColorOverride();
+    TestChildInheritsOnlyLayerOpacityAndTint();
     TestStaticChildOnlyAllocatesOneInstance();
     TestRuntimeSizeOverrideDoesNotCompound();
     TestRuntimeRateOverridePropagatesToChild();

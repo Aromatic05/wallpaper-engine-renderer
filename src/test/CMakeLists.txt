@@ -490,7 +490,7 @@ target_include_directories(
   ../common/scene
   ../common/utils/include
   ../../third_party/nlohmann/include)
-target_compile_options(particle-regression-test PRIVATE ${warn_opts})
+target_compile_options(particle-regression-test PRIVATE ${warn_opts} -UNDEBUG)
 
 add_test(NAME particle-regression-test COMMAND particle-regression-test)
 

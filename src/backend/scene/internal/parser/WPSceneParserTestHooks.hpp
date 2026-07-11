@@ -4,6 +4,7 @@
 #include "particle/ParticleSystem.h"
 #include "WPParticleParser.hpp"
 #include "wpscene/WPParticleObject.h"
+#include "particle/Override.hpp"
 
 std::array<wallpaper::i32, 4> ResolvePaddedSpriteSheetResolution(
     const wallpaper::ImageHeader& texh,
@@ -14,15 +15,6 @@ namespace wallpaper
 
 using ::ResolvePaddedSpriteSheetResolution;
 
-inline wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
-    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
-    if (! is_child_subsystem) return layer_override;
-
-    auto child_override = layer_override;
-    child_override.overColor  = false;
-    child_override.overColorn = false;
-    return child_override;
-}
 
 inline void LoadParticleInitializers(ParticleSubSystem& pSys, const wpscene::Particle& wp,
                                      const wpscene::ParticleInstanceoverride& over) {

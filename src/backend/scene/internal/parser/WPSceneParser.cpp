@@ -16,6 +16,7 @@
 #include "WPTexImageParser.hpp"
 #include "WPSyntheticImageParser.hpp"
 #include "WPParticleParser.hpp"
+#include "particle/Override.hpp"
 #include "WPSoundParser.hpp"
 #include "WPMdlParser.hpp"
 #include "WPPropertyAnimation.hpp"
@@ -1436,20 +1437,6 @@ void LoadControlPoint(ParticleSubSystem& pSys, const wpscene::Particle& wp,
     ApplyLayerControlPointOverrides(pSys, over, layer_id, layer_name);
 }
 
-wpscene::ParticleInstanceoverride ResolveParticleSubsystemOverride(
-    const wpscene::ParticleInstanceoverride& layer_override, bool is_child_subsystem) {
-    if (! is_child_subsystem) return layer_override;
-
-    auto child_override = layer_override;
-    // Scene-layer instanceoverride.color/colorn targets the particle object instance placed on the
-    // layer. Child particle definitions are authored inside that asset and keep their own color
-    // initializers. Propagating the root color override into children erases those initializers; in
-    // composition layers using color/luminance blend modes, a root colorn=[1,1,1] then turns the
-    // whole child trail into a white source before the parent tint effect has a chance to grade it.
-    child_override.overColor  = false;
-    child_override.overColorn = false;
-    return child_override;
-}
 
 void LoadInitializer(ParticleSubSystem& pSys, const wpscene::Particle& wp,
                      const wpscene::ParticleInstanceoverride& over) {

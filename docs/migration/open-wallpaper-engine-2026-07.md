@@ -122,7 +122,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
 | `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
-| `1a19a32` | child particle override inheritance | `REVIEW` | Compare with local runtime override inheritance. |
+| `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
 | `1691a07` | hidden particles and rain drag | `REVIEW` | Validate hidden-state simulation and drag independently. |
 | `ebd56ee` | node field animations | `REVIEW` | Compare with local property animation path. |
 | `8234617` | particle random frame motion | `REVIEW` | Add deterministic seed fixture. |
@@ -146,6 +146,11 @@ Node-attached cameras now derive their view from the inverse complete `ModelTran
 and authored scale no longer leak into camera-local clip space. A missing Z axis is reconstructed from
 X/Y when possible; non-finite or still-singular frames fall back to identity before inversion. Tests
 cover parented scale, zero Z, fully collapsed scale, and NaN input.
+
+Particle instance overrides now use a shared production/test resolver. Root subsystems preserve every
+authored override, while child presets receive only enabled/alpha/color/colorn state. Regression tests
+execute with assertions enabled and verify both the copied tint result and the reset child-owned
+emission, lifetime, size, velocity, and control-point fields.
 
 ### Stage 4 — RenderGraph and visual composition
 

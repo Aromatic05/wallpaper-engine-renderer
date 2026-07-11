@@ -27,6 +27,7 @@ add_library(
   parser/mdl/Format.cpp
   parser/mdl/Mesh.cpp
   parser/mdl/PuppetSemantics.cpp
+  parser/particle/Override.cpp
   animation/WPPuppet.cpp
   parser/mdl/Section.cpp
   wpscene/WPImageObject.cpp
