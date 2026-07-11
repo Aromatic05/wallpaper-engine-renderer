@@ -64,7 +64,7 @@ public:
 public:
     ParticleSubSystem(ParticleSystem& p, std::shared_ptr<SceneMesh> sm, uint32_t maxcount,
                       double rate, u32 maxcount_instance, double probability, SpawnType type,
-                      ParticleRawGenSpecOp specOp);
+                      ParticleRawGenSpecOp specOp, bool world_space = false);
     ~ParticleSubSystem();
 
     void Emitt();
@@ -138,6 +138,7 @@ private:
     u32       m_maxcount_instance { 1 };
     double    m_probability { 1.0f };
     SpawnType m_spawn_type { SpawnType::STATIC };
+    bool      m_world_space { false };
     SceneNode* m_node { nullptr };
     bool       m_logged_event_anchor_transform_error { false };
     // Runtime particle color edits arrive after the initializer list has already produced live

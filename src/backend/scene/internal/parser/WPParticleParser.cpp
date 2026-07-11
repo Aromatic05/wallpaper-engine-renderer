@@ -541,18 +541,16 @@ WPParticleParser::genParticleOperatorOp(const nlohmann::json&                   
             GET_JSON_NAME_VALUE_NOWARN(wpj, "gravity", gravity);
             Vector3d vecG = Vector3f(gravity.data()).cast<double>();
             return [=](const ParticleInfo& info) {
+                const Vector3d local_gravity =
+                    info.world_space ? info.local_from_world_dir * vecG : vecG;
                 for (auto& p : info.particles) {
-                    // Keep the authored gravity vector untouched so every particle system follows
-                    // the scene's normal coordinate convention. Flipping Y here made generic
-                    // effects such as fireworks accelerate upward after they exploded.
-                    //
                     // Integrate position from the current velocity first, then apply gravity and
-                    // drag to the velocity that will be used on the next frame.
+                    // drag to the velocity used on the next frame. World-space systems convert the
+                    // authored gravity vector through the owner node's inverse linear transform.
                     PM::MoveByTime(p, info.time_pass);
-                    PM::Accelerate(p, speed * vecG, info.time_pass);
+                    PM::Accelerate(p, speed * local_gravity, info.time_pass);
 
-                    // Drag is a scalar velocity decay in the reference implementation, not a
-                    // normalized drag force. Clamp the factor so high dt cannot reverse the petal.
+                    // Drag is isotropic scalar decay, so it is independent of local/world axes.
                     const double drag_factor =
                         std::max(0.0, 1.0 - static_cast<double>(drag) * info.time_pass);
                     PM::MutiplyVelocity(p, drag_factor);

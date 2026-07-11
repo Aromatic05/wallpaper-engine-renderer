@@ -125,7 +125,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 | `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
 | `1691a07` | hidden particles and rain drag | `DONE` | Drag uses authored linear strength. Local node-visibility traversal already skips generated descendants by subtree, now covered with assertions enabled. Font fallback is tracked separately in Stage 5. |
 | `ebd56ee` | node field animations | `DONE` | The shared property-animation registry already covers node origin/angles/scale across SceneNode-backed layers; an end-to-end light fixture verifies parser registration and midpoint runtime writes. Sound transforms remain part of Stage 5 spatialization. |
-| `8234617` | particle random frame motion | `PARTIAL` | Stable per-particle random frames and rate-independent emitter cadence are implemented. World-space gravity from the same upstream commit remains separate work. |
+| `8234617` | particle random frame motion | `DONE` | Stable per-particle random frames, rate-independent emitter cadence, and owner-basis conversion for world-space gravity are implemented. |
 | `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
 
 Stage 3 now separates authored, bind, and animation bone relationships as `file_parent`,
@@ -172,6 +172,11 @@ Regression coverage verifies spawn range/diversity, stable resolution, and safe 
 Particle `rate` now scales simulation time, lifetime, and operators without changing emitter cadence.
 Regression coverage compares slow and fast simulations with the same emitter: both produce the same
 particle count while their lifetimes advance at the configured rates.
+
+World-space particle gravity is authored in scene coordinates and converted through the inverse owner
+node linear transform before local simulation. Local-space particles retain the original vector.
+Regression coverage rotates the owner basis by 90 degrees and verifies the local acceleration maps
+back to the same authored world-down direction.
 
 ### Stage 4 — RenderGraph and visual composition
 

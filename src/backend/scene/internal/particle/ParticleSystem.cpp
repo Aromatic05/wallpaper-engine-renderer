@@ -63,7 +63,7 @@ const ParticleInstance::BoundedData& ParticleInstance::GetBoundedData() const {
 ParticleSubSystem::ParticleSubSystem(ParticleSystem& p, std::shared_ptr<SceneMesh> sm,
                                      uint32_t maxcount, double rate, u32 maxcount_instance,
                                      double probability, SpawnType type,
-                                     ParticleRawGenSpecOp specOp)
+                                     ParticleRawGenSpecOp specOp, bool world_space)
     : m_sys(p),
       m_mesh(sm),
       m_maxcount(maxcount),
@@ -72,7 +72,8 @@ ParticleSubSystem::ParticleSubSystem(ParticleSystem& p, std::shared_ptr<SceneMes
       m_time(0),
       m_maxcount_instance(maxcount_instance),
       m_probability(probability),
-      m_spawn_type(type) {};
+      m_spawn_type(type),
+      m_world_space(world_space) {};
 
 ParticleSubSystem::~ParticleSubSystem() = default;
 
@@ -330,6 +331,20 @@ void ParticleSubSystem::Emitt() {
 
     UpdateLinkedControlpoints();
 
+    Eigen::Matrix3d world_from_local_dir = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d local_from_world_dir = Eigen::Matrix3d::Identity();
+    if (m_node != nullptr) {
+        m_node->UpdateTrans();
+        world_from_local_dir = m_node->ModelTrans().block<3, 3>(0, 0);
+        const double determinant = world_from_local_dir.determinant();
+        if (std::isfinite(determinant) &&
+            std::abs(determinant) > kControlPointTransformDeterminantEpsilon) {
+            local_from_world_dir = world_from_local_dir.inverse();
+        } else {
+            world_from_local_dir = Eigen::Matrix3d::Identity();
+        }
+    }
+
     if (m_spawn_type == SpawnType::STATIC) {
         if (m_instances.empty()) m_instances.emplace_back(std::make_unique<ParticleInstance>());
     }
@@ -391,10 +406,13 @@ void ParticleSubSystem::Emitt() {
         if (m_spawn_type == SpawnType::EVENT_DEATH) inst->SetDeath(true);
 
         ParticleInfo info {
-            .particles     = inst->ParticlesVec(),
-            .controlpoints = m_controlpoints,
-            .time          = m_time,
-            .time_pass     = simulationTime,
+            .particles            = inst->ParticlesVec(),
+            .controlpoints        = m_controlpoints,
+            .world_from_local_dir = world_from_local_dir,
+            .local_from_world_dir = local_from_world_dir,
+            .world_space          = m_world_space,
+            .time                 = m_time,
+            .time_pass            = simulationTime,
         };
 
         bool  has_live = false;

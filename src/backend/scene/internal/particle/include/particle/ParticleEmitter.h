@@ -24,6 +24,9 @@ struct ParticleControlpoint {
 struct ParticleInfo {
     std::span<Particle>                   particles;
     std::span<const ParticleControlpoint> controlpoints;
+    Eigen::Matrix3d                       world_from_local_dir { Eigen::Matrix3d::Identity() };
+    Eigen::Matrix3d                       local_from_world_dir { Eigen::Matrix3d::Identity() };
+    bool                                  world_space { false };
     double                                time;
     double                                time_pass;
 };

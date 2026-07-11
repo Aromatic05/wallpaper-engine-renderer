@@ -265,6 +265,47 @@ void TestSimulationRateDoesNotChangeEmitterCadence() {
     assert(Near(fast_particles.front().lifetime, -1.0f));
 }
 
+void TestWorldSpaceGravityUsesOwnerBasis() {
+    const nlohmann::json movement = {
+        { "name", "movement" },
+        { "drag", 0.0f },
+        { "gravity", std::array<float, 3> { 0.0f, -10.0f, 0.0f } },
+    };
+    auto movement_operator = WPParticleParser::genParticleOperatorOp(movement, {});
+
+    std::array<Particle, 1> local_particles {};
+    wallpaper::ParticleInfo local_info {
+        .particles     = local_particles,
+        .controlpoints = {},
+        .world_space   = false,
+        .time          = 0.0,
+        .time_pass     = 1.0,
+    };
+    movement_operator(local_info);
+    assert((local_particles.front().velocity - Eigen::Vector3f { 0.0f, -10.0f, 0.0f }).norm()
+           < 0.0001f);
+
+    const Eigen::Matrix3d world_from_local =
+        Eigen::AngleAxisd(M_PI / 2.0, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    std::array<Particle, 1> world_particles {};
+    wallpaper::ParticleInfo world_info {
+        .particles            = world_particles,
+        .controlpoints        = {},
+        .world_from_local_dir = world_from_local,
+        .local_from_world_dir = world_from_local.inverse(),
+        .world_space          = true,
+        .time                 = 0.0,
+        .time_pass            = 1.0,
+    };
+    movement_operator(world_info);
+    assert((world_particles.front().velocity - Eigen::Vector3f { -10.0f, 0.0f, 0.0f }).norm()
+           < 0.0001f);
+
+    const Eigen::Vector3d restored_world_velocity =
+        world_from_local * world_particles.front().velocity.cast<double>();
+    assert((restored_world_velocity - Eigen::Vector3d { 0.0, -10.0, 0.0 }).norm() < 0.0001);
+}
+
 } // namespace
 
 int main() {
@@ -276,5 +317,6 @@ int main() {
     TestDragForceMatchesAuthoredStrength();
     TestRandomFrameUsesStableSpawnRandom();
     TestSimulationRateDoesNotChangeEmitterCadence();
+    TestWorldSpaceGravityUsesOwnerBasis();
     return 0;
 }

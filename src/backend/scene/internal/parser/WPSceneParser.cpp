@@ -5744,7 +5744,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                 lifetime = (1.0f - (p.lifetime / p.init.lifetime)) * sequencemultiplier;
                 break;
             }
-        });
+        },
+        particle_obj.flags[wpscene::Particle::FlagEnum::wordspace]);
     auto* particle_subsystem = particleSub.get();
     particleSub->SetSceneNode(spNode.get());
     // instanceoverride.size is baked into initializer output during cold parse. Keep that parsed
