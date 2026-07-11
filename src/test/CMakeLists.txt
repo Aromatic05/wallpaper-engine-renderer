@@ -152,6 +152,30 @@ target_compile_options(mdl-parser-integration-test PRIVATE ${warn_opts})
 add_test(NAME mdl-parser-integration-test COMMAND mdl-parser-integration-test)
 
 add_executable(
+  scene-object-schema-test
+  scene/schema/object_schema_test.cpp)
+
+target_link_libraries(scene-object-schema-test PRIVATE wpSceneBackend)
+target_include_directories(
+  scene-object-schema-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(scene-object-schema-test PRIVATE ${warn_opts})
+
+add_test(NAME scene-object-schema-test COMMAND scene-object-schema-test)
+
+add_executable(
   tex-header-parser-test
   scene/tex/tex_header_parser_test.cpp)
 

@@ -108,6 +108,14 @@ public:
         double rate { 1.0f };
         double blend { 1.0f };
         bool   visible { true };
+        // Schema metadata preserved for newer animation-layer revisions. Runtime blending still
+        // consumes id/rate/blend/visible until Stage 3 implements the authored transition policy.
+        i32         layer_id { 0 };
+        std::string name;
+        bool        additive { false };
+        bool        blendin { false };
+        bool        blendout { false };
+        double      blendtime { 0.0 };
         double cur_time { 0.0f };
         bool   playing { true };
         // NotifyAnimationLayersAdvanced consumes this latch after it fires ended callbacks.

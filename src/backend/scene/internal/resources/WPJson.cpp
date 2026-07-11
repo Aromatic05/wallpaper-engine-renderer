@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <optional>
+#include <limits>
 #include <sstream>
 #include <tuple>
 #include <type_traits>
@@ -663,6 +664,44 @@ GetJsonValue(const char* file, const char* func, int line, const nlohmann::json&
                             value,
                             warn,
                             name.empty() ? nullptr : name.c_str());
+}
+
+bool ReadJsonIntArray(const nlohmann::json& json,
+                      std::string_view name,
+                      std::vector<int32_t>& value) {
+    const std::string key(name);
+    if (! json.contains(key) || json.at(key).is_null()) return false;
+    const auto& node = json.at(key);
+    if (! node.is_array()) {
+        LOG_ERROR("read json integer array '%s' is not an array", key.c_str());
+        return false;
+    }
+
+    std::vector<int32_t> parsed;
+    parsed.reserve(node.size());
+    for (const auto& element : node) {
+        if (element.is_number_unsigned()) {
+            const auto number = element.get<uint64_t>();
+            if (number > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+                LOG_ERROR("read json integer array '%s' contains an out-of-range value", key.c_str());
+                return false;
+            }
+            parsed.push_back(static_cast<int32_t>(number));
+        } else if (element.is_number_integer()) {
+            const auto number = element.get<int64_t>();
+            if (number < std::numeric_limits<int32_t>::min()
+                || number > std::numeric_limits<int32_t>::max()) {
+                LOG_ERROR("read json integer array '%s' contains an out-of-range value", key.c_str());
+                return false;
+            }
+            parsed.push_back(static_cast<int32_t>(number));
+        } else {
+            LOG_ERROR("read json integer array '%s' contains a non-integer value", key.c_str());
+            return false;
+        }
+    }
+    value = std::move(parsed);
+    return true;
 }
 
 #define T_IMPL_GET_JSON(TYPE)                                                            \

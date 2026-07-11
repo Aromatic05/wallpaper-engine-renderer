@@ -95,10 +95,26 @@ bool WPImageObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
     GET_JSON_NAME_VALUE_NOWARN(jImage, "projectlayer", projectlayer);
 	GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
 	GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
+    GET_JSON_NAME_VALUE_NOWARN(json, "locktransforms", locktransforms);
+    GET_JSON_NAME_VALUE_NOWARN(json, "muteineditor", muteineditor);
+    GET_JSON_NAME_VALUE_NOWARN(json, "nointerpolation", nointerpolation);
+    ReadJsonIntArray(json, "dependencies", dependencies);
+    if (json.contains("instance") && ! json.at("instance").is_null()) {
+        instance = json.at("instance");
+    }
 	GET_JSON_NAME_VALUE_NOWARN(json, "parent", parent);
 	GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
 	GET_JSON_NAME_VALUE_NOWARN(json, "colorBlendMode", colorBlendMode);
     GET_JSON_NAME_VALUE_NOWARN(json, "copybackground", copybackground);
+    GET_JSON_NAME_VALUE_NOWARN(json, "perspective", perspective);
+    GET_JSON_NAME_VALUE_NOWARN(json, "solid", solid);
+    GET_JSON_NAME_VALUE_NOWARN(json, "opaquebackground", opaquebackground);
+    GET_JSON_NAME_VALUE_NOWARN(json, "clampuvs", clampuvs);
+    GET_JSON_NAME_VALUE_NOWARN(json, "castshadow", castshadow);
+    GET_JSON_NAME_VALUE_NOWARN(json, "disablepropagation", disablepropagation);
+    GET_JSON_NAME_VALUE_NOWARN(json, "depthtest", depthtest);
+    GET_JSON_NAME_VALUE_NOWARN(json, "backgroundcolor", backgroundcolor);
+    GET_JSON_NAME_VALUE_NOWARN(json, "backgroundbrightness", backgroundbrightness);
 	if(!fullscreen) {
 		GET_JSON_NAME_VALUE(json, "origin", origin);	
 		GET_JSON_NAME_VALUE(json, "angles", angles);	
@@ -198,6 +214,12 @@ bool WPImageObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
              GET_JSON_NAME_VALUE(jLayer, "blend", layer.blend);
              GET_JSON_NAME_VALUE(jLayer, "rate", layer.rate);
              GET_JSON_NAME_VALUE_NOWARN(jLayer, "visible", layer.visible);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "id", layer.layer_id);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "name", layer.name);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "additive", layer.additive);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendin", layer.blendin);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendout", layer.blendout);
+             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendtime", layer.blendtime);
              puppet_layers.push_back(layer);
         }
     }

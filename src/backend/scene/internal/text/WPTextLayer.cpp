@@ -536,22 +536,6 @@ void ApplyWallpaperEngineTextSize(PangoFontDescription* desc, double point_size)
     pango_font_description_set_absolute_size(desc, std::max(1.0, point_size) * PANGO_SCALE);
 }
 
-void ReadVisibleBinding(const nlohmann::json& json, VisibleBinding* binding) {
-    if (binding == nullptr || ! json.is_object()) return;
-
-    GET_JSON_NAME_VALUE_NOWARN(json, "value", binding->value);
-    if (! json.contains("user") || json.at("user").is_null()) return;
-
-    const auto& user = json.at("user");
-    if (user.is_string()) {
-        GET_JSON_VALUE(user, binding->user.name);
-        return;
-    }
-    if (! user.is_object()) return;
-
-    GET_JSON_NAME_VALUE_NOWARN(user, "name", binding->user.name);
-    GET_JSON_NAME_VALUE_NOWARN(user, "condition", binding->user.condition);
-}
 
 PangoAlignment ToPangoAlignment(std::string_view alignment) {
     if (alignment == "center") return PANGO_ALIGN_CENTER;
@@ -2566,66 +2550,6 @@ TextLayerPropertyUpdateStrategy wallpaper::ResolveTextLayerPropertyUpdateStrateg
     return TextLayerPropertyUpdateStrategy::LayoutOnly;
 }
 
-bool wpscene::WPTextObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
-    (void)vfs;
-    GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
-    GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
-    GET_JSON_NAME_VALUE_NOWARN(json, "origin", origin);
-    GET_JSON_NAME_VALUE_NOWARN(json, "scale", scale);
-    GET_JSON_NAME_VALUE_NOWARN(json, "angles", angles);
-    GET_JSON_NAME_VALUE_NOWARN(json, "parallaxDepth", parallaxDepth);
-    GET_JSON_NAME_VALUE_NOWARN(json, "size", size);
-    ReadLiteralOrDynamicValue(json, "text", &text);
-    ReadLiteralOrDynamicValue(json, "font", &font);
-    ReadLiteralOrDynamicValue(json, "color", &color);
-    ReadLiteralOrDynamicValue(json, "backgroundcolor", &backgroundcolor);
-    ReadLiteralOrDynamicValue(json, "backgroundbrightness", &backgroundbrightness);
-    ReadLiteralOrDynamicValue(json, "alpha", &alpha);
-    ReadLiteralOrDynamicValue(json, "pointsize", &pointsize);
-    ReadLiteralOrDynamicValue(json, "maxwidth", &maxwidth);
-    ReadLiteralOrDynamicValue(json, "maxrows", &maxrows);
-    ReadTextPaddingValue(json, id, &padding, &padding_edges);
-    GET_JSON_NAME_VALUE_NOWARN(json, "parent", parent);
-    GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
-    ReadLiteralOrDynamicValue(json, "visible", &visible);
-    ReadLiteralOrDynamicValue(json, "opaquebackground", &opaquebackground);
-    ReadLiteralOrDynamicValue(json, "blockalign", &blockalign);
-    ReadLiteralOrDynamicValue(json, "limitrows", &limitrows);
-    ReadLiteralOrDynamicValue(json, "limituseellipsis", &limituseellipsis);
-    ReadLiteralOrDynamicValue(json, "limitwidth", &limitwidth);
-    GET_JSON_NAME_VALUE_NOWARN(json, "copybackground", copybackground);
-    ReadLiteralOrDynamicValue(json, "horizontalalign", &horizontalalign);
-    ReadLiteralOrDynamicValue(json, "verticalalign", &verticalalign);
-    ReadLiteralOrDynamicValue(json, "anchor", &anchor);
-    ReadLiteralOrDynamicValue(json, "depthtest", &depthtest);
-
-    size_explicit = json.contains("size") && ! json.at("size").is_null();
-    if (json.contains("visible")) {
-        ReadVisibleBinding(json.at("visible"), &visible_binding);
-        has_visible_script = json.at("visible").is_object() &&
-                             json.at("visible").contains("script") &&
-                             ! json.at("visible").at("script").is_null();
-    }
-    has_dynamic_layout_script =
-        PropertyHasScriptOrAnimation(json, "text") || PropertyHasScriptOrAnimation(json, "font") ||
-        PropertyHasScriptOrAnimation(json, "pointsize") ||
-        PropertyHasScriptOrAnimation(json, "padding") ||
-        PropertyHasScriptOrAnimation(json, "maxwidth") ||
-        PropertyHasScriptOrAnimation(json, "maxrows") ||
-        PropertyHasScriptOrAnimation(json, "limitwidth") ||
-        PropertyHasScriptOrAnimation(json, "limitrows") ||
-        PropertyHasScriptOrAnimation(json, "horizontalalign") ||
-        PropertyHasScriptOrAnimation(json, "verticalalign") ||
-        PropertyHasScriptOrAnimation(json, "anchor") || PropertyHasScriptOrAnimation(json, "size");
-
-    if (json.contains("effects") && json.at("effects").is_array()) {
-        for (const auto& effect_json : json.at("effects")) {
-            WPImageEffect effect;
-            if (effect.FromJson(effect_json, vfs)) effects.push_back(std::move(effect));
-        }
-    }
-    return true;
-}
 
 bool wallpaper::HasTextLayerProperty(std::string_view property_name) {
     return property_name == "name" || property_name == "size" || property_name == "text" ||

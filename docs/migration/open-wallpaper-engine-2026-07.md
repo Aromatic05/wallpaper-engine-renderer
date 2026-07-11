@@ -99,6 +99,24 @@ Reference branch:
 | `9a7063d` | rename special names module | `EXCLUDE` | Structural rename has no behavioral value. |
 | `f15539a` | remove workshop scene runtime tests | `EXCLUDE` | Local project intentionally keeps an optional workshop corpus. |
 
+Stage 2 schema coverage is split by behavior rather than by field presence:
+
+| Object schema | Status | Contract |
+|---|---|---|
+| `dependencies` | `RUNTIME` | Preserved and still consumed by scene dependency residency. |
+| image `instance` | `RUNTIME` | Raw JSON is preserved and material-pass overrides still apply. |
+| parent/attachment, copybackground, text visible binding | `RUNTIME` | Existing consumers remain covered by regression tests. |
+| lock/mute/no-interpolation metadata | `PRESERVED` | Stored on image, particle, text, and sound objects. |
+| image perspective/solid/opaque/clamp/shadow/depth/background metadata | `PRESERVED` | Parsed without claiming render behavior. |
+| animation layer id/name/additive/blend transitions | `PRESERVED` | Stored separately from the existing animation id/blend runtime contract. |
+| sound block alignment/spatialization/queue mode | `PRESERVED` | Stored for later media-runtime migration. |
+| `disablepropagation` | `PRESERVED` | Runtime transform semantics are Stage 3 work. |
+
+The corpus manifest retains representative scene-format 0/4/6 workshop IDs. Object-level synthetic
+fixtures cover the cross-version field surface without requiring copyrighted workshop assets. Text
+object parsing now has one definition in `WPTextObject.cpp`; the duplicate archive definition in
+`WPTextLayer.cpp` was removed so link order can no longer select stale parsing behavior.
+
 ### Stage 3 — transform, puppet, and particles
 
 | Commit | Subject | Status | Local action |

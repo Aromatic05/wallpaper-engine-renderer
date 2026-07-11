@@ -30,6 +30,13 @@ public:
     bool                       FromJson(const nlohmann::json&, fs::VFS&);
     int32_t                    id { 0 };
     std::string                name;
+    // Cross-version layer metadata. Fields without a runtime consumer are intentionally preserved
+    // here rather than being advertised as implemented behavior.
+    bool                       locktransforms { false };
+    bool                       muteineditor { false };
+    bool                       nointerpolation { false };
+    std::vector<int32_t>       dependencies;
+    nlohmann::json             instance;
     std::array<float, 3>       origin { 0.0f, 0.0f, 0.0f };
     std::array<float, 3>       scale { 1.0f, 1.0f, 1.0f };
     std::array<float, 3>       angles { 0.0f, 0.0f, 0.0f };
@@ -44,6 +51,15 @@ public:
     float                      alpha { 1.0f };
     float                      brightness { 1.0f };
     bool                       fullscreen { false };
+    bool                       perspective { false };
+    bool                       solid { false };
+    bool                       opaquebackground { false };
+    bool                       clampuvs { false };
+    bool                       castshadow { false };
+    bool                       disablepropagation { false };
+    std::string                depthtest { "enabled" };
+    std::array<float, 3>       backgroundcolor { 0.0f, 0.0f, 0.0f };
+    float                      backgroundbrightness { 1.0f };
     bool                       autosize { false };
     // Wallpaper Engine's `models/util/solidlayer.json` carries this marker in the model asset.
     // Reverse-engineered traces show that solid layers enter the same special effect-source setup

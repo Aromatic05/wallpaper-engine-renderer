@@ -222,6 +222,13 @@ bool WPParticleObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
 
     GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
     GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
+    GET_JSON_NAME_VALUE_NOWARN(json, "locktransforms", locktransforms);
+    GET_JSON_NAME_VALUE_NOWARN(json, "muteineditor", muteineditor);
+    GET_JSON_NAME_VALUE_NOWARN(json, "nointerpolation", nointerpolation);
+    ReadJsonIntArray(json, "dependencies", dependencies);
+    if (json.contains("instance") && ! json.at("instance").is_null()) {
+        instance = json.at("instance");
+    }
     GET_JSON_NAME_VALUE_NOWARN(json, "parent", parent);
     GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
     GET_JSON_NAME_VALUE(json, "origin", origin);

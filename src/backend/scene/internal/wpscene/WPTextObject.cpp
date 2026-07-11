@@ -156,6 +156,23 @@ void ReadTextPaddingValue(const nlohmann::json& json, int32_t object_id,
     *out_legacy_padding = MaxTextPaddingEdge(*out_padding_edges);
 }
 
+void ReadVisibleBinding(const nlohmann::json& json, wallpaper::VisibleBinding* binding) {
+    if (binding == nullptr || ! json.is_object()) return;
+
+    GET_JSON_NAME_VALUE_NOWARN(json, "value", binding->value);
+    if (! json.contains("user") || json.at("user").is_null()) return;
+
+    const auto& user = json.at("user");
+    if (user.is_string()) {
+        GET_JSON_VALUE(user, binding->user.name);
+        return;
+    }
+    if (! user.is_object()) return;
+
+    GET_JSON_NAME_VALUE_NOWARN(user, "name", binding->user.name);
+    GET_JSON_NAME_VALUE_NOWARN(user, "condition", binding->user.condition);
+}
+
 bool PropertyHasScriptOrAnimation(const nlohmann::json& json, const char* name) {
     if (! json.contains(name)) return false;
     const auto& value = json.at(name);
@@ -168,6 +185,13 @@ bool PropertyHasScriptOrAnimation(const nlohmann::json& json, const char* name) 
 bool WPTextObject::FromJson(const nlohmann::json& json, wallpaper::fs::VFS& vfs) {
     GET_JSON_NAME_VALUE_NOWARN(json, "id", id);
     GET_JSON_NAME_VALUE_NOWARN(json, "name", name);
+    GET_JSON_NAME_VALUE_NOWARN(json, "locktransforms", locktransforms);
+    GET_JSON_NAME_VALUE_NOWARN(json, "muteineditor", muteineditor);
+    GET_JSON_NAME_VALUE_NOWARN(json, "nointerpolation", nointerpolation);
+    ReadJsonIntArray(json, "dependencies", dependencies);
+    if (json.contains("instance") && ! json.at("instance").is_null()) {
+        instance = json.at("instance");
+    }
     GET_JSON_NAME_VALUE_NOWARN(json, "origin", origin);
     GET_JSON_NAME_VALUE_NOWARN(json, "scale", scale);
     GET_JSON_NAME_VALUE_NOWARN(json, "angles", angles);
@@ -198,6 +222,9 @@ bool WPTextObject::FromJson(const nlohmann::json& json, wallpaper::fs::VFS& vfs)
     ReadLiteralOrDynamicValue(json, "depthtest", &depthtest);
 
     size_explicit = json.contains("size") && ! json.at("size").is_null();
+    if (json.contains("visible")) {
+        ReadVisibleBinding(json.at("visible"), &visible_binding);
+    }
     has_visible_script = json.contains("visible") && json.at("visible").is_object() &&
                          json.at("visible").contains("script") &&
                          ! json.at("visible").at("script").is_null();

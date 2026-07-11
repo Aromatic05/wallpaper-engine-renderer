@@ -3,6 +3,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include "utils/Logging.h"
 #include "WPUserProperties.hpp"
@@ -40,6 +41,10 @@ GetJsonValue(const char* file, const char* func, int line, const nlohmann::json&
 
 bool ParseJson(const char* file, const char* func, int line, const std::string& source,
                nlohmann::json& result);
+
+bool ReadJsonIntArray(const nlohmann::json& json,
+                      std::string_view name,
+                      std::vector<int32_t>& value);
 
 class ScopedJsonUserProperties {
 public:
