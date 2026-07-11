@@ -1,5 +1,6 @@
 #include "backend/scene/internal/parser/WPMdlParser.hpp"
 #include "backend/scene/internal/scene/include/scene/SceneMesh.h"
+#include "backend/scene/internal/SpecTexs.hpp"
 #include "fs/Fs.h"
 #include "fs/MemBinaryStream.h"
 #include "fs/VFS.h"
@@ -372,6 +373,29 @@ void TestRuntimeUint32IndexUpload() {
     Require(indexArray.Data()[2] == 65'536,
             "runtime uint32 index must not be truncated to uint16");
 }
+void TestRuntimePositionOffset() {
+    wallpaper::WPMdl mdl;
+    mdl.vertexs.resize(1);
+    mdl.vertexs[0].position = { 1.0f, 2.0f, 3.0f };
+
+    wallpaper::SceneMesh mesh;
+    wallpaper::WPMdlParser::GenPuppetMesh(
+        mesh, mdl, Eigen::Vector3f { 10.0f, -5.0f, 2.0f });
+    Require(mesh.VertexCount() == 1, "offset runtime mesh array was not created");
+
+    const auto& vertex = mesh.GetVertexArray(0);
+    const auto  offsets = vertex.GetAttrOffsetMap();
+    Require(offsets.contains(wallpaper::WE_IN_POSITION.data()),
+            "runtime mesh position attribute is missing");
+    const auto position_offset =
+        offsets.at(wallpaper::WE_IN_POSITION.data()).offset / sizeof(float);
+    const float* data = vertex.Data() + position_offset;
+    Require(std::abs(data[0] - 11.0f) < 0.0001f
+                && std::abs(data[1] + 3.0f) < 0.0001f
+                && std::abs(data[2] - 5.0f) < 0.0001f,
+            "runtime mesh position offset mismatch");
+}
+
 } // namespace
 
 int main() {
@@ -381,5 +405,6 @@ int main() {
     TestSectionDispatchIntegration();
     TestMalformedAnimationRecovery();
     TestInvalidWorldBindRejected();
+    TestRuntimePositionOffset();
     return 0;
 }

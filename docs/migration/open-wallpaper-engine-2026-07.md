@@ -126,7 +126,7 @@ object parsing now has one definition in `WPTextObject.cpp`; the duplicate archi
 | `1691a07` | hidden particles and rain drag | `DONE` | Drag uses authored linear strength. Local node-visibility traversal already skips generated descendants by subtree, now covered with assertions enabled. Font fallback is tracked separately in Stage 5. |
 | `ebd56ee` | node field animations | `DONE` | The shared property-animation registry already covers node origin/angles/scale across SceneNode-backed layers; an end-to-end light fixture verifies parser registration and midpoint runtime writes. Sound transforms remain part of Stage 5 spatialization. |
 | `8234617` | particle random frame motion | `DONE` | Stable per-particle random frames, rate-independent emitter cadence, and owner-basis conversion for world-space gravity are implemented. |
-| `673a2b6` | image alignment in local geometry | `REVIEW` | Validate local geometry versus parent transform. |
+| `673a2b6` | image alignment in local geometry | `DONE` | Image card, effect-final, and puppet/static mesh positions carry the alignment offset; node origin remains the script/child pivot and aligned cursor bounds follow visible geometry. |
 
 Stage 3 now separates authored, bind, and animation bone relationships as `file_parent`,
 `bind_parent`, and `anim_parent`. Normal models keep the original hierarchy for both bind and
@@ -177,6 +177,12 @@ World-space particle gravity is authored in scene coordinates and converted thro
 node linear transform before local simulation. Local-space particles retain the original vector.
 Regression coverage rotates the owner basis by 90 degrees and verifies the local acceleration maps
 back to the same authored world-down direction.
+
+Image alignment is now written into image geometry rather than `SceneNode::AlignmentOffset`. Ordinary
+cards, effect final cards, cropped final quads, and MDL-backed image meshes share the same local
+offset. Dynamic image-size animation rewrites aligned vertices, meshless effect cursor bounds use the
+same offset, and child resolved transforms remain anchored to the authored parent origin. Text keeps
+its independent node-alignment layout contract.
 
 ### Stage 4 — RenderGraph and visual composition
 

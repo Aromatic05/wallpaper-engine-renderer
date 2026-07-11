@@ -1057,7 +1057,8 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     return true;
 }
 
-void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl) {
+void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl,
+                                Eigen::Vector3f position_offset) {
     SceneVertexArray vertex({ { WE_IN_POSITION.data(), VertexType::FLOAT3 },
                               { WE_IN_BLENDINDICES.data(), VertexType::UINT4 },
                               { WE_IN_BLENDWEIGHTS.data(), VertexType::FLOAT4 },
@@ -1065,9 +1066,14 @@ void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl) {
                             mdl.vertexs.size());
 
     std::array<float, 16> one_vert {};
-    auto                  to_one = [](const WPMdl::Vertex& in, decltype(one_vert)& out) {
+    auto to_one = [position_offset](const WPMdl::Vertex& in, decltype(one_vert)& out) {
         uint offset = 0;
-        memcpy(out.data() + 4 * (offset++), in.position.data(), sizeof(in.position));
+        const std::array<float, 3> position {
+            in.position[0] + position_offset.x(),
+            in.position[1] + position_offset.y(),
+            in.position[2] + position_offset.z(),
+        };
+        memcpy(out.data() + 4 * (offset++), position.data(), sizeof(position));
         memcpy(out.data() + 4 * (offset++), in.blend_indices.data(), sizeof(in.blend_indices));
         memcpy(out.data() + 4 * (offset++), in.weight.data(), sizeof(in.weight));
         memcpy(out.data() + 4 * (offset++), in.texcoord.data(), sizeof(in.texcoord));

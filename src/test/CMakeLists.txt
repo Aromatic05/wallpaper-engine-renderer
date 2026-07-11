@@ -598,6 +598,31 @@ target_compile_options(parallax-propagation-test PRIVATE ${warn_opts})
 add_test(NAME parallax-propagation-test COMMAND parallax-propagation-test)
 
 add_executable(
+  image-alignment-test
+  scene/image_alignment_test.cpp)
+
+target_link_libraries(image-alignment-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  image-alignment-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/shader
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(image-alignment-test PRIVATE ${warn_opts})
+
+add_test(NAME image-alignment-test COMMAND image-alignment-test)
+
+add_executable(
   node-field-animation-test
   scene/node_field_animation_test.cpp)
 

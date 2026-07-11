@@ -4825,28 +4825,24 @@ bool IsCameraLinkedFromScene(const Scene& scene, std::string_view camera_name) {
         });
 }
 
-void RefreshAlignedLayerPivot(SceneNode* node, std::string_view alignment,
-                              const std::array<float, 2>& new_size) {
-    if (node == nullptr) return;
 
-    // Runtime `thisLayer.size` updates must follow the same contract as cold parsing: the authored
-    // origin remains the script-visible pivot, and only the mesh-local alignment offset changes to
-    // reflect the new quad dimensions.
-    node->SetAlignmentOffset(ResolveImageAlignmentOffset(alignment, new_size));
-}
-
-bool UpdateQuadMeshSize(SceneMesh* mesh, const std::array<float, 2>& size) {
+bool UpdateQuadMeshSize(SceneMesh* mesh, const std::array<float, 2>& size,
+                        std::string_view alignment) {
     if (mesh == nullptr || mesh->VertexCount() == 0) return false;
 
     auto& vertex = mesh->GetVertexArray(0);
     if (vertex.VertexCount() != 4) return false;
 
-    const float      left     = -(size[0] * 0.5f);
-    const float      right    = size[0] * 0.5f;
-    const float      bottom   = -(size[1] * 0.5f);
-    const float      top      = size[1] * 0.5f;
+    const auto alignment_offset = ResolveImageAlignmentOffset(alignment, size);
+    const float left = -(size[0] * 0.5f) + alignment_offset.x();
+    const float right = size[0] * 0.5f + alignment_offset.x();
+    const float bottom = -(size[1] * 0.5f) + alignment_offset.y();
+    const float top = size[1] * 0.5f + alignment_offset.y();
     const std::array position = {
-        left, bottom, 0.0f, left, top, 0.0f, right, bottom, 0.0f, right, top, 0.0f,
+        left, bottom, alignment_offset.z(),
+        left, top, alignment_offset.z(),
+        right, bottom, alignment_offset.z(),
+        right, top, alignment_offset.z(),
     };
 
     if (! vertex.SetVertex(WE_IN_POSITION, position)) return false;
@@ -4898,20 +4894,34 @@ Eigen::Matrix4d ResolveCursorHitModelTransform(const WPSceneScriptHost::Opaque* 
     return ResolveCursorHitModelTransform(opaque, node, resolving);
 }
 
-std::optional<std::array<double, 4>> ComputeQuadBounds2D(const Eigen::Matrix4d&      model,
-                                                         const std::array<float, 2>& size) {
+std::optional<std::array<double, 4>> ComputeQuadBounds2D(
+    const Eigen::Matrix4d& model,
+    const std::array<float, 2>& size,
+    const Eigen::Vector3d& position_offset = Eigen::Vector3d::Zero()) {
     if (! std::isfinite(size[0]) || ! std::isfinite(size[1]) || size[0] <= 0.0f ||
-        size[1] <= 0.0f) {
+        size[1] <= 0.0f || ! position_offset.allFinite()) {
         return std::nullopt;
     }
 
-    const double                         half_width  = static_cast<double>(size[0]) * 0.5;
-    const double                         half_height = static_cast<double>(size[1]) * 0.5;
+    const double half_width  = static_cast<double>(size[0]) * 0.5;
+    const double half_height = static_cast<double>(size[1]) * 0.5;
     const std::array<Eigen::Vector4d, 4> corners {
-        Eigen::Vector4d(-half_width, -half_height, 0.0, 1.0),
-        Eigen::Vector4d(-half_width, half_height, 0.0, 1.0),
-        Eigen::Vector4d(half_width, -half_height, 0.0, 1.0),
-        Eigen::Vector4d(half_width, half_height, 0.0, 1.0),
+        Eigen::Vector4d(-half_width + position_offset.x(),
+                        -half_height + position_offset.y(),
+                        position_offset.z(),
+                        1.0),
+        Eigen::Vector4d(-half_width + position_offset.x(),
+                        half_height + position_offset.y(),
+                        position_offset.z(),
+                        1.0),
+        Eigen::Vector4d(half_width + position_offset.x(),
+                        -half_height + position_offset.y(),
+                        position_offset.z(),
+                        1.0),
+        Eigen::Vector4d(half_width + position_offset.x(),
+                        half_height + position_offset.y(),
+                        position_offset.z(),
+                        1.0),
     };
 
     double min_x = std::numeric_limits<double>::max();
@@ -4933,15 +4943,15 @@ std::optional<std::array<double, 4>> ComputeQuadBounds2D(const Eigen::Matrix4d& 
 
 std::optional<std::array<double, 4>>
 ComputeLayerQuadBounds2D(const WPSceneScriptHost::Opaque* opaque, SceneNode* node,
-                         const std::array<float, 2>& size) {
+                         const std::array<float, 2>& size,
+                         const Eigen::Vector3d& position_offset = Eigen::Vector3d::Zero()) {
     if (node == nullptr) return std::nullopt;
 
-    // Meshless script targets still represent regular centered Wallpaper Engine quads. The key
-    // difference from a renderable mesh is that their visible geometry lives in text primitives or
-    // effect composite nodes, so this fallback reconstructs only the cursor bounds and leaves the
-    // render graph untouched.
+    // Meshless script targets reconstruct their visible quad from the logical layer state. Image
+    // alignment is now geometry-local, so effect-backed logical images pass the same local offset
+    // used by their rendered source/final meshes. Text keeps its existing node-local placement.
     const Eigen::Matrix4d model = ResolveCursorHitModelTransform(opaque, node);
-    return ComputeQuadBounds2D(model, size);
+    return ComputeQuadBounds2D(model, size, position_offset);
 }
 
 std::optional<std::array<double, 4>> ComputeNodeBounds2D(const WPSceneScriptHost::Opaque* opaque,
@@ -5001,10 +5011,12 @@ ComputeCursorTargetBounds2D(const WPSceneScriptHost::Opaque* opaque,
     const int32_t layer_id = registration.object_id;
     if (const auto* image_layer = FindImageLayerById(opaque, layer_id); image_layer != nullptr) {
         // Effect-backed images can register scripts on a transform-only authored layer while the
-        // visible pixels are rendered by source/final composite nodes. The image registry retains
-        // the authored quad size, so combining it with ResolveCursorHitModelTransform recreates
-        // the event target without adding any dummy mesh that could be picked up by rendering.
-        return ComputeLayerQuadBounds2D(opaque, registration.node, image_layer->size);
+        // visible pixels are rendered by source/final composite nodes. Reconstruct the same
+        // geometry-local alignment used by those meshes so cursor bounds follow the visible quad.
+        const auto alignment_offset = ResolveImageAlignmentOffset(
+            image_layer->alignment, image_layer->size).cast<double>();
+        return ComputeLayerQuadBounds2D(
+            opaque, registration.node, image_layer->size, alignment_offset);
     }
 
     if (const auto* text_layer = FindTextLayerById(opaque, layer_id); text_layer != nullptr) {
@@ -5481,13 +5493,11 @@ bool ApplyLayerPropertyValue(WPSceneScriptHost::Opaque* opaque, SceneNode* node,
             bool updated_mesh = false;
             ForEachBaseLayerMaterial(opaque, layer_id, [&](SceneMaterial&, SceneNode* mesh_node) {
                 if (mesh_node == nullptr || mesh_node->Mesh() == nullptr) return;
-                updated_mesh = UpdateQuadMeshSize(mesh_node->Mesh(), new_size) || updated_mesh;
+                updated_mesh =
+                    UpdateQuadMeshSize(mesh_node->Mesh(), new_size, image_layer->alignment) ||
+                    updated_mesh;
             });
 
-            auto layer_node_it = opaque->scene->layerNodes.find(layer_id);
-            if (layer_node_it != opaque->scene->layerNodes.end()) {
-                RefreshAlignedLayerPivot(layer_node_it->second, image_layer->alignment, new_size);
-            }
 
             if (auto camera_names_it = opaque->scene->objectRuntimeCameraNames.find(layer_id);
                 camera_names_it != opaque->scene->objectRuntimeCameraNames.end()) {
@@ -5505,7 +5515,10 @@ bool ApplyLayerPropertyValue(WPSceneScriptHost::Opaque* opaque, SceneNode* node,
                     if (camera_it->second->HasImgEffect()) {
                         auto& effect_layer = *camera_it->second->GetImgEffect();
                         updated_mesh =
-                            UpdateQuadMeshSize(&effect_layer.FinalMesh(), new_size) || updated_mesh;
+                            UpdateQuadMeshSize(&effect_layer.FinalMesh(),
+                                               new_size,
+                                               image_layer->alignment) ||
+                            updated_mesh;
                         // Image-layer size edits also run through the resource-only rebuild path,
                         // which means the resolved effect output node keeps rendering until a full
                         // topology rebuild happens. Synchronizing the live output mesh here keeps

@@ -118,7 +118,8 @@ public:
     static void AddPuppetShaderInfo(WPShaderInfo& info, const WPMdl& mdl);
     static void AddPuppetMatInfo(wpscene::WPMaterial& mat, const WPMdl& mdl);
 
-    static void GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl);
+    static void GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl,
+                              Eigen::Vector3f position_offset = Eigen::Vector3f::Zero());
     static void GenStaticMesh(SceneMesh& mesh, const WPMdl::StaticChunk& chunk);
 };
 

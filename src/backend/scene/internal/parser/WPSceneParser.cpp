@@ -1228,11 +1228,12 @@ int32_t AllocateDynamicLayerId(const Scene& scene) {
 
 // mapRate < 1.0
 void GenCardMesh(SceneMesh& mesh, const std::array<uint16_t, 2> size,
-                 const std::array<float, 2> mapRate = { 1.0f, 1.0f }) {
-    float left   = -(size[0] / 2.0f);
-    float right  = size[0] / 2.0f;
-    float bottom = -(size[1] / 2.0f);
-    float top    = size[1] / 2.0f;
+                 const std::array<float, 2> mapRate = { 1.0f, 1.0f },
+                 const Vector3f& position_offset = Vector3f::Zero()) {
+    float left   = -(size[0] / 2.0f) + position_offset.x();
+    float right  = size[0] / 2.0f + position_offset.x();
+    float bottom = -(size[1] / 2.0f) + position_offset.y();
+    float top    = size[1] / 2.0f + position_offset.y();
     float z      = 0.0f;
 
     float tw = mapRate[0], th = mapRate[1];
@@ -1264,20 +1265,21 @@ void GenCardMesh(SceneMesh& mesh, const std::array<uint16_t, 2> size,
 }
 
 void GenCardMeshWithTexCoordBounds(SceneMesh& mesh, const std::array<float, 2>& size,
-                                   const std::array<float, 4>& texcoord_bounds) {
+                                   const std::array<float, 4>& texcoord_bounds,
+                                   const Vector3f& position_offset = Vector3f::Zero()) {
     const float width  = std::max(1.0f, size[0]);
     const float height = std::max(1.0f, size[1]);
     const float min_u  = texcoord_bounds[0];
     const float min_v  = texcoord_bounds[1];
     const float max_u  = texcoord_bounds[2];
     const float max_v  = texcoord_bounds[3];
-    const float z      = 0.0f;
+    const float z      = position_offset.z();
 
-    auto local_x = [width](float u) {
-        return (u - 0.5f) * width;
+    auto local_x = [width, &position_offset](float u) {
+        return (u - 0.5f) * width + position_offset.x();
     };
-    auto local_y = [height](float v) {
-        return (0.5f - v) * height;
+    auto local_y = [height, &position_offset](float v) {
+        return (0.5f - v) * height + position_offset.y();
     };
 
     // The final writer may need to cover UVs outside [0, 1], but the effect shader still expects
@@ -1906,12 +1908,6 @@ ImageEffectCameraClipRange ResolveImageEffectCameraClipRange(bool has_animated_p
     return { -1024.0f, 1024.0f };
 }
 
-void LoadAlignment(SceneNode& node, std::string_view align, Vector2f size) {
-    // Alignment changes where the centered quad is drawn relative to the authored origin. Store it
-    // as a local mesh offset instead of mutating translation, because translation is the pivot that
-    // Wallpaper Engine scripts read and rotate around.
-    node.SetAlignmentOffset(ResolveImageAlignmentOffset(align, size));
-}
 
 std::shared_ptr<SceneNode> FindParentNode(ParseContext& context, int32_t parent_id) {
     auto it = context.object_nodes.find(parent_id);
@@ -2372,7 +2368,6 @@ void RegisterLogicalImageLayer(ParseContext& context, const wpscene::WPImageObje
                                             Vector3f(wpimgobj.scale.data()),
                                             Vector3f(wpimgobj.angles.data()),
                                             wpimgobj.name);
-    LoadAlignment(*node, wpimgobj.alignment, { wpimgobj.size[0], wpimgobj.size[1] });
     node->ID() = wpimgobj.id;
 
     WPShaderValueData node_data;
@@ -4495,7 +4490,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                                                    Vector3f(wpimgobj.scale.data()),
                                                    Vector3f(wpimgobj.angles.data()),
                                                    wpimgobj.name);
-    LoadAlignment(*spWorldNode, wpimgobj.alignment, { wpimgobj.size[0], wpimgobj.size[1] });
+    const Vector3f alignment_offset = ResolveImageAlignmentOffset(
+        wpimgobj.alignment, Vector2f { wpimgobj.size[0], wpimgobj.size[1] });
     spWorldNode->ID() = wpimgobj.id;
     auto spImgNode = use_detached_effect_world_node ? std::make_shared<SceneNode>() : spWorldNode;
     spImgNode->SetName(wpimgobj.name);
@@ -4614,9 +4610,11 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 // Keep the offscreen draw extents in scene/display units so effect
                 // composition matches the original visual size. Only the backing
                 // render targets may use a reduced source resolution.
-                GenCardMesh(
-                    mesh, { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] }, mapRate);
-                WPMdlParser::GenPuppetMesh(effct_final_mesh, *puppet);
+                GenCardMesh(mesh,
+                            { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] },
+                            mapRate,
+                            alignment_offset);
+                WPMdlParser::GenPuppetMesh(effct_final_mesh, *puppet, alignment_offset);
 
                 wpscene::WPImageEffect puppet_effect;
                 wpscene::WPMaterial    puppet_mat;
@@ -4628,7 +4626,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             } else {
                 svData.puppet_layer = WPPuppetLayer(puppet->puppet);
                 svData.puppet_layer.prepared(wpimgobj.puppet_layers);
-                WPMdlParser::GenPuppetMesh(mesh, *puppet);
+                WPMdlParser::GenPuppetMesh(mesh, *puppet, alignment_offset);
             }
         } else if (hasStaticImageMesh) {
             if (hasEffect) {
@@ -4637,14 +4635,16 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 // source card so filters sample the full media texture, then the resolved writer
                 // uses the authored mesh to clip/crop the final visible image without enabling
                 // skinning uniforms.
-                GenCardMesh(
-                    mesh, { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] }, mapRate);
-                WPMdlParser::GenPuppetMesh(effct_final_mesh, *puppet);
+                GenCardMesh(mesh,
+                            { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] },
+                            mapRate,
+                            alignment_offset);
+                WPMdlParser::GenPuppetMesh(effct_final_mesh, *puppet, alignment_offset);
             } else {
                 // No-effect static image puppets can draw the authored mesh directly. This keeps
                 // the exported crop geometry and UVs while avoiding any WPPuppet runtime state,
                 // which does not exist for flag-9 static image mesh files.
-                WPMdlParser::GenPuppetMesh(mesh, *puppet);
+                WPMdlParser::GenPuppetMesh(mesh, *puppet, alignment_offset);
             }
         } else {
             if (hasAuthoredPuppet) {
@@ -4658,14 +4658,20 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                          wpimgobj.puppet.c_str());
             }
             const auto source_mesh_size = wpimgobj.size;
-            GenCardMesh(
-                mesh, { (uint16_t)source_mesh_size[0], (uint16_t)source_mesh_size[1] }, mapRate);
+            GenCardMesh(mesh,
+                        { (uint16_t)source_mesh_size[0], (uint16_t)source_mesh_size[1] },
+                        mapRate,
+                        alignment_offset);
             if (wpimgobj.effectFinalTexCoordBoundsEnabled) {
-                GenCardMeshWithTexCoordBounds(
-                    effct_final_mesh, wpimgobj.size, wpimgobj.effectFinalTexCoordBounds);
+                GenCardMeshWithTexCoordBounds(effct_final_mesh,
+                                               wpimgobj.size,
+                                               wpimgobj.effectFinalTexCoordBounds,
+                                               alignment_offset);
             } else {
                 GenCardMesh(effct_final_mesh,
-                            { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] });
+                            { (uint16_t)wpimgobj.size[0], (uint16_t)wpimgobj.size[1] },
+                            { 1.0f, 1.0f },
+                            alignment_offset);
             }
         }
     }
