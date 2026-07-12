@@ -54,7 +54,9 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
 
     return X(vkDestroyInstance) && X(vkCreateDevice) && X(vkDestroyDevice) && X(vkDestroyDevice) &&
            X(vkEnumerateDeviceExtensionProperties) && X(vkEnumeratePhysicalDevices) &&
-           X(vkGetDeviceProcAddr) && X(vkGetPhysicalDeviceFormatProperties) &&
+           X(vkGetDeviceProcAddr) && X(vkGetPhysicalDeviceFeatures) &&
+           X(vkGetPhysicalDeviceFormatProperties) &&
+           X(vkGetPhysicalDeviceImageFormatProperties) &&
            X(vkGetPhysicalDeviceMemoryProperties) && X(vkGetPhysicalDeviceMemoryProperties2) &&
            X(vkGetPhysicalDeviceProperties) && X(vkGetPhysicalDeviceQueueFamilyProperties);
 #undef X
@@ -484,15 +486,17 @@ void PhysicalDevice::GetProperties2KHR(VkPhysicalDeviceProperties2KHR& props) co
 }
 
 VkPhysicalDeviceFeatures PhysicalDevice::GetFeatures() const noexcept {
-    VkPhysicalDeviceFeatures2KHR features2 {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR,
-    };
-    GetFeatures2KHR(features2);
-    return features2.features;
+    VkPhysicalDeviceFeatures features {};
+    dld->vkGetPhysicalDeviceFeatures(handle, &features);
+    return features;
 }
 
 void PhysicalDevice::GetFeatures2KHR(VkPhysicalDeviceFeatures2KHR& features) const noexcept {
-    dld->vkGetPhysicalDeviceFeatures2KHR(handle, &features);
+    if (dld->vkGetPhysicalDeviceFeatures2KHR != nullptr) {
+        dld->vkGetPhysicalDeviceFeatures2KHR(handle, &features);
+        return;
+    }
+    dld->vkGetPhysicalDeviceFeatures(handle, &features.features);
 }
 
 VkFormatProperties PhysicalDevice::GetFormatProperties(VkFormat format) const noexcept {
@@ -503,6 +507,17 @@ VkFormatProperties PhysicalDevice::GetFormatProperties(VkFormat format) const no
 
 void PhysicalDevice::GetFormatProperties2(VkFormat format, VkFormatProperties2& properties) const noexcept {
     dld->vkGetPhysicalDeviceFormatProperties2(handle, format, &properties);
+}
+
+VkResult PhysicalDevice::GetImageFormatProperties(
+    VkFormat format,
+    VkImageType image_type,
+    VkImageTiling tiling,
+    VkImageUsageFlags usage,
+    VkImageCreateFlags flags,
+    VkImageFormatProperties& properties) const noexcept {
+    return dld->vkGetPhysicalDeviceImageFormatProperties(
+        handle, format, image_type, tiling, usage, flags, &properties);
 }
 
 std::vector<VkDrmFormatModifierProperties2EXT>

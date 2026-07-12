@@ -93,6 +93,10 @@ typedef struct we_render_config_v1 {
     bool enable_valid_layer;
     bool prefer_dmabuf;
     bool allow_shm_fallback;
+    // Scene-backend final-output sample count. Zero preserves the legacy 1x path; unsupported
+    // counts or devices without sample-rate shading fall back to 1x. Web/video return NotSupported
+    // for values above 1.
+    uint32_t msaa_samples;
 } we_render_config_v1;
 
 WE_RENDERER_API we_session_t* we_session_create(void);

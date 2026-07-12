@@ -63,9 +63,11 @@ struct InstanceDispatch {
     PFN_vkEnumerateDeviceExtensionProperties      vkEnumerateDeviceExtensionProperties {};
     PFN_vkEnumeratePhysicalDevices                vkEnumeratePhysicalDevices {};
     PFN_vkGetDeviceProcAddr                       vkGetDeviceProcAddr {};
+    PFN_vkGetPhysicalDeviceFeatures               vkGetPhysicalDeviceFeatures {};
     PFN_vkGetPhysicalDeviceFeatures2KHR           vkGetPhysicalDeviceFeatures2KHR {};
     PFN_vkGetPhysicalDeviceFormatProperties2      vkGetPhysicalDeviceFormatProperties2 {};
     PFN_vkGetPhysicalDeviceFormatProperties       vkGetPhysicalDeviceFormatProperties {};
+    PFN_vkGetPhysicalDeviceImageFormatProperties  vkGetPhysicalDeviceImageFormatProperties {};
     PFN_vkGetPhysicalDeviceMemoryProperties       vkGetPhysicalDeviceMemoryProperties {};
     PFN_vkGetPhysicalDeviceMemoryProperties2      vkGetPhysicalDeviceMemoryProperties2 {};
     PFN_vkGetPhysicalDeviceProperties             vkGetPhysicalDeviceProperties {};
@@ -390,6 +392,13 @@ public:
     VkFormatProperties GetFormatProperties(VkFormat) const noexcept;
     void GetFormatProperties2(VkFormat, VkFormatProperties2&) const noexcept;
     std::vector<VkDrmFormatModifierProperties2EXT> GetDrmFormatModifierProperties2(VkFormat) const;
+
+    VkResult GetImageFormatProperties(VkFormat format,
+                                      VkImageType image_type,
+                                      VkImageTiling tiling,
+                                      VkImageUsageFlags usage,
+                                      VkImageCreateFlags flags,
+                                      VkImageFormatProperties& properties) const noexcept;
 
     VkResult EnumerateDeviceExtensionProperties(std::vector<VkExtensionProperties>&) const;
 

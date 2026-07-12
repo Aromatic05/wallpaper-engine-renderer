@@ -47,6 +47,7 @@ struct RenderInitInfo {
     std::uint16_t width { 1920 };
     std::uint16_t height { 1080 };
     double        render_scale { 1.0 };
+    std::uint32_t msaa_samples { 1 };
     ReDrawCB      redraw_callback;
 };
 } // namespace wallpaper

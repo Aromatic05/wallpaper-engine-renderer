@@ -97,11 +97,27 @@ std::vector<VkDeviceQueueCreateInfo> Device::ChooseDeviceQueue(VkSurfaceKHR surf
 }
 
 bool Device::Create(Instance& inst, std::span<const Extension> exts, VkExtent2D extent, Device& device,
-                    VideoTexturePipelineSettings video_texture_settings) {
+                    VideoTexturePipelineSettings video_texture_settings,
+                    bool request_sample_rate_shading) {
     device.dld      = vvk::DeviceDispatch { inst.inst().Dispatch() };
     device.m_gpu    = inst.gpu();
     device.m_limits = inst.gpu().GetProperties().limits;
     device.set_out_extent(extent);
+
+    const VkPhysicalDeviceFeatures supported_features = inst.gpu().GetFeatures();
+    VkPhysicalDeviceFeatures2 enabled_features {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = nullptr,
+        .features = {},
+    };
+    enabled_features.features.sampleRateShading =
+        request_sample_rate_shading ? supported_features.sampleRateShading : VK_FALSE;
+    device.m_sample_rate_shading_enabled =
+        enabled_features.features.sampleRateShading == VK_TRUE;
+    if (request_sample_rate_shading) {
+        LOG_INFO("Vulkan sample-rate shading: %s",
+                 device.m_sample_rate_shading_enabled ? "enabled" : "unsupported");
+    }
 
     Set<std::string> tested_exts;
     {
@@ -126,7 +142,7 @@ bool Device::Create(Instance& inst, std::span<const Extension> exts, VkExtent2D 
                                           *device.m_gpu,
                                           device.ChooseDeviceQueue(*inst.surface()),
                                           tested_exts_c,
-                                          nullptr,
+                                          &enabled_features,
                                           device.dld));
 
     // VK_CHECK_RESULT_BOOL_RE(CreateDevice(inst, device.ChooseDeviceQueue(inst.surface()),

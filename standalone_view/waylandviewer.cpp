@@ -688,6 +688,7 @@ int main(int argc, char** argv) {
     config.height        = static_cast<std::uint32_t>(args.height);
     config.prefer_dmabuf = !args.force_shm;
     config.allow_shm_fallback = true;
+    config.msaa_samples = args.msaa_samples;
     if (config.prefer_dmabuf) {
         if (shouldForceShmForPrimeRunNvidia()) {
             std::fprintf(stderr,

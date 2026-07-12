@@ -14,11 +14,24 @@ struct legacy_we_source_v1 {
     bool muted;
 };
 
+struct legacy_we_render_config_v1 {
+    uint32_t size;
+    uint32_t version;
+    uint32_t width;
+    uint32_t height;
+    bool enable_valid_layer;
+    bool prefer_dmabuf;
+    bool allow_shm_fallback;
+};
+
 _Static_assert(offsetof(we_source_v1, options_json) >= sizeof(struct legacy_we_source_v1),
                "we_source_v1 optional fields must remain append-only");
 _Static_assert(offsetof(we_render_config_v1, allow_shm_fallback)
                    > offsetof(we_render_config_v1, prefer_dmabuf),
                "we_render_config_v1 field order changed");
+_Static_assert(offsetof(we_render_config_v1, msaa_samples)
+                   >= sizeof(struct legacy_we_render_config_v1),
+               "we_render_config_v1 optional fields must remain append-only");
 
 int main(void) {
     we_session_t* session = we_session_create();

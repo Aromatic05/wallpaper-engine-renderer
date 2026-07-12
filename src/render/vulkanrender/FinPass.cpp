@@ -50,7 +50,7 @@ constexpr std::array vertex_input = {
     VertexInput { { 1.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
 };
 
-FinPass::FinPass(const Desc&) {}
+FinPass::FinPass(const Desc& desc): m_sample_count(desc.sample_count) {}
 FinPass::~FinPass() {}
 
 bool FinPass::referencesRenderTarget(std::string_view render_target) const {
@@ -60,43 +60,132 @@ bool FinPass::referencesRenderTarget(std::string_view render_target) const {
 }
 namespace
 {
-std::optional<vvk::RenderPass> CreateRenderPass(const vvk::Device& device, VkFormat format,
-                                                VkImageLayout finalLayout) {
-    VkAttachmentDescription attachment {
-        .format         = format,
-        .samples        = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+std::optional<VmaImageParameters> CreateMultisampleColorImage(
+    const Device& device,
+    VkExtent3D extent,
+    VkFormat format,
+    VkSampleCountFlagBits sample_count) {
+    VmaImageParameters image;
+    VkImageCreateInfo info {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = extent,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = sample_count,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    image.extent = extent;
+
+    VmaAllocationCreateInfo vma_info {};
+    vma_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    VVK_CHECK_ACT(return std::nullopt,
+                  vvk::CreateImage(device.vma_allocator(), info, vma_info, image.handle));
+
+    VkImageViewCreateInfo view_info {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .image = *image.handle,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .components = {},
+        .subresourceRange =
+            VkImageSubresourceRange {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+    };
+    VVK_CHECK_ACT(return std::nullopt,
+                  device.handle().CreateImageView(view_info, image.view));
+    return image;
+}
+
+bool EnsureMultisampleColorImage(const Device& device,
+                                 VkExtent3D extent,
+                                 VkFormat format,
+                                 VkSampleCountFlagBits sample_count,
+                                 VmaImageParameters& image) {
+    if (sample_count == VK_SAMPLE_COUNT_1_BIT) return true;
+    if (image.handle && image.extent.width == extent.width &&
+        image.extent.height == extent.height && image.extent.depth == extent.depth) {
+        return true;
+    }
+
+    auto next = CreateMultisampleColorImage(device, extent, format, sample_count);
+    if (! next.has_value()) return false;
+    image = std::move(*next);
+    return true;
+}
+
+std::optional<vvk::RenderPass> CreateRenderPass(const vvk::Device& device,
+                                                VkFormat format,
+                                                VkImageLayout final_layout,
+                                                VkSampleCountFlagBits sample_count) {
+    const auto plan = BuildFinalOutputAttachmentPlan(sample_count);
+    std::array<VkAttachmentDescription, 2> attachments {};
+    attachments[0] = VkAttachmentDescription {
+        .format = format,
+        .samples = plan.sample_count,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = plan.uses_resolve ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                     : VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout    = finalLayout,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = plan.uses_resolve ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                                         : final_layout,
     };
-    VkAttachmentReference attachment_ref {
-        .attachment = 0,
-        .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    };
+    if (plan.uses_resolve) {
+        attachments[1] = VkAttachmentDescription {
+            .format = format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = final_layout,
+        };
+    }
 
+    VkAttachmentReference color_ref {
+        .attachment = plan.color_attachment,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+    VkAttachmentReference resolve_ref {
+        .attachment = plan.resolve_attachment,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
     VkSubpassDescription subpass {
-        .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
-        .pColorAttachments    = &attachment_ref,
+        .pColorAttachments = &color_ref,
+        .pResolveAttachments = plan.uses_resolve ? &resolve_ref : nullptr,
     };
 
-    VkRenderPassCreateInfo creatinfo {
-        .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments    = &attachment,
-        .subpassCount    = 1,
-        .pSubpasses      = &subpass,
+    VkRenderPassCreateInfo create_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext = nullptr,
+        .attachmentCount = plan.attachment_count,
+        .pAttachments = attachments.data(),
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
     };
     vvk::RenderPass pass;
-    if (auto res = device.CreateRenderPass(creatinfo, pass); res == VK_SUCCESS) {
-        return pass;
-    } else {
-        VVK_CHECK(res);
-        return std::nullopt;
-    }
+    const VkResult result = device.CreateRenderPass(create_info, pass);
+    if (result == VK_SUCCESS) return pass;
+    VVK_CHECK(result);
+    return std::nullopt;
 }
 } // namespace
 
@@ -177,13 +266,24 @@ void FinPass::prepare(Scene& scene, const Device& device, RenderingResources& rr
         binding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     {
-        auto opt = CreateRenderPass(device.handle(), m_desc.present_format, m_desc.present_layout);
+        auto opt = CreateRenderPass(
+            device.handle(), m_desc.present_format, m_desc.present_layout, m_sample_count);
         if (! opt.has_value()) return;
         auto pass = std::move(opt.value());
+
+        if (! EnsureMultisampleColorImage(
+                device,
+                VkExtent3D { device.out_extent().width, device.out_extent().height, 1 },
+                m_desc.present_format,
+                m_sample_count,
+                m_msaa_color)) {
+            return;
+        }
 
         descriptor_info.push_descriptor = true;
         GraphicsPipeline pipeline;
         pipeline.toDefault();
+        pipeline.multisample = BuildFinalOutputMultisampleState(m_sample_count);
         m_desc.pipeline.debug_name = "FinPass";
         pipeline.addDescriptorSetInfo(spanone { descriptor_info })
             .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP)
@@ -230,6 +330,20 @@ void FinPass::execute(const Device& device, RenderingResources& rr) {
     auto& cmd    = rr.command;
     auto& outext = m_desc.vk_present.extent;
 
+    // Surface swapchains are currently recreated with a new VulkanRender, but keep the final pass
+    // correct if an output binding starts replacing present images in place. The previous frame is
+    // fenced before this method runs, so the old framebuffer and multisample attachment can be
+    // retired before allocating the new extent.
+    m_desc.fb = {};
+    if (! EnsureMultisampleColorImage(device,
+                                      outext,
+                                      m_desc.present_format,
+                                      m_sample_count,
+                                      m_msaa_color)) {
+        setPrepared(false);
+        return;
+    }
+
     VkImageSubresourceRange base_srang {
         .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
         .baseMipLevel   = 0,
@@ -239,18 +353,22 @@ void FinPass::execute(const Device& device, RenderingResources& rr) {
 
     };
     {
-        m_desc.fb = {};
-        VkFramebufferCreateInfo info {
-            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext           = nullptr,
-            .renderPass      = *m_desc.pipeline.pass,
-            .attachmentCount = 1,
-            .pAttachments    = &m_desc.vk_present.view,
-            .width           = m_desc.vk_present.extent.width,
-            .height          = m_desc.vk_present.extent.height,
-            .layers          = 1,
+        const auto plan = BuildFinalOutputAttachmentPlan(m_sample_count);
+        std::array<VkImageView, 2> attachments {
+            plan.uses_resolve ? *m_msaa_color.view : m_desc.vk_present.view,
+            m_desc.vk_present.view,
         };
-        (void)device.handle().CreateFramebuffer(info, m_desc.fb);
+        VkFramebufferCreateInfo info {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .renderPass = *m_desc.pipeline.pass,
+            .attachmentCount = plan.attachment_count,
+            .pAttachments = attachments.data(),
+            .width = m_desc.vk_present.extent.width,
+            .height = m_desc.vk_present.extent.height,
+            .layers = 1,
+        };
+        if (device.handle().CreateFramebuffer(info, m_desc.fb) != VK_SUCCESS) return;
     }
     {
         VkDescriptorImageInfo desc_img {
@@ -348,4 +466,5 @@ void FinPass::destory(const Device&, RenderingResources& rr) {
     setPrepared(false);
     clearReleaseTexs();
     rr.vertex_buf->unallocateSubRef(m_desc.vertex_buf);
+    m_msaa_color = {};
 }

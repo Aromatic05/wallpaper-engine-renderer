@@ -18,6 +18,7 @@
 #include "VulkanPass.hpp"
 #include "PrePass.hpp"
 #include "FinPass.hpp"
+#include "vulkanrender/FinalOutputMsaa.hpp"
 #include "CopyPass.hpp"
 #include "Resource.hpp"
 
@@ -272,6 +273,7 @@ struct VulkanRender::Impl {
     bool m_pass_loaded { false };
     bool m_device_faulted { false };
     bool m_device_fault_log_emitted { false };
+    VkSampleCountFlagBits m_final_output_sample_count { VK_SAMPLE_COUNT_1_BIT };
     std::deque<std::size_t> m_deferred_prepare_indices;
     std::unordered_set<std::size_t> m_deferred_waiting_indices_logged;
 
@@ -400,11 +402,17 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
                            ? VideoTextureGpuPipeline::NvidiaStateless
                            : VideoTextureGpuPipeline::Nvidia),
         };
-        if (! Device::Create(m_instance, device_exts, extent, *m_device, video_texture_settings)) {
+        if (! Device::Create(m_instance,
+                             device_exts,
+                             extent,
+                             *m_device,
+                             video_texture_settings,
+                             info.msaa_samples > 1)) {
             LOG_ERROR("init vulkan device failed");
             return false;
         }
     }
+
 
     if (info.offscreen) {
         const auto createShmReadbackSwapchains = [&]() {
@@ -451,6 +459,41 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
         m_with_surface = false;
     }
 
+    const VkFormat final_output_format =
+        m_with_surface ? m_device->swapchain().format() : m_ex_swapchain->format();
+    VkImageFormatProperties final_output_format_properties {};
+    VkSampleCountFlags format_sample_counts = VK_SAMPLE_COUNT_1_BIT;
+    const VkResult format_result = m_device->gpu().GetImageFormatProperties(
+        final_output_format,
+        VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        0,
+        final_output_format_properties);
+    if (format_result == VK_SUCCESS) {
+        format_sample_counts = final_output_format_properties.sampleCounts;
+    } else {
+        LOG_ERROR("FinalOutputMSAA: failed to query format=%d image properties (%s); "
+                  "falling back to 1x",
+                  static_cast<int>(final_output_format),
+                  vvk::ToString(format_result));
+    }
+    const VkSampleCountFlags supported_sample_counts =
+        m_device->limits().framebufferColorSampleCounts & format_sample_counts;
+    m_final_output_sample_count = ResolveFinalOutputSampleCount(
+        info.msaa_samples,
+        supported_sample_counts,
+        m_device->sampleRateShadingEnabled());
+    if (info.msaa_samples > 1) {
+        LOG_INFO("FinalOutputMSAA: requested=%u resolved=%u device-mask=0x%x "
+                 "format-mask=0x%x sample-rate-shading=%s",
+                 info.msaa_samples,
+                 static_cast<unsigned>(m_final_output_sample_count),
+                 static_cast<unsigned>(m_device->limits().framebufferColorSampleCounts),
+                 static_cast<unsigned>(format_sample_counts),
+                 m_device->sampleRateShadingEnabled() ? "enabled" : "unsupported");
+    }
+
     if (! initRes()) return false;
     ;
 
@@ -488,7 +531,9 @@ bool VulkanRender::Impl::checkVkResult(VkResult result, const char* operation) {
 
 bool VulkanRender::Impl::initRes() {
     m_prepass = std::make_unique<PrePass>(PrePass::Desc {});
-    m_finpass = std::make_unique<FinPass>(FinPass::Desc {});
+    m_finpass = std::make_unique<FinPass>(FinPass::Desc {
+        .sample_count = m_final_output_sample_count,
+    });
     if (m_with_surface) {
         m_finpass->setPresentFormat(m_device->swapchain().format());
         m_finpass->setPresentQueueIndex(m_device->present_queue().family_index);

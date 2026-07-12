@@ -1,5 +1,6 @@
 #pragma once
 
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -12,15 +13,28 @@ struct Args {
     std::string assets_uri;
     std::string uri;
     std::string cache_path;
-    int32_t     fps    { 15 };
-    int32_t     width  { 1280 };
-    int32_t     height { 720 };
-    bool        force_shm { false };
+    int32_t       fps    { 15 };
+    int32_t       width  { 1280 };
+    int32_t       height { 720 };
+    std::uint32_t msaa_samples { 1 };
+    bool          force_shm { false };
 };
 
 inline void printUsage(const char* prog) {
     // printed by parseArgs when needed
     (void)prog;
+}
+
+inline bool parsePositiveUint32(std::string_view value, std::uint32_t& result) {
+    if (value.empty()) return false;
+    std::uint32_t parsed { 0 };
+    const auto [end, error] =
+        std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc {} || end != value.data() + value.size() || parsed == 0) {
+        return false;
+    }
+    result = parsed;
+    return true;
 }
 
 // Minimal hand-rolled parser. Avoids the third_party/argparse header
@@ -47,6 +61,13 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
             if (! needValue(i, v)) return false;
             args.fps = std::atoi(v.c_str());
             if (args.fps <= 0) args.fps = 15;
+        } else if (a == "--msaa") {
+            std::string v;
+            if (! needValue(i, v)) return false;
+            if (! parsePositiveUint32(v, args.msaa_samples)) {
+                err = "--msaa expects a positive integer";
+                return false;
+            }
         } else if (a == "--resolution") {
             std::string v;
             if (! needValue(i, v)) return false;
@@ -82,6 +103,7 @@ inline void printHelp(const char* prog) {
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"
+                 "  --msaa N             final-output sample count (default 1)\n"
                  "  --shm                force SHM output instead of DMA-BUF\n"
                  "  -h, --help           show this help\n",
                  prog,

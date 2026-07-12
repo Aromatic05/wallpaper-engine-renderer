@@ -19,7 +19,8 @@ public:
     ~Device();
 
     static bool Create(Instance&, std::span<const Extension> exts, VkExtent2D extent, Device&,
-                       VideoTexturePipelineSettings video_texture_settings = {});
+                       VideoTexturePipelineSettings video_texture_settings = {},
+                       bool request_sample_rate_shading = false);
     static bool CheckGPU(vvk::PhysicalDevice gpu, std::span<const Extension> exts, VkSurfaceKHR surface);
 
     void Destroy();
@@ -30,6 +31,7 @@ public:
     const auto& handle() const { return m_device; }
     const auto& gpu() const { return m_gpu; }
     const auto& limits() const { return m_limits; }
+    bool sampleRateShadingEnabled() const { return m_sample_rate_shading_enabled; }
     const auto& vma_allocator() const { return *m_allocator; }
     const auto& cmd_pool() const { return m_command_pool; }
     const auto& swapchain() const { return m_swapchain; }
@@ -53,6 +55,7 @@ private:
 
     VkPhysicalDeviceLimits m_limits;
     Set<std::string>       m_extensions;
+    bool                   m_sample_rate_shading_enabled { false };
 
     Swapchain m_swapchain;
 

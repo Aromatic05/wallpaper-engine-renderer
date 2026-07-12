@@ -1,5 +1,6 @@
 #include "wallpaper/abi/WeRenderer.h"
 #include "WeRendererOptions.hpp"
+#include "WeRendererConfig.hpp"
 #include "WeProjectSource.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
@@ -86,7 +87,6 @@ int32_t to_error_with_diagnostic(WeSessionState* state,
 bool source_has_field(const we_source_v1* source, std::size_t field_offset, std::size_t field_size) {
     return source && source->size >= field_offset + field_size;
 }
-
 
 wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     wallpaper::WallpaperSource out;
@@ -220,28 +220,38 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
 int32_t we_session_set_render_config(we_session_t* session, const we_render_config_v1* config) {
     auto* state = as_state(session);
     if (!state || !state->session || !config) return -1;
-    if (config->size < sizeof(we_render_config_v1) || config->version != 1) return -1;
+    const auto parsed_config = wallpaper::ParseRendererRenderConfig(config);
+    if (! parsed_config.has_value()) return -1;
     if (! state->sourceSet) return -1;
+
+    if (parsed_config->msaa_samples > 1 &&
+        state->sourceType != wallpaper::BackendType::WEScene) {
+        const auto unsupported = wallpaper::Result<void>::failure(
+            wallpaper::ResultCode::NotSupported,
+            "final-output MSAA is supported only by the scene backend");
+        return to_error_with_diagnostic(state, "abi.render-config.msaa", unsupported);
+    }
 
     if (state->sourceType == wallpaper::BackendType::Web) {
         // Web can prefer dma-buf while still falling back to SHM on CPU paint.
     }
 
-    state->renderInitInfo.enable_valid_layer = config->enable_valid_layer;
+    state->renderInitInfo.enable_valid_layer = parsed_config->enable_valid_layer;
     state->renderInitInfo.offscreen          = true;
-    state->renderInitInfo.allow_shm_fallback = config->allow_shm_fallback;
-    state->renderInitInfo.export_mode = config->prefer_dmabuf
+    state->renderInitInfo.allow_shm_fallback = parsed_config->allow_shm_fallback;
+    state->renderInitInfo.export_mode = parsed_config->prefer_dmabuf
         ? wallpaper::ExternalFrameExportMode::DMA_BUF
         : wallpaper::ExternalFrameExportMode::SHM;
     // DMA_BUF export requires the offscreen image to use LINEAR tiling
     // (TextureCache.cpp:307); pick it automatically when the consumer
     // asked for dmabuf so we don't leak that internal constraint.
-    state->renderInitInfo.offscreen_tiling = config->prefer_dmabuf
+    state->renderInitInfo.offscreen_tiling = parsed_config->prefer_dmabuf
         ? wallpaper::TexTiling::LINEAR
         : wallpaper::TexTiling::OPTIMAL;
-    state->renderInitInfo.width              = static_cast<std::uint16_t>(config->width);
-    state->renderInitInfo.height             = static_cast<std::uint16_t>(config->height);
-    state->renderInitInfo.render_scale       = 1.0;
+    state->renderInitInfo.width = static_cast<std::uint16_t>(parsed_config->width);
+    state->renderInitInfo.height = static_cast<std::uint16_t>(parsed_config->height);
+    state->renderInitInfo.render_scale = 1.0;
+    state->renderInitInfo.msaa_samples = parsed_config->msaa_samples;
 
     switch (state->sourceType) {
     case wallpaper::BackendType::WEScene: {

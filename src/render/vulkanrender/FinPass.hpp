@@ -5,6 +5,7 @@
 #include "vulkan/Device.hpp"
 #include "vulkan/StagingBuffer.hpp"
 #include "vulkan/GraphicsPipeline.hpp"
+#include "vulkanrender/FinalOutputMsaa.hpp"
 
 #include "scene/Scene.h"
 #include "SpecTexs.hpp"
@@ -22,6 +23,7 @@ public:
         VkFormat               present_format;
         VkImageLayout          present_layout;
         uint32_t               present_queue_index;
+        VkSampleCountFlagBits sample_count { VK_SAMPLE_COUNT_1_BIT };
 
         // prepared
         ImageParameters vk_result;
@@ -50,6 +52,8 @@ public:
 
 private:
     Desc m_desc;
+    VkSampleCountFlagBits m_sample_count { VK_SAMPLE_COUNT_1_BIT };
+    VmaImageParameters    m_msaa_color;
 };
 
 } // namespace vulkan

@@ -28,6 +28,16 @@ target_compile_options(we-renderer-options-test PRIVATE ${warn_opts})
 add_test(NAME we-renderer-options-test COMMAND we-renderer-options-test)
 
 add_executable(
+  we-renderer-config-test
+  abi/we_renderer_config_test.cpp)
+
+target_link_libraries(we-renderer-config-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-config-test PRIVATE ..)
+target_compile_options(we-renderer-config-test PRIVATE ${warn_opts})
+
+add_test(NAME we-renderer-config-test COMMAND we-renderer-config-test)
+
+add_executable(
   we-project-source-test
   abi/we_project_source_test.cpp)
 
@@ -301,6 +311,47 @@ target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
 add_test(NAME output-controller-contract-test COMMAND output-controller-contract-test)
 
 add_executable(
+  final-output-msaa-test
+  output/final_output_msaa_test.cpp)
+
+target_link_libraries(final-output-msaa-test PRIVATE wpVulkanRender)
+target_compile_options(final-output-msaa-test PRIVATE ${warn_opts})
+
+add_test(NAME final-output-msaa-test COMMAND final-output-msaa-test)
+
+add_executable(
+  final-output-msaa-integration-test
+  output/final_output_msaa_integration_test.cpp)
+
+target_link_libraries(final-output-msaa-integration-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(
+  final-output-msaa-integration-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../render/vulkanrender
+  ../render/vulkanrender/include)
+target_compile_options(final-output-msaa-integration-test PRIVATE ${warn_opts})
+
+add_test(NAME final-output-msaa-integration-test COMMAND final-output-msaa-integration-test)
+
+add_executable(
+  sceneviewer-arg-test
+  output/sceneviewer_arg_test.cpp)
+
+target_compile_options(sceneviewer-arg-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME sceneviewer-arg-test COMMAND sceneviewer-arg-test)
+
+add_executable(
   shm-frame-swapchain-test
   output/shm_frame_swapchain_test.cpp)
 
@@ -318,7 +369,7 @@ if(BUILD_WEVIDEO)
 
     target_link_libraries(we-renderer-video-source-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(we-renderer-video-source-test PRIVATE ..)
-    target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts})
+    target_compile_options(we-renderer-video-source-test PRIVATE ${warn_opts} -UNDEBUG)
 
     add_test(NAME we-renderer-video-source-test COMMAND we-renderer-video-source-test)
 
@@ -353,7 +404,7 @@ if(BUILD_WEWEB)
 
     target_link_libraries(we-renderer-web-source-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(we-renderer-web-source-test PRIVATE .. web)
-    target_compile_options(we-renderer-web-source-test PRIVATE ${warn_opts})
+    target_compile_options(we-renderer-web-source-test PRIVATE ${warn_opts} -UNDEBUG)
 
     add_test(NAME we-renderer-web-source-test COMMAND we-renderer-web-source-test)
 

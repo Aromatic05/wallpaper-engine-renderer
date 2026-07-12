@@ -1,4 +1,5 @@
 #include "wallpaper/abi/WeRenderer.h"
+#include "wallpaper/Result.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -74,6 +75,11 @@ int main() {
     shm_config.prefer_dmabuf = false;
     shm_config.allow_shm_fallback = true;
     assert(we_session_set_render_config(session, &shm_config) == 0);
+
+    we_render_config_v1 msaa_config = shm_config;
+    msaa_config.msaa_samples = 4;
+    assert(we_session_set_render_config(session, &msaa_config) ==
+           static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
 
     we_session_destroy(session);
     return 0;

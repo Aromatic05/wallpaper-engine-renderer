@@ -341,6 +341,46 @@ events when state is unchanged, and confirms current/previous RGBA thumbnails ar
 synthetic image parser and marked dirty. Upstream Waywallen MPRIS discovery and daemon bridge code remains
 outside the renderer library.
 
+### Stage 6 — final-output MSAA
+
+The renderer ABI now exposes append-only `we_render_config_v1.msaa_samples`. Legacy callers whose
+structure ends at `allow_shm_fallback` remain valid and resolve to the historical one-sample path;
+zero and one also mean 1x. The ABI parser rejects zero-sized outputs and dimensions that cannot be
+represented by the renderer's existing 16-bit Vulkan output contract instead of silently truncating
+them. A requested MSAA count is clamped downward to the highest count no greater than the request in
+the intersection of `framebufferColorSampleCounts` and the final present format's
+`VkImageFormatProperties::sampleCounts`. Counts above 1x are selected only when the physical device
+also supports and explicitly enables `sampleRateShading`; otherwise the renderer logs the reason and
+stays on 1x rather than exposing a multisample attachment whose fullscreen draw would be visually
+identical to the legacy path.
+The generic ABI rejects values above 1 for Web and Video backends with `NotSupported`; those output
+pipelines do not use the scene renderer's `FinPass`, so silently accepting the option would be false
+capability advertising.
+The standalone Wayland viewer exposes the same field as `--msaa N`; its parser requires a positive
+integer and defaults to 1x, so command-line behavior cannot accidentally depend on a zero-initialized
+new ABI tail.
+
+MSAA is deliberately confined to `FinPass`. Scene render targets, text bridges, model depth, particles,
+and authored effect FBOs remain single-sample, preserving their established render-graph semantics and
+memory profile. For counts above 1x, `FinPass` enables full per-sample fragment shading, samples the
+resolved scene texture independently at each sample position, writes a private multisample color
+attachment, and resolves into the existing single-sample swapchain/export image. The DMA-BUF,
+opaque-fd, SHM readback, and frame-capture contracts therefore remain unchanged. Pipeline multisample
+state, render-pass attachment descriptions, framebuffer attachments, and resolve state all derive from
+one selected sample count. This is final-output per-sample resampling, not full geometry MSAA: it can
+improve final scaling/subpixel sampling, but it does not recreate subpixel coverage already lost while
+the scene and authored effect graph were rendered into single-sample targets.
+
+Pure contract tests cover request clamping, feature-based 1x fallback, per-sample pipeline state, and the
+one- versus two-attachment render-pass plan. C and C++ ABI tests cover append-only layout, old-structure
+parsing, the new tail field, invalid dimensions, and unsupported ABI versions. A real Vulkan regression
+clears `_rt_default` to a known color, executes both the legacy 1x and selected MSAA final passes, copies
+the single-sample result back to the CPU, and requires identical center pixels. On the current AMD Radeon
+610M host, `sampleRateShading` is enabled, the `R8G8B8A8_UNORM` format mask is `0xf`, and the selected
+path is 4x. The same test presents a 24x12 image through a device initialized at 16x16, proving that the
+private MSAA color attachment is recreated for a changed output extent while the pipeline/render pass
+remains reusable.
+
 ## Migration rules
 
 1. A commit is not marked `DONE` from code similarity alone.
