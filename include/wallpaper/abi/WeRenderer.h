@@ -20,6 +20,12 @@ typedef enum we_frame_kind_v1 {
     WE_FRAME_KIND_SHM    = 2,
 } we_frame_kind_v1;
 
+typedef enum we_fill_mode_v1 {
+    WE_FILL_MODE_STRETCH = 0,
+    WE_FILL_MODE_ASPECT_FIT = 1,
+    WE_FILL_MODE_ASPECT_CROP = 2,
+} we_fill_mode_v1;
+
 typedef enum we_input_event_type_v2 {
     WE_INPUT_POINTER_MOVE = 0,
     WE_INPUT_POINTER_DOWN = 1,
@@ -97,6 +103,12 @@ typedef struct we_render_config_v1 {
     // counts or devices without sample-rate shading fall back to 1x. Web/video return NotSupported
     // for values above 1.
     uint32_t msaa_samples;
+    // Optional scene framing mode. Omitted fields preserve the legacy Aspect Crop default.
+    we_fill_mode_v1 fill_mode;
+    // Optional clockwise display transform for the exported frame. The producer leaves the
+    // pixels in their render orientation; consumers apply this transform when presenting them.
+    // Valid values are 0, 90, 180, and 270. Omitted fields preserve 0 degrees.
+    uint32_t rotation_degrees;
 } we_render_config_v1;
 
 WE_RENDERER_API we_session_t* we_session_create(void);

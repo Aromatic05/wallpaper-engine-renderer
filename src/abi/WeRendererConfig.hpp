@@ -17,6 +17,8 @@ struct RendererRenderConfig {
     bool          prefer_dmabuf { false };
     bool          allow_shm_fallback { false };
     std::uint32_t msaa_samples { 1 };
+    we_fill_mode_v1 fill_mode { WE_FILL_MODE_ASPECT_CROP };
+    std::uint32_t rotation_degrees { 0 };
 };
 
 inline bool RendererRenderConfigHasField(const we_render_config_v1* config,
@@ -63,6 +65,30 @@ inline std::optional<RendererRenderConfig> ParseRendererRenderConfig(
                                      sizeof(config->msaa_samples)) &&
         config->msaa_samples > 1) {
         result.msaa_samples = config->msaa_samples;
+    }
+    if (RendererRenderConfigHasField(config,
+                                     offsetof(we_render_config_v1, fill_mode),
+                                     sizeof(config->fill_mode))) {
+        if (config->fill_mode != WE_FILL_MODE_STRETCH &&
+            config->fill_mode != WE_FILL_MODE_ASPECT_FIT &&
+            config->fill_mode != WE_FILL_MODE_ASPECT_CROP) {
+            return std::nullopt;
+        }
+        result.fill_mode = config->fill_mode;
+    }
+    if (RendererRenderConfigHasField(config,
+                                     offsetof(we_render_config_v1, rotation_degrees),
+                                     sizeof(config->rotation_degrees))) {
+        switch (config->rotation_degrees) {
+        case 0:
+        case 90:
+        case 180:
+        case 270:
+            result.rotation_degrees = config->rotation_degrees;
+            break;
+        default:
+            return std::nullopt;
+        }
     }
     return result;
 }

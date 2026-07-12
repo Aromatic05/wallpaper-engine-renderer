@@ -231,6 +231,11 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
 
     switch (state->sourceType) {
     case wallpaper::BackendType::WEScene: {
+        auto fill_mode_result = wallpaper::SetWESceneFillMode(
+            *state->session, static_cast<std::int32_t>(parsed_config->fill_mode));
+        if (! fill_mode_result) {
+            return to_error_with_diagnostic(state, "abi.render-config.fill-mode", fill_mode_result);
+        }
         auto binding_result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
         if (! binding_result) return 1;
         state->binding = binding_result.value();
