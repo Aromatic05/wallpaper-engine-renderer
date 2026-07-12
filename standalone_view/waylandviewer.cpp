@@ -17,7 +17,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <string>
@@ -28,6 +30,43 @@
 #include "xdg-shell-client-protocol.h"
 
 namespace {
+
+bool readTextFile(const std::string& path, std::string& content, std::string& error) {
+    std::ifstream input(path, std::ios::binary);
+    if (! input) {
+        error = "failed to open " + path;
+        return false;
+    }
+    content.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    if (! input.eof() && input.fail()) {
+        error = "failed to read " + path;
+        return false;
+    }
+    if (content.empty()) {
+        error = path + " is empty";
+        return false;
+    }
+    return true;
+}
+
+void printSessionDiagnostics(we_session_t* session, const char* context) {
+    if (session == nullptr) return;
+    std::uint32_t required { 0 };
+    if (we_session_get_diagnostics_json(session, nullptr, &required) != 0 || required <= 1) return;
+    std::vector<char> diagnostics(required, '\0');
+    std::uint32_t actual = required;
+    if (we_session_get_diagnostics_json(session, diagnostics.data(), &actual) != 0) return;
+    std::fprintf(stderr,
+                 "sceneviewer diagnostics%s%s: %s\n",
+                 context != nullptr ? " after " : "",
+                 context != nullptr ? context : "",
+                 diagnostics.data());
+}
+
+void reportAbiFailure(we_session_t* session, const char* operation, std::int32_t result) {
+    std::fprintf(stderr, "sceneviewer: %s failed: %d\n", operation, result);
+    printSessionDiagnostics(session, operation);
+}
 
 bool envVarEnabled(const char* name) {
     const char* value = std::getenv(name);
@@ -91,6 +130,9 @@ struct WaylandState {
     std::uint32_t           surface_height { 0 };
     double                  pointer_x { 0.0 };
     double                  pointer_y { 0.0 };
+    bool                    fixed_pointer_position { false };
+    float                   fixed_pointer_x { 0.0f };
+    float                   fixed_pointer_y { 0.0f };
     we_session_t*           session { nullptr };
     std::vector<std::unique_ptr<WaylandBuffer>> in_flight_buffers;
     DmabufFeedbackState     surface_feedback;
@@ -192,6 +234,17 @@ constexpr wl_buffer_listener kBufferListener {
     .release = onWlBufferRelease,
 };
 
+bool sendPointerMove(WaylandState& state, float x, float y) {
+    if (state.session == nullptr) return false;
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = WE_INPUT_POINTER_MOVE;
+    event.pointer_x = x;
+    event.pointer_y = y;
+    return we_session_send_input_event(state.session, &event) == 0;
+}
+
 void onPointerEnter(void* data,
                     wl_pointer* /*pointer*/,
                     std::uint32_t /*serial*/,
@@ -199,7 +252,7 @@ void onPointerEnter(void* data,
                     wl_fixed_t sx,
                     wl_fixed_t sy) {
     auto* state = static_cast<WaylandState*>(data);
-    if (! state) return;
+    if (! state || state->fixed_pointer_position) return;
     state->pointer_x = wl_fixed_to_double(sx);
     state->pointer_y = wl_fixed_to_double(sy);
 }
@@ -216,16 +269,16 @@ void onPointerMotion(void* data,
                      wl_fixed_t sy) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state || ! state->session || state->surface_width == 0 || state->surface_height == 0) return;
+    if (state->fixed_pointer_position) {
+        sendPointerMove(*state, state->fixed_pointer_x, state->fixed_pointer_y);
+        return;
+    }
 
     state->pointer_x = wl_fixed_to_double(sx);
     state->pointer_y = wl_fixed_to_double(sy);
-    we_input_event_v2 event {};
-    event.size = sizeof(event);
-    event.version = 2;
-    event.type = WE_INPUT_POINTER_MOVE;
-    event.pointer_x = static_cast<float>(state->pointer_x / state->surface_width);
-    event.pointer_y = static_cast<float>(state->pointer_y / state->surface_height);
-    we_session_send_input_event(state->session, &event);
+    sendPointerMove(*state,
+                    static_cast<float>(state->pointer_x / state->surface_width),
+                    static_cast<float>(state->pointer_y / state->surface_height));
 }
 
 void onPointerButton(void* data,
@@ -244,8 +297,12 @@ void onPointerButton(void* data,
     event.type = button_state == WL_POINTER_BUTTON_STATE_PRESSED
         ? WE_INPUT_POINTER_DOWN
         : WE_INPUT_POINTER_UP;
-    event.pointer_x = static_cast<float>(state->pointer_x / state->surface_width);
-    event.pointer_y = static_cast<float>(state->pointer_y / state->surface_height);
+    event.pointer_x = state->fixed_pointer_position
+        ? state->fixed_pointer_x
+        : static_cast<float>(state->pointer_x / state->surface_width);
+    event.pointer_y = state->fixed_pointer_position
+        ? state->fixed_pointer_y
+        : static_cast<float>(state->pointer_y / state->surface_height);
     event.button = 0;
     we_session_send_input_event(state->session, &event);
 }
@@ -649,7 +706,18 @@ int main(int argc, char** argv) {
         return err.empty() ? 0 : 1;
     }
 
+    std::string user_properties_json;
+    if (! args.user_properties_path.empty()
+        && ! readTextFile(args.user_properties_path, user_properties_json, err)) {
+        std::cerr << "error: " << err << "\n";
+        return 1;
+    }
+    const std::string source_options = buildSourceOptionsJson(args, user_properties_json);
+
     WaylandState wayland;
+    wayland.fixed_pointer_position = args.fixed_mouse_position;
+    wayland.fixed_pointer_x = args.mouse_x;
+    wayland.fixed_pointer_y = args.mouse_y;
     if (! initWayland(wayland, static_cast<std::uint32_t>(args.width), static_cast<std::uint32_t>(args.height))) {
         destroyWayland(wayland);
         return 1;
@@ -666,16 +734,21 @@ int main(int argc, char** argv) {
     wayland.session = session;
 
     we_source_v1 source {};
-    // Only advertise fields up through fps. Passing sizeof(we_source_v1) while leaving the
-    // append-only tail zero-initialized would explicitly force speed=0 and volume=0, which
-    // freezes scene animation and silences audio compared to the historical standalone viewer.
-    source.size       = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
-    source.version    = 1;
-    source.uri        = args.uri.c_str();
+    source.size = source_options.empty()
+        ? static_cast<std::uint32_t>(offsetof(we_source_v1, speed))
+        : static_cast<std::uint32_t>(sizeof(source));
+    source.version = 1;
+    source.uri = args.uri.c_str();
     source.assets_uri = args.assets_uri.c_str();
-    source.fps        = args.fps;
+    source.fps = args.fps;
+    if (! source_options.empty()) {
+        source.speed = 1.0f;
+        source.volume = 1.0f;
+        source.muted = false;
+        source.options_json = source_options.c_str();
+    }
     if (const std::int32_t r = we_session_set_source(session, &source); r != 0) {
-        std::cerr << "we_session_set_source failed: " << r << "\n";
+        reportAbiFailure(session, "we_session_set_source", r);
         we_session_destroy(session);
         destroyWayland(wayland);
         return 1;
@@ -686,6 +759,7 @@ int main(int argc, char** argv) {
     config.version       = 1;
     config.width         = static_cast<std::uint32_t>(args.width);
     config.height        = static_cast<std::uint32_t>(args.height);
+    config.enable_valid_layer = args.enable_valid_layer;
     config.prefer_dmabuf = !args.force_shm;
     config.allow_shm_fallback = true;
     config.msaa_samples = args.msaa_samples;
@@ -705,21 +779,28 @@ int main(int argc, char** argv) {
                 }
             }
             if (! found_supported_modifier) {
-            std::fprintf(stderr,
-                         "sceneviewer: no explicit dmabuf modifiers from feedback for ABGR8888, forcing SHM fallback\n");
+                std::fprintf(stderr,
+                             "sceneviewer: no explicit dmabuf modifiers from feedback for ABGR8888, forcing SHM fallback\n");
                 config.prefer_dmabuf = false;
             }
         }
     }
     if (const std::int32_t r = we_session_set_render_config(session, &config); r != 0) {
-        std::cerr << "we_session_set_render_config failed: " << r << "\n";
+        reportAbiFailure(session, "we_session_set_render_config", r);
         we_session_destroy(session);
         destroyWayland(wayland);
         return 1;
     }
 
     if (const std::int32_t r = we_session_play(session); r != 0) {
-        std::cerr << "we_session_play failed: " << r << "\n";
+        reportAbiFailure(session, "we_session_play", r);
+        we_session_destroy(session);
+        destroyWayland(wayland);
+        return 1;
+    }
+    if (wayland.fixed_pointer_position
+        && ! sendPointerMove(wayland, wayland.fixed_pointer_x, wayland.fixed_pointer_y)) {
+        reportAbiFailure(session, "we_session_send_input_event", -1);
         we_session_destroy(session);
         destroyWayland(wayland);
         return 1;
@@ -734,8 +815,13 @@ int main(int argc, char** argv) {
     constexpr auto kPollInterval = std::chrono::milliseconds(5);
 
     while (wayland.running) {
-        if (we_session_tick(session) != 0) {
-            std::fprintf(stderr, "sceneviewer: we_session_tick failed\n");
+        if (const std::int32_t tick_result = we_session_tick(session); tick_result != 0) {
+            reportAbiFailure(session, "we_session_tick", tick_result);
+            break;
+        }
+        if (wayland.fixed_pointer_position
+            && ! sendPointerMove(wayland, wayland.fixed_pointer_x, wayland.fixed_pointer_y)) {
+            reportAbiFailure(session, "we_session_send_input_event", -1);
             break;
         }
 
@@ -751,7 +837,7 @@ int main(int argc, char** argv) {
         } else if (acquire_result == 1) {
             ++no_frame_polls;
         } else {
-            std::fprintf(stderr, "sceneviewer: we_session_acquire_frame failed: %d\n", acquire_result);
+            reportAbiFailure(session, "we_session_acquire_frame", acquire_result);
         }
 
         bool flush_blocked = false;
@@ -814,6 +900,7 @@ int main(int argc, char** argv) {
     }
 
     we_session_stop(session);
+    if (args.print_diagnostics) printSessionDiagnostics(session, "viewer shutdown");
     we_session_destroy(session);
     destroyWayland(wayland);
     std::cout << "sceneviewer: presented " << presented << " frame(s) of " << acquired << " acquired\n";

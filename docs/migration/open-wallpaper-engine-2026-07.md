@@ -364,9 +364,13 @@ identical to the legacy path.
 The generic ABI rejects values above 1 for Web and Video backends with `NotSupported`; those output
 pipelines do not use the scene renderer's `FinPass`, so silently accepting the option would be false
 capability advertising.
-The standalone Wayland viewer exposes the same field as `--msaa N`; its parser requires a positive
-integer and defaults to 1x, so command-line behavior cannot accidentally depend on a zero-initialized
-new ABI tail.
+The standalone Wayland viewer maps every product-facing control through the C ABI. `--user-properties
+FILE` and `--graphviz FILE` build versioned `options_json`; `--valid-layer` and `--msaa N` populate the
+append-only render config; `--mouse-position X,Y` sends normalized pointer events and prevents real
+pointer callbacks from overriding the locked coordinates; `--diagnostics` reads and prints structured
+diagnostics JSON. The viewer never includes scene-runtime, RenderGraph, or user-property implementation
+types. Its parser validates positive MSAA counts and normalized pointer coordinates before creating a
+session.
 
 MSAA is deliberately confined to `FinPass`. Scene render targets, text bridges, model depth, particles,
 and authored effect FBOs remain single-sample, preserving their established render-graph semantics and
