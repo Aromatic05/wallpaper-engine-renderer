@@ -400,6 +400,30 @@ target_compile_options(texture-output-contract-test PRIVATE ${warn_opts} -UNDEBU
 add_test(NAME texture-output-contract-test COMMAND texture-output-contract-test)
 
 add_executable(
+  output-resize-integration-test
+  output/output_resize_integration_test.cpp)
+
+target_link_libraries(output-resize-integration-test PRIVATE wallpaper-engine-renderer-internal "$<LINK_GROUP:RESCAN,wpVulkanRender,wpSceneBackend>")
+target_include_directories(
+  output-resize-integration-test PRIVATE
+  ..
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../render/rendergraph/include
+  ../render/vulkan/include
+  ../render/vulkanrender
+  ../render/vulkanrender/include)
+target_compile_options(output-resize-integration-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME output-resize-integration-test COMMAND output-resize-integration-test)
+
+add_executable(
   final-output-msaa-test
   output/final_output_msaa_test.cpp)
 

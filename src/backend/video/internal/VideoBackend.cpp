@@ -385,6 +385,8 @@ VideoBackend::VideoBackend(const BackendContext& context)
             return Result<void>::failure(ResultCode::InvalidArgument,
                                          "video render plan requires a VideoOutputBinding");
         }
+        if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
+        m_frameSwapchain.reset();
         m_renderBinding = std::move(binding);
         const auto& renderInfo = m_renderBinding->renderInitInfo();
         m_preferredPipelineMode = renderInfo.export_mode == ExternalFrameExportMode::SHM

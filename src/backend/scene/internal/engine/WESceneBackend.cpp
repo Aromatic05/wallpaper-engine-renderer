@@ -33,16 +33,9 @@ public:
             }
         }
 
-        // Set the binding before posting initialization. The render looper may
-        // process CMD_INIT_VULKAN immediately after it is posted, so doing this
-        // afterwards can leave the binding permanently detached.
-        m_runtimeDriver.deferBindingAttach(binding);
-        m_runtimeDriver.initVulkan(binding->renderInitInfo());
-        // attachSwapchain is deferred: initVulkan is async (posts
-        // CMD_INIT_VULKAN to the render looper), and the ex_swapchain
-        // is created only when that message is processed. The render
-        // handler will call binding->attachSwapchain once m_render->init
-        // returns and the swapchain actually exists.
+        // Output initialization and later resize/rebind requests are serialized on the render
+        // looper. The handler attaches the selected swapchain only after creation succeeds.
+        m_runtimeDriver.bindOutput(binding, binding->renderInitInfo());
         return Result<void>::success();
     }
 

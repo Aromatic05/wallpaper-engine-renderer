@@ -161,6 +161,15 @@ int main() {
     assert(mock->last_open_height == 480);
     assert(mock->last_workshop_dir == workshop.dir);
 
+
+    wallpaper::RenderInitInfo resizedInfo = info;
+    resizedInfo.width = 1024;
+    resizedInfo.height = 768;
+    auto resizedBinding = wallpaper::MakeWebOutputBinding(resizedInfo);
+    assert(session->bindOutput(wallpaper::MakeWebOutputTarget(resizedBinding)));
+    assert(mock->resize_w == 1024);
+    assert(mock->resize_h == 768);
+
     // Start should not advertise a frame until CEF has delivered one.
     auto startupLifecycle = backend->tick();
     assert(startupLifecycle);

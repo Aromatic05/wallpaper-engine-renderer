@@ -220,6 +220,7 @@ struct VulkanRender::Impl {
     ~Impl() = default;
 
     bool init(RenderInitInfo);
+    bool resizeOutput(std::uint16_t width, std::uint16_t height);
     void destroy();
 
     void drawFrame(Scene&);
@@ -261,6 +262,7 @@ struct VulkanRender::Impl {
 
     std::unique_ptr<FinPass> m_testpass { nullptr };
     ReDrawCB                 m_redraw_cb;
+    RenderInitInfo            m_render_init_info;
 
     std::unique_ptr<StagingBuffer> m_vertex_buf { nullptr };
     std::unique_ptr<StagingBuffer> m_dyn_buf { nullptr };
@@ -303,6 +305,9 @@ VulkanRender::~VulkanRender() {};
 bool VulkanRender::inited() const { return pImpl->m_inited; }
 
 bool VulkanRender::init(RenderInitInfo info) { return pImpl->init(info); }
+bool VulkanRender::resizeOutput(std::uint16_t width, std::uint16_t height) {
+    return pImpl->resizeOutput(width, height);
+}
 void VulkanRender::destroy() { pImpl->destroy(); }
 void VulkanRender::drawFrame(Scene& scene) { pImpl->drawFrame(scene); };
 void VulkanRender::setPaused(bool paused) { pImpl->setPaused(paused); };
@@ -336,6 +341,7 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     if (m_inited) return true;
 
     m_redraw_cb = info.redraw_callback;
+    m_render_init_info = info;
     VkExtent2D extent { info.width, info.height };
     if (extent.width * extent.height < 500 * 500) {
         LOG_ERROR("too small swapchain image size: %dx%d", extent.width, extent.height);
@@ -499,6 +505,67 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
 
     m_inited = true;
     return m_inited;
+}
+
+
+bool VulkanRender::Impl::resizeOutput(std::uint16_t width, std::uint16_t height) {
+    if (! m_inited || ! m_device || m_with_surface || width == 0 || height == 0) return false;
+    const VkExtent2D next_extent { width, height };
+    if (m_device->out_extent().width == next_extent.width
+        && m_device->out_extent().height == next_extent.height) {
+        return true;
+    }
+
+    std::unique_ptr<VulkanExSwapchain> next_ex_swapchain;
+    std::unique_ptr<ShmFrameSwapchain> next_shm_swapchain;
+    const auto create_shm_readback_swapchains = [&]() {
+        next_ex_swapchain = CreateExSwapchain(*m_device,
+                                              next_extent.width,
+                                              next_extent.height,
+                                              VK_IMAGE_TILING_OPTIMAL,
+                                              ExternalFrameExportMode::OPAQUE_FD,
+                                              m_render_init_info.export_drm_fourcc,
+                                              m_render_init_info.export_drm_modifiers);
+        if (! next_ex_swapchain) return false;
+        next_shm_swapchain =
+            std::make_unique<ShmFrameSwapchain>(next_extent.width, next_extent.height);
+        return static_cast<bool>(next_shm_swapchain);
+    };
+
+    if (m_render_init_info.export_mode == ExternalFrameExportMode::SHM) {
+        if (! create_shm_readback_swapchains()) return false;
+    } else {
+        next_ex_swapchain = CreateExSwapchain(
+            *m_device,
+            next_extent.width,
+            next_extent.height,
+            m_render_init_info.offscreen_tiling == TexTiling::OPTIMAL ? VK_IMAGE_TILING_OPTIMAL
+                                                                      : VK_IMAGE_TILING_LINEAR,
+            m_render_init_info.export_mode,
+            m_render_init_info.export_drm_fourcc,
+            m_render_init_info.export_drm_modifiers);
+        if (! next_ex_swapchain
+            && m_render_init_info.export_mode == ExternalFrameExportMode::DMA_BUF
+            && m_render_init_info.allow_shm_fallback) {
+            if (! create_shm_readback_swapchains()) return false;
+        }
+    }
+    if (! next_ex_swapchain) return false;
+    if (! checkVkResult(m_device->handle().WaitIdle(), "wait device idle before output resize")) {
+        return false;
+    }
+
+    m_ex_swapchain = std::move(next_ex_swapchain);
+    m_shm_swapchain = std::move(next_shm_swapchain);
+    m_device->set_out_extent(next_extent);
+    m_render_init_info.width = width;
+    m_render_init_info.height = height;
+    if (m_finpass) {
+        m_finpass->setPresentFormat(m_ex_swapchain->format());
+        m_finpass->setPresentLayout(VK_IMAGE_LAYOUT_GENERAL);
+        m_finpass->setPresentQueueIndex(VK_QUEUE_FAMILY_EXTERNAL);
+    }
+    return true;
 }
 
 bool VulkanRender::Impl::isDeviceFaultResult(VkResult result) const {

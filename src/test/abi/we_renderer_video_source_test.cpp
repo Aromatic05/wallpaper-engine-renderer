@@ -75,6 +75,8 @@ int main() {
     shm_config.prefer_dmabuf = false;
     shm_config.allow_shm_fallback = true;
     assert(we_session_set_render_config(session, &shm_config) == 0);
+    assert(we_session_resize_output(session, 1024, 768) == 0);
+    assert(we_session_resize_output(session, 0, 768) == -1);
 
     we_render_config_v1 msaa_config = shm_config;
     msaa_config.msaa_samples = 4;

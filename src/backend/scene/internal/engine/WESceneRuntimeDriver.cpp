@@ -362,7 +362,7 @@ class RenderHandler : public looper::Handler {
 public:
     enum class CMD
     {
-        CMD_INIT_VULKAN,
+        CMD_BIND_OUTPUT,
         CMD_SET_SCENE,
         CMD_SET_FILLMODE,
         CMD_SET_SPEED,
@@ -405,7 +405,7 @@ public:
                 CASE_CMD(APPLY_AUDIO_SAMPLES);
                 CASE_CMD(APPLY_MEDIA_STATE);
                 CASE_CMD(CAPTURE_FRAME);
-                CASE_CMD(INIT_VULKAN);
+                CASE_CMD(BIND_OUTPUT);
             default: break;
             }
         }
@@ -414,10 +414,6 @@ public:
     ExSwapchain* exSwapchain() const { return m_render->exSwapchain(); }
 
     bool renderInited() const { return m_render->inited(); }
-
-    void setPendingBinding(std::weak_ptr<WESceneOutputBinding> binding) {
-        m_pending_binding = std::move(binding);
-    }
 
     double textRenderScale() const { return std::max(1.0, m_render_scale); }
 
@@ -609,26 +605,51 @@ private:
 #endif
         m_scene->userProperties = *user_properties;
     }
-    MHANDLER_CMD(INIT_VULKAN) {
+    MHANDLER_CMD(BIND_OUTPUT) {
         std::shared_ptr<RenderInitInfo> info;
-        if (msg->findObject("info", &info)) {
-            m_render_scale = std::max(1.0, info->render_scale);
-            m_render_width = static_cast<int32_t>(info->width);
-            m_render_height = static_cast<int32_t>(info->height);
-            m_render->init(*info);
-
-            // m_ex_swapchain is created inside m_render->init above; the
-            // synchronous attach at bindOutput() time was always null.
-            // Hand it off to the binding now that it actually exists.
-            if (auto binding = m_pending_binding.lock()) {
-                if (auto* sc = m_render->exSwapchain()) {
-                    binding->attachSwapchain(sc);
-                }
-            }
-
-            // inited, callback to laod scene
-            main_handler.sendCmdLoadScene();
+        std::shared_ptr<WESceneOutputBinding> binding;
+        if (! msg->findObject("info", &info) || ! info
+            || ! msg->findObject("binding", &binding) || ! binding) {
+            return;
         }
+
+        m_render_scale = std::max(1.0, info->render_scale);
+        const bool first_bind = ! m_render->inited();
+        bool output_ready = false;
+        if (first_bind) {
+            output_ready = m_render->init(*info);
+        } else {
+            if (auto previous = m_output_binding.lock()) previous->attachSwapchain(nullptr);
+            output_ready = m_render->resizeOutput(info->width, info->height);
+        }
+
+        if (! output_ready || m_render->exSwapchain() == nullptr) {
+            binding->attachSwapchain(m_render->exSwapchain());
+            m_output_binding = binding;
+            LOG_ERROR("failed to bind scene output extent=%ux%u",
+                      static_cast<unsigned>(info->width),
+                      static_cast<unsigned>(info->height));
+            return;
+        }
+
+        m_output_binding = binding;
+        binding->attachSwapchain(m_render->exSwapchain());
+        m_render_width = static_cast<int32_t>(info->width);
+        m_render_height = static_cast<int32_t>(info->height);
+
+        if (! first_bind && m_scene) {
+#if WP_ENABLE_SCENESCRIPT_RUNTIME
+            if (m_scene->scriptHost) {
+                m_scene->scriptHost->ResizeScreen(m_render_width, m_render_height);
+            }
+#endif
+            if (m_rg) {
+                m_render->compileRenderGraph(*m_scene, *m_rg, true);
+                m_scene->ClearRenderGraphDirty();
+            }
+            m_render->UpdateCameraFillMode(*m_scene, m_fillmode);
+        }
+        if (first_bind) main_handler.sendCmdLoadScene();
     }
 
 public:
@@ -646,7 +667,7 @@ private:
     std::unique_ptr<vulkan::VulkanRender> m_render;
     std::unique_ptr<rg::RenderGraph>      m_rg { nullptr };
 
-    std::weak_ptr<WESceneOutputBinding>    m_pending_binding;
+    std::weak_ptr<WESceneOutputBinding>    m_output_binding;
 
     FillMode m_fillmode { FillMode::ASPECTCROP };
 
@@ -679,17 +700,14 @@ bool WESceneRuntimeDriver::inited() const { return m_main_handler->inited(); }
 
 bool WESceneRuntimeDriver::init() { return m_main_handler->init(); }
 
-void WESceneRuntimeDriver::initVulkan(const RenderInitInfo& info) {
-    m_offscreen                             = info.offscreen;
-    std::shared_ptr<RenderInitInfo> sp_info = std::make_shared<RenderInitInfo>(info);
-    auto                            msg =
-        CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_INIT_VULKAN);
-    msg->setObject("info", sp_info);
+void WESceneRuntimeDriver::bindOutput(
+    const std::shared_ptr<WESceneOutputBinding>& binding,
+    const RenderInitInfo& renderInitInfo) {
+    m_offscreen = renderInitInfo.offscreen;
+    auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_BIND_OUTPUT);
+    msg->setObject("info", std::make_shared<RenderInitInfo>(renderInitInfo));
+    msg->setObject("binding", binding);
     msg->post();
-}
-
-void WESceneRuntimeDriver::deferBindingAttach(std::weak_ptr<WESceneOutputBinding> binding) {
-    m_main_handler->renderHandler()->setPendingBinding(std::move(binding));
 }
 
 void WESceneRuntimeDriver::play() {

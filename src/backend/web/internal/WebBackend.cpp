@@ -50,10 +50,15 @@ WebBackend::WebBackend(const BackendContext&              context,
             return Result<void>::failure(ResultCode::InvalidArgument,
                                          "web render plan requires a WebOutputBinding");
         }
+        if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
+        m_frameSwapchain.reset();
         m_renderBinding = std::move(binding);
         const auto& renderInfo = m_renderBinding->renderInitInfo();
         m_frameSwapchain = std::make_unique<WebFrameSwapchain>(renderInfo.width, renderInfo.height);
         m_renderBinding->attachSwapchain(m_frameSwapchain.get());
+        if (m_browserHost) {
+            m_browserHost->OnResize(renderInfo.width, renderInfo.height);
+        }
         shared->outputBound.store(true);
         shared->outputStateChanged.store(true);
         if (shared->readyState.load() == BackendReadyState::Loaded) {

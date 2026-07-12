@@ -25,6 +25,7 @@ public:
     ~VulkanRender();
 
     bool init(RenderInitInfo);
+    bool resizeOutput(std::uint16_t width, std::uint16_t height);
 
     void destroy();
 

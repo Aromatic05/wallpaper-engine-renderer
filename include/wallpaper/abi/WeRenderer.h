@@ -164,6 +164,9 @@ WE_RENDERER_API void          we_session_destroy(we_session_t* session);
 WE_RENDERER_API int32_t we_session_set_source(we_session_t* session, const we_source_v1* source);
 WE_RENDERER_API int32_t we_session_set_render_config(we_session_t* session,
                                                      const we_render_config_v1* config);
+WE_RENDERER_API int32_t we_session_resize_output(we_session_t* session,
+                                               uint32_t width,
+                                               uint32_t height);
 WE_RENDERER_API int32_t we_session_set_user_properties_json(we_session_t* session,
                                                             const char* properties_json);
 WE_RENDERER_API int32_t we_session_apply_runtime_settings(

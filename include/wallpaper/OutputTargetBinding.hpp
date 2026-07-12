@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 namespace wallpaper
 {
 
@@ -30,11 +31,13 @@ public:
 
 protected:
     void attachTextureSwapchain(ExSwapchain* swapchain) {
-        m_textureSwapchain.store(swapchain, std::memory_order_release);
+        std::scoped_lock lock(m_textureSwapchainMutex);
+        m_textureSwapchain = swapchain;
     }
 
 private:
-    std::atomic<ExSwapchain*> m_textureSwapchain { nullptr };
+    mutable std::mutex       m_textureSwapchainMutex;
+    ExSwapchain*             m_textureSwapchain { nullptr };
     std::atomic<std::uint64_t> m_textureRevision { 0 };
 };
 

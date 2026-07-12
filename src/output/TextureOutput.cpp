@@ -69,7 +69,8 @@ bool TextureFrame::valid() const {
 
 
 Result<TextureFrame> OutputTargetBinding::acquireTexture() {
-    auto* swapchain = m_textureSwapchain.load(std::memory_order_acquire);
+    std::scoped_lock lock(m_textureSwapchainMutex);
+    auto* swapchain = m_textureSwapchain;
     if (swapchain == nullptr) {
         return Result<TextureFrame>::failure(ResultCode::InvalidState,
                                              "output binding has no attached texture swapchain");

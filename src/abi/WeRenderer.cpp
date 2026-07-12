@@ -135,6 +135,53 @@ wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     return out;
 }
 
+
+wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_output(
+    WeSessionState* state) {
+    if (! state || ! state->session) {
+        return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::failure(
+            wallpaper::ResultCode::InvalidState,
+            "renderer session is not initialized");
+    }
+
+    switch (state->sourceType) {
+    case wallpaper::BackendType::WEScene: {
+        auto result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
+        if (! result) {
+            return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
+                result.error());
+        }
+        return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
+            std::static_pointer_cast<wallpaper::OutputTargetBinding>(result.value()));
+    }
+    case wallpaper::BackendType::Web: {
+        auto binding = wallpaper::MakeWebOutputBinding(state->renderInitInfo);
+        auto result = state->session->bindOutput(wallpaper::MakeWebOutputTarget(binding));
+        if (! result) {
+            return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
+                result.error());
+        }
+        return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
+            std::move(binding));
+    }
+    case wallpaper::BackendType::Video: {
+        auto binding = wallpaper::MakeVideoOutputBinding(state->renderInitInfo);
+        auto result = state->session->bindOutput(wallpaper::MakeVideoOutputTarget(binding));
+        if (! result) {
+            return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
+                result.error());
+        }
+        return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
+            std::move(binding));
+    }
+    case wallpaper::BackendType::Image:
+        break;
+    }
+    return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::failure(
+        wallpaper::ResultCode::NotSupported,
+        "source backend does not expose a texture output");
+}
+
 bool move_texture_frame_to_abi(wallpaper::TextureFrame frame, we_frame_v1* out_frame) {
     if (! out_frame || ! frame.valid()) return false;
     if (frame.shmSize > std::numeric_limits<std::uint32_t>::max()) return false;
@@ -249,46 +296,35 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     state->renderInitInfo.render_scale = 1.0;
     state->renderInitInfo.msaa_samples = parsed_config->msaa_samples;
 
-    switch (state->sourceType) {
-    case wallpaper::BackendType::WEScene: {
-        auto fill_mode_result = wallpaper::SetWESceneFillMode(
-            *state->session, scene_fill_mode(parsed_config->fill_mode));
-        if (! fill_mode_result) {
-            return to_error_with_diagnostic(state, "abi.render-config.fill-mode", fill_mode_result);
-        }
-        auto binding_result = wallpaper::BindWESceneOutput(*state->session, state->renderInitInfo);
-        if (! binding_result) return 1;
-        state->binding = binding_result.value();
-        return 0;
+    auto bindingResult = bind_current_output(state);
+    if (! bindingResult) {
+        return to_error_with_diagnostic(state, "abi.render-config.output", bindingResult);
     }
-    case wallpaper::BackendType::Web: {
-        auto binding = wallpaper::MakeWebOutputBinding(state->renderInitInfo);
-        wallpaper::OutputTarget target {};
-        target.type    = wallpaper::OutputTargetType::Offscreen;
-        target.binding = binding;
-        target.width   = state->renderInitInfo.width;
-        target.height  = state->renderInitInfo.height;
-        auto bindResult = state->session->bindOutput(target);
-        if (! bindResult) return 1;
-        state->binding = std::move(binding);
-        return 0;
-    }
-    case wallpaper::BackendType::Video: {
-        auto binding = wallpaper::MakeVideoOutputBinding(state->renderInitInfo);
-        wallpaper::OutputTarget target {};
-        target.type = wallpaper::OutputTargetType::Offscreen;
-        target.binding = binding;
-        target.width = state->renderInitInfo.width;
-        target.height = state->renderInitInfo.height;
-        auto bindResult = state->session->bindOutput(target);
-        if (! bindResult) return 1;
-        state->binding = std::move(binding);
-        return 0;
-    }
-    default:
-        return 1;
-    }
+    state->binding = std::move(bindingResult.value());
+    return 0;
 }
+
+int32_t we_session_resize_output(we_session_t* session,
+                                 uint32_t width,
+                                 uint32_t height) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! state->sourceSet || ! state->binding) return -1;
+    if (width == 0 || height == 0 || width > std::numeric_limits<std::uint16_t>::max()
+        || height > std::numeric_limits<std::uint16_t>::max()) {
+        return -1;
+    }
+    if (state->renderInitInfo.width == width && state->renderInitInfo.height == height) return 0;
+
+    state->renderInitInfo.width = static_cast<std::uint16_t>(width);
+    state->renderInitInfo.height = static_cast<std::uint16_t>(height);
+    auto bindingResult = bind_current_output(state);
+    if (! bindingResult) {
+        return to_error_with_diagnostic(state, "abi.output.resize", bindingResult);
+    }
+    state->binding = std::move(bindingResult.value());
+    return 0;
+}
+
 int32_t we_session_set_user_properties_json(we_session_t* session,
                                             const char* properties_json) {
     auto* state = as_state(session);
