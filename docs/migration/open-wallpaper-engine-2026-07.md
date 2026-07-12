@@ -118,6 +118,17 @@ fixtures cover the cross-version field surface without requiring copyrighted wor
 object parsing now has one definition in `WPTextObject.cpp`; the duplicate archive definition in
 `WPTextLayer.cpp` was removed so link order can no longer select stale parsing behavior.
 
+`corpus-parser-probe` now provides the stable parser observation surface that the version manifest alone
+could not supply. Given a scene workshop directory or `project.json`, it resolves custom package names,
+sorts the package file table, summarizes the scene root/object kinds, parses every TEX header and MDL
+header, records valid MDL section stamps, separates unknown sections, and emits deterministic warnings.
+The JSON intentionally excludes absolute paths, timestamps, pointers, and cache-dependent ordering. A
+checked-in synthetic snapshot exercises PKGV0023, TEXB4/TEXS3, MDLV21, a known `MDLS` section, an unknown
+`MDZZ` section, malformed TEX diagnostics, and scene object summaries. `corpus-parser-probe <project>
+--compare <snapshot>` emits an RFC 6902 JSON Patch and exits nonzero when the current parser differs; the
+CTest contract also proves that a changed package version becomes a single `/package/version` replace
+operation.
+
 Consumed shader combo names now have one contract in `SpecTexs.hpp`: blend mode, bone count,
 skinning, sprite-sheet/NPOT handling, thick particle format, trail rendering, and lighting. Parser,
 model, particle, and effect code no longer duplicates those literals. Names that only become meaningful

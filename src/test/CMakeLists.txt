@@ -304,6 +304,41 @@ target_compile_options(corpus-manifest-test PRIVATE ${warn_opts})
 
 add_test(NAME corpus-manifest-test COMMAND corpus-manifest-test)
 
+add_library(
+  corpus-parser-probe-support STATIC
+  corpus/parser_probe.cpp)
+
+target_link_libraries(corpus-parser-probe-support PUBLIC wallpaper-engine-renderer-internal)
+target_include_directories(
+  corpus-parser-probe-support PUBLIC
+  .
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/scene/include
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../../third_party/nlohmann/include)
+target_compile_options(corpus-parser-probe-support PRIVATE ${warn_opts})
+
+add_executable(
+  corpus-parser-probe
+  corpus/parser_probe_main.cpp)
+target_link_libraries(corpus-parser-probe PRIVATE corpus-parser-probe-support)
+target_compile_options(corpus-parser-probe PRIVATE ${warn_opts})
+
+add_executable(
+  corpus-parser-probe-test
+  corpus/parser_probe_test.cpp)
+target_link_libraries(corpus-parser-probe-test PRIVATE corpus-parser-probe-support)
+target_compile_definitions(
+  corpus-parser-probe-test PRIVATE
+  WE_PARSER_PROBE_SNAPSHOT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/corpus/synthetic/parser_probe_snapshot.json")
+target_compile_options(corpus-parser-probe-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME corpus-parser-probe-test COMMAND corpus-parser-probe-test)
+
 add_executable(
   we-renderer-scene-options-test
   abi/we_renderer_scene_options_test.cpp)

@@ -1,0 +1,105 @@
+{
+  "models": [
+    {
+      "flags": 9,
+      "mdlv": 21,
+      "meshCount": 1,
+      "ok": true,
+      "path": "/models/test.mdl",
+      "sections": [
+        {
+          "payloadBytes": 2,
+          "type": "MDLS",
+          "version": 3
+        },
+        {
+          "payloadBytes": 1,
+          "type": "MDZZ",
+          "version": 1
+        }
+      ],
+      "vertexStride": 20
+    }
+  ],
+  "package": {
+    "entries": [
+      {
+        "path": "/materials/bad.tex",
+        "size": 3
+      },
+      {
+        "path": "/materials/good.tex",
+        "size": 160
+      },
+      {
+        "path": "/models/test.mdl",
+        "size": 52
+      },
+      {
+        "path": "/scene.json",
+        "size": 251
+      },
+      {
+        "path": "/unknown.bin",
+        "size": 3
+      }
+    ],
+    "fileCount": 5,
+    "version": "PKGV0023"
+  },
+  "project": {
+    "source": "scene.pkg",
+    "type": "scene"
+  },
+  "scene": {
+    "objectCount": 2,
+    "objectKinds": {
+      "image": 1,
+      "text": 1
+    },
+    "parsed": true,
+    "path": "/scene.json",
+    "rootKeys": [
+      "camera",
+      "general",
+      "objects"
+    ]
+  },
+  "schemaVersion": 1,
+  "textures": [
+    {
+      "error": "invalid or truncated TEXV/TEXI stamps",
+      "errorCode": 1,
+      "ok": false,
+      "path": "/materials/bad.tex"
+    },
+    {
+      "format": "RGBA8",
+      "height": 8,
+      "imageCount": 1,
+      "mapHeight": 8,
+      "mapWidth": 16,
+      "ok": true,
+      "path": "/materials/good.tex",
+      "sprite": true,
+      "spriteFrames": 1,
+      "texb": 4,
+      "texi": 1,
+      "texs": 3,
+      "texv": 5,
+      "videoPayload": true,
+      "width": 16
+    }
+  ],
+  "unknownSections": [
+    {
+      "model": "/models/test.mdl",
+      "payloadBytes": 1,
+      "type": "MDZZ",
+      "version": 1
+    }
+  ],
+  "warnings": [
+    "/materials/bad.tex: invalid or truncated TEXV/TEXI stamps"
+  ]
+}
