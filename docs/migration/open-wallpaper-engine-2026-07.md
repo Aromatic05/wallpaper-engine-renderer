@@ -345,6 +345,14 @@ move construction/assignment; both `SceneVertexArray` and `SceneIndexArray` star
 unassigned ID so moving a newly-created geometry buffer never reads indeterminate state. Shader metadata
 parsing normalizes malformed numeric literals such as `[0,01]` outside strings before JSON parsing.
 
+Dynamic empty layers are the attachment/transform container used by SceneScript. The dedicated dynamic
+layer regression creates such a parent, creates an image child with an authored effect chain, resolves
+the parent binding by name, and verifies that the effect bridge contributes its material to the live
+RenderGraph. Destruction removes both logical layers, runtime nodes, image/effect ownership, initial
+configuration, and graph passes before the same names are created again. Dynamic IDs may be reused after
+complete destruction; the contract is absence of stale resources and correct reconstruction, not global
+ID monotonicity.
+
 The media cluster keeps the local renderer pipeline rather than adopting upstream's device and bridge
 layout. A checked-in 64x64 two-frame H.264 fixture exercises real GStreamer playback. On the current AMD
 host, the requested VA path decodes to VAMemory, exports/imports the frame through DMA-BUF, records the GPU

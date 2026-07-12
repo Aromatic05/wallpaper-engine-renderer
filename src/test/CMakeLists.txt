@@ -1109,6 +1109,30 @@ if(WP_ENABLE_SCENESCRIPT_RUNTIME)
   add_test(NAME scenescript-host-test COMMAND scenescript-host-test)
 
   add_executable(
+    dynamic-layer-effect-test
+    scene/script/dynamic_layer_effect_test.cpp)
+
+  target_link_libraries(dynamic-layer-effect-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+  target_include_directories(
+    dynamic-layer-effect-test PRIVATE
+    ..
+    ../backend/scene/internal
+    ../backend/scene/internal/animation
+    ../backend/scene/internal/scene/include
+    ../backend/scene/internal/scenescript
+    ../backend/scene/internal/settings
+    ../backend/scene/internal/text
+    ../common
+    ../common/scene
+    ../common/utils/include
+    ../render/rendergraph/include
+    ../render/vulkan/include
+    ../../third_party/nlohmann/include)
+  target_compile_options(dynamic-layer-effect-test PRIVATE ${warn_opts} -UNDEBUG)
+
+  add_test(NAME dynamic-layer-effect-test COMMAND dynamic-layer-effect-test)
+
+  add_executable(
     scenescript-viewport-vector-test
     scene/script/scenescript_viewport_vector_test.cpp)
 
