@@ -21,9 +21,10 @@ typedef enum we_frame_kind_v1 {
 } we_frame_kind_v1;
 
 typedef enum we_fill_mode_v1 {
-    WE_FILL_MODE_STRETCH = 0,
-    WE_FILL_MODE_ASPECT_FIT = 1,
-    WE_FILL_MODE_ASPECT_CROP = 2,
+    // Keep zero-initialized render configs on the historical Aspect Crop default.
+    WE_FILL_MODE_ASPECT_CROP = 0,
+    WE_FILL_MODE_STRETCH = 1,
+    WE_FILL_MODE_ASPECT_FIT = 2,
 } we_fill_mode_v1;
 
 typedef enum we_input_event_type_v2 {

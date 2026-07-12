@@ -15,7 +15,7 @@ struct Args {
     int32_t     fps    { 15 };
     int32_t     width  { 1280 };
     int32_t     height { 720 };
-    uint32_t    fill_mode { 2 };
+    uint32_t    fill_mode { 0 };
     uint32_t    rotation_degrees { 0 };
 };
 
@@ -59,9 +59,9 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
         } else if (a == "--fill-mode") {
             std::string v;
             if (! needValue(i, v)) return false;
-            if (v == "stretch") args.fill_mode = 0;
-            else if (v == "fit") args.fill_mode = 1;
-            else if (v == "crop") args.fill_mode = 2;
+            if (v == "stretch") args.fill_mode = 1;
+            else if (v == "fit") args.fill_mode = 2;
+            else if (v == "crop") args.fill_mode = 0;
             else {
                 err = "--fill-mode expects stretch, fit, or crop";
                 return false;

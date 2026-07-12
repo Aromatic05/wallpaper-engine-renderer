@@ -231,8 +231,19 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
 
     switch (state->sourceType) {
     case wallpaper::BackendType::WEScene: {
+        std::int32_t scene_fill_mode = 2;
+        switch (parsed_config->fill_mode) {
+        case WE_FILL_MODE_STRETCH:
+            scene_fill_mode = 0;
+            break;
+        case WE_FILL_MODE_ASPECT_FIT:
+            scene_fill_mode = 1;
+            break;
+        case WE_FILL_MODE_ASPECT_CROP:
+            break;
+        }
         auto fill_mode_result = wallpaper::SetWESceneFillMode(
-            *state->session, static_cast<std::int32_t>(parsed_config->fill_mode));
+            *state->session, scene_fill_mode);
         if (! fill_mode_result) {
             return to_error_with_diagnostic(state, "abi.render-config.fill-mode", fill_mode_result);
         }
