@@ -4093,6 +4093,8 @@ void ProcessPendingSceneLayerDestroy(WPSceneScriptHost::Opaque* opaque) {
             // parser-backed authoritative text image left to unregister here.
             opaque->scene->textLayers.erase(text_it);
         }
+        opaque->scene->textPrimitives.erase(layer_id);
+        opaque->scene->dirtyTextLayerIds.erase(layer_id);
         opaque->scene->imageLayers.erase(layer_id);
         // Deferred runtime sets are lightweight ownership records for hidden placeholder layers.
         // Delete must clear every deferred kind together with the regular registries so a later

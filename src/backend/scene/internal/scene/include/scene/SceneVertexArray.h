@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string_view>
 #include <span>
+#include <limits>
 #include "core/MapSet.hpp"
 
 #include "core/Literals.hpp"
@@ -70,7 +71,6 @@ private:
     usize  m_oneSize { 0 };
     usize  m_size { 0 };
     usize  m_capacity { 0 };
-
-    uint32_t m_id;
+    uint32_t m_id { std::numeric_limits<uint32_t>::max() };
 };
 } // namespace wallpaper

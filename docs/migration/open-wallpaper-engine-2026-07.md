@@ -290,8 +290,8 @@ reshow retention, and direct-final effect ownership. No parallel `SceneNode` alp
 | `3198eff` | calendar text layer scripts | `DONE` | Cross-layer text writes rebuild the first-class text primitive, atlas, and auto-sized layout immediately. |
 | `a66f60d` | looped texture frames | `REVIEW` | Local GStreamer loop boundary test. |
 | `08da17e` | hardware video textures | `REVIEW` | Compare behavior, keep local VA/CUDA/SHM architecture. |
-| `c4cb8bb` | dynamic asset layers | `PORT` | Complete dynamic font/image asset lifetime and creation path. |
-| `07b26a1` | dynamic text loading | `REVIEW` | Consolidate with dynamic fonts/assets. |
+| `c4cb8bb` | dynamic asset layers | `DONE` | Registered image-model assets create real runtime layers through the existing parser, and destroy/recreate uses normal ownership and resource release rather than an upstream fixed clone pool. |
+| `07b26a1` | dynamic text loading | `DONE` | Scene-owned text nodes/primitives avoid the upstream raw-pointer callback lifetime issue; VertexArray append/move ownership, index resource IDs, shader annotation leading-zero numbers, and dynamic text destruction are covered directly. |
 | `898d2b4` | MPRIS media events | `REVIEW` | Compare host media event contract; do not import Waywallen bridge. |
 
 SceneScript layer proxies now expose `getEffect(nameOrIndex)` and resolve authored effect names to the
@@ -303,6 +303,19 @@ scripts can assign another layer's `text` property, which immediately rebuilds g
 atlas revision, expands auto-sized layout, and marks the text resource dirty. The upstream dynamic-audio
 commit only adds a Waywallen plugin setting and daemon bridge call, so it is deliberately excluded from
 the renderer library and its stable host-neutral ABI.
+
+Dynamic asset creation remains a genuine parser/runtime operation locally: `engine.registerAsset()`
+handles for image model JSON can be passed to `thisScene.createLayer()`, then destroyed and recreated
+from the same asset without a preallocated clone pool. The lifecycle regression verifies that the
+removed image no longer owns a runtime layer while the recreated image keeps its scripted transform.
+Dynamic text is also created through the same path and destruction removes the logical layer, scene
+nodes, initial configuration, text runtime state, scene-owned primitive, atlas dirty state, and name
+index. Local text nodes and primitives are held by scene-owned `shared_ptr` objects, so the raw-pointer
+callback lifetime repair from upstream is structural rather than copied. `SceneVertexArray` now appends
+through the active tail, accepts the final capacity slot, and transfers all owned option state during
+move construction/assignment; both `SceneVertexArray` and `SceneIndexArray` start with an explicit
+unassigned ID so moving a newly-created geometry buffer never reads indeterminate state. Shader metadata
+parsing normalizes malformed numeric literals such as `[0,01]` outside strings before JSON parsing.
 
 ## Migration rules
 

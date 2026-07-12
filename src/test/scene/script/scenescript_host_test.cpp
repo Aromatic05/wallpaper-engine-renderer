@@ -1,4 +1,5 @@
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
+#include "backend/scene/internal/parser/WPSceneParser.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -703,6 +704,124 @@ int main() {
         assert(text_it->second.primitive->atlas_version > initial_atlas_version);
         assert(text_it->second.primitive->layout.visible_display_size[0] > initial_width);
         assert(scene.dirtyTextLayerIds.contains(100));
+    }
+
+    {
+        auto vfs = std::make_unique<wallpaper::fs::VFS>();
+        assert(vfs->Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                { "/models/coin.json",
+                  R"({"width":16,"height":16,"material":"materials/coin.json"})" },
+                { "/materials/coin.json",
+                  R"({"passes":[{"shader":"genericimage","textures":[],"blending":"translucent"}]})" },
+                { "/shaders/genericimage.vert",
+                  R"(
+                      attribute vec3 a_Position;
+                      attribute vec2 a_TexCoord;
+                      varying vec2 v_TexCoord;
+                      void main() {
+                          gl_Position = vec4(a_Position, 1.0);
+                          v_TexCoord = a_TexCoord;
+                      }
+                  )" },
+                { "/shaders/genericimage.frag",
+                  R"(
+                      uniform vec4 g_Color4;
+                      uniform float g_UserAlpha;
+                      varying vec2 v_TexCoord;
+                      void main() {
+                          gl_FragColor = vec4(g_Color4.rgb, g_UserAlpha);
+                      }
+                  )" },
+            })));
+        auto sound_manager = std::make_unique<wallpaper::audio::SoundManager>();
+        wallpaper::WPSceneParser parser;
+        auto scene_ptr = parser.Parse(
+            "dynamic-asset-lifetime",
+            R"({
+                "camera":{"center":[0,0,0],"eye":[0,0,1],"up":[0,1,0]},
+                "general":{"clearcolor":[0,0,0],"orthogonalprojection":{"width":128,"height":64},"zoom":1},
+                "objects":[{
+                    "id":1,"name":"AssetRoot","origin":[0,0,0],"angles":[0,0,0],
+                    "scale":[1,1,1],"visible":true
+                }]
+            })",
+            *vfs,
+            *sound_manager);
+        assert(scene_ptr != nullptr);
+        scene_ptr->vfs = std::move(vfs);
+        auto* root_node = scene_ptr->layerNodes.at(1);
+        assert(root_node != nullptr);
+        auto root_mesh = std::make_shared<SceneMesh>();
+        SceneMaterial root_material;
+        root_material.customShader.constValues["g_UserAlpha"] = ShaderValue(1.0f);
+        root_mesh->AddMaterial(std::move(root_material));
+        root_node->AddMesh(root_mesh);
+
+        WPSceneScriptHost host(scene_ptr.get());
+        auto registration = MakeRegistration(1,
+                                             "AssetRoot",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = root_node;
+        registration.setting.script = R"(
+            let initialized = false;
+            export function update(value) {
+                if (initialized) return value;
+                initialized = true;
+                const asset = engine.registerAsset('models/coin.json');
+                const first = thisScene.createLayer(asset);
+                if (!first) return 0;
+                first.origin = new Vec3(42, 7, 0);
+                thisScene.destroyLayer(first);
+
+                const again = thisScene.createLayer(asset);
+                if (!again) return 0;
+                again.origin = new Vec3(8, 9, 0);
+
+                const text = thisScene.createLayer({
+                    name: 'TransientText',
+                    text: 'temporary',
+                    font: 'systemfont_default',
+                    pointsize: 24,
+                    origin: [64, 32, 0],
+                    angles: [0, 0, 0],
+                    scale: [1, 1, 1],
+                    visible: true
+                });
+                if (!text) return 0;
+                thisScene.destroyLayer(text);
+                return 1;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+        assert(scene_ptr->imageLayers.size() == 2);
+        assert(scene_ptr->textLayers.size() == 1);
+        assert(scene_ptr->textPrimitives.size() == 1);
+        const auto transient_text_it = scene_ptr->layerNameToId.find("TransientText");
+        assert(transient_text_it != scene_ptr->layerNameToId.end());
+        const int32_t transient_text_id = transient_text_it->second;
+        scene_ptr->dirtyTextLayerIds.insert(transient_text_id);
+
+        host.FrameBegin(0.1);
+        assert(scene_ptr->imageLayers.size() == 1);
+        assert(scene_ptr->textLayers.empty());
+        assert(scene_ptr->textPrimitives.empty());
+        assert(!scene_ptr->dirtyTextLayerIds.contains(transient_text_id));
+        assert(!scene_ptr->layerNodes.contains(transient_text_id));
+        assert(!scene_ptr->initialLayerConfigJson.contains(transient_text_id));
+        assert(scene_ptr->layerNameToId.find("TransientText") == scene_ptr->layerNameToId.end());
+        assert(scene_ptr->layerOrder.size() == 2);
+        const auto surviving_image_id = scene_ptr->imageLayers.begin()->first;
+        auto* surviving_node = scene_ptr->layerNodes.at(surviving_image_id);
+        assert(surviving_node != nullptr);
+        assert(NearlyEqual(surviving_node->Translate().x(), 8.0));
+        assert(NearlyEqual(surviving_node->Translate().y(), 9.0));
     }
 
     return 0;

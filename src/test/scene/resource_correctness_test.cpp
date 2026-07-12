@@ -5,6 +5,8 @@
 #include "common/fs/include/fs/Fs.h"
 #include "host/audio/include/audio/SoundManager.h"
 #include "backend/scene/internal/parser/WPTexImageParser.hpp"
+#include "backend/scene/internal/scene/include/scene/SceneVertexArray.h"
+#include "backend/scene/internal/scene/include/scene/SceneIndexArray.h"
 #include "render/vulkan/include/vulkan/Device.hpp"
 #include "render/vulkan/include/vulkan/Instance.hpp"
 #include "render/vulkanrender/CopyPass.hpp"
@@ -637,6 +639,57 @@ void TestDecoderProbeAndRewind() {
     assert(sawRewind);
     assert(sawRestartRead);
 }
+void TestSceneResourceIdsStartUnassigned() {
+    std::vector<wallpaper::SceneVertexArray::SceneVertexAttribute> attrs {
+        { .name = "a_Position", .type = wallpaper::VertexType::FLOAT3 },
+    };
+    wallpaper::SceneVertexArray vertices(attrs, 1);
+    RequireTest(vertices.ID() == std::numeric_limits<uint32_t>::max(),
+                "scene vertex array id must start unassigned");
+    wallpaper::SceneIndexArray indices(1);
+    RequireTest(indices.ID() == std::numeric_limits<uint32_t>::max(),
+                "scene index array id must start unassigned");
+}
+
+void TestSceneVertexArrayAppendAndMove() {
+    std::vector<wallpaper::SceneVertexArray::SceneVertexAttribute> attrs {
+        { .name = "a_Position", .type = wallpaper::VertexType::FLOAT3 },
+        { .name = "a_TexCoord", .type = wallpaper::VertexType::FLOAT2 },
+    };
+    wallpaper::SceneVertexArray vertices(attrs, 2);
+    vertices.SetOption("dynamic", true);
+    vertices.SetFloatOption("scale", 2.0f);
+
+    const std::array<float, 5> first { 1.0f, 2.0f, 3.0f, 0.25f, 0.5f };
+    const std::array<float, 5> second { 4.0f, 5.0f, 6.0f, 0.75f, 1.0f };
+    RequireTest(vertices.AddVertex(first.data()), "first vertex append failed");
+    RequireTest(vertices.AddVertex(second.data()), "last-capacity vertex append failed");
+
+    wallpaper::SceneVertexArray moved(std::move(vertices));
+    RequireTest(moved.VertexCount() == 2, "move construction lost vertices");
+    RequireTest(moved.GetOption("dynamic"), "move construction lost bool options");
+    RequireTest(moved.GetFloatOption("scale") == 2.0f,
+                "move construction lost float options");
+    const auto offsets = moved.GetAttrOffsetMap();
+    const auto position = offsets.at("a_Position").offset / sizeof(float);
+    const auto uv = offsets.at("a_TexCoord").offset / sizeof(float);
+    RequireTest(moved.Data()[position] == 1.0f, "first vertex position was overwritten");
+    RequireTest(moved.Data()[position + moved.OneSize()] == 4.0f,
+                "second vertex position was not appended");
+    RequireTest(moved.Data()[uv] == 0.25f, "first vertex UV was overwritten");
+    RequireTest(moved.Data()[uv + moved.OneSize()] == 0.75f,
+                "second vertex UV was not appended");
+
+    wallpaper::SceneVertexArray assigned(attrs, 1);
+    assigned.SetOption("stale", true);
+    assigned = std::move(moved);
+    RequireTest(assigned.VertexCount() == 2, "move assignment lost vertices");
+    RequireTest(assigned.GetOption("dynamic") && !assigned.GetOption("stale"),
+                "move assignment did not replace bool options");
+    RequireTest(assigned.GetFloatOption("scale") == 2.0f,
+                "move assignment lost float options");
+}
+
 } // namespace
 
 int main() {
@@ -647,5 +700,7 @@ int main() {
     TestTextureCacheDeferredGraphActivation();
     TestDecoderFailureHandling();
     TestDecoderProbeAndRewind();
+    TestSceneResourceIdsStartUnassigned();
+    TestSceneVertexArrayAppendAndMove();
     return 0;
 }

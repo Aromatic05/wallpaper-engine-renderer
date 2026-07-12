@@ -1470,6 +1470,64 @@ inline std::string RepairMissingStringQuotes(std::string_view source) {
     return repaired;
 }
 
+inline bool CanStartMetadataJsonNumber(std::string_view source, size_t pos) {
+    while (pos > 0) {
+        const char ch = source[--pos];
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') continue;
+        return ch == '[' || ch == '{' || ch == ':' || ch == ',';
+    }
+    return true;
+}
+
+inline std::string NormalizeMetadataJsonNumbers(std::string_view source) {
+    std::string normalized;
+    normalized.reserve(source.size());
+    bool in_string { false };
+    bool escaped { false };
+    bool changed { false };
+
+    for (size_t i = 0; i < source.size();) {
+        const char ch = source[i];
+        if (in_string) {
+            normalized.push_back(ch);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            i++;
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+            normalized.push_back(ch);
+            i++;
+            continue;
+        }
+
+        if ((ch == '-' || (ch >= '0' && ch <= '9')) &&
+            CanStartMetadataJsonNumber(source, i)) {
+            if (ch == '-') {
+                normalized.push_back(ch);
+                i++;
+                if (i >= source.size() || source[i] < '0' || source[i] > '9') continue;
+            }
+            while (i + 1 < source.size() && source[i] == '0' &&
+                   source[i + 1] >= '0' && source[i + 1] <= '9') {
+                changed = true;
+                i++;
+            }
+        }
+
+        normalized.push_back(source[i++]);
+    }
+
+    return changed ? normalized : std::string {};
+}
+
 inline bool TryParseShaderMetadataJson(std::string_view line, const char* kind,
                                        nlohmann::json& result) {
     const size_t json_start = line.find_first_of('{');
@@ -1478,6 +1536,17 @@ inline bool TryParseShaderMetadataJson(std::string_view line, const char* kind,
     const auto json_source = line.substr(json_start);
     result                 = nlohmann::json::parse(json_source, nullptr, false);
     if (! result.is_discarded()) return true;
+
+    const auto normalized_numbers = NormalizeMetadataJsonNumbers(json_source);
+    if (! normalized_numbers.empty()) {
+        result = nlohmann::json::parse(normalized_numbers, nullptr, false);
+        if (! result.is_discarded()) {
+            LOG_INFO("ParseWPShader: normalized malformed numeric %s metadata: %s",
+                     kind,
+                     TruncateMetadataSnippet(json_source).c_str());
+            return true;
+        }
+    }
 
     const auto repaired = RepairMissingStringQuotes(json_source);
     if (! repaired.empty()) {

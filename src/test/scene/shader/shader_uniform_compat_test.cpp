@@ -1,8 +1,10 @@
 #include "backend/scene/internal/SpecTexs.hpp"
+#include "backend/scene/internal/parser/WPShaderParser.hpp"
 #include "backend/scene/internal/shader/WPShaderValueUpdater.hpp"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneCamera.h"
 #include "backend/scene/internal/scene/include/scene/SceneNode.h"
+#include "common/fs/include/fs/VFS.h"
 
 #include <Eigen/Dense>
 
@@ -138,9 +140,29 @@ void TestEffectLayerUniforms() {
     Require(NearlyEqual(daytime[0], legacyDaytime[0]),
             "new and legacy daytime spellings must receive the same value");
 }
+void TestLeadingZeroAnnotationNumber() {
+    wallpaper::fs::VFS vfs;
+    wallpaper::WPShaderInfo info;
+    const std::vector<wallpaper::WPShaderTexInfo> textures;
+    const auto output = wallpaper::WPShaderParser::PreShaderSrc(
+        vfs,
+        R"(
+            uniform float u_userSpeed; // {"material":"Speed","default":1,"range":[0,01]}
+            void main() {}
+        )",
+        &info,
+        textures);
+    Require(!output.empty(), "shader preprocessing failed for leading-zero annotation");
+    Require(info.svs.contains("u_userSpeed"),
+            "leading-zero annotation dropped the uniform default");
+    Require(info.alias.contains("Speed") && info.alias.at("Speed") == "u_userSpeed",
+            "leading-zero annotation dropped the material alias");
+}
+
 } // namespace
 
 int main() {
     TestEffectLayerUniforms();
+    TestLeadingZeroAnnotationNumber();
     return 0;
 }
