@@ -85,6 +85,8 @@ struct WaylandState {
     std::uint32_t           preferred_fractional_scale { 0 };
     std::uint32_t           output_mode_width { 0 };
     std::uint32_t           output_mode_height { 0 };
+    std::int32_t            output_transform { WL_OUTPUT_TRANSFORM_NORMAL };
+    std::uint32_t           rotation_degrees { 0 };
     std::uint32_t           logical_width { 0 };
     std::uint32_t           logical_height { 0 };
     std::uint32_t           render_width { 0 };
@@ -163,10 +165,29 @@ std::uint32_t scaledExtent(std::uint32_t logical_extent, double scale_factor) {
         std::max(1.0, std::round(static_cast<double>(logical_extent) * scale_factor)));
 }
 
+bool swapsDimensions(std::int32_t transform) {
+    return transform == WL_OUTPUT_TRANSFORM_90 || transform == WL_OUTPUT_TRANSFORM_270 ||
+           transform == WL_OUTPUT_TRANSFORM_FLIPPED_90 ||
+           transform == WL_OUTPUT_TRANSFORM_FLIPPED_270;
+}
+
+std::int32_t bufferTransformForClockwiseRotation(std::uint32_t rotation_degrees) {
+    switch (rotation_degrees) {
+    case 90: return WL_OUTPUT_TRANSFORM_270;
+    case 180: return WL_OUTPUT_TRANSFORM_180;
+    case 270: return WL_OUTPUT_TRANSFORM_90;
+    default: return WL_OUTPUT_TRANSFORM_NORMAL;
+    }
+}
+
 void updateRenderExtent(WaylandState& state) {
     if (state.output_mode_width > 0 && state.output_mode_height > 0) {
         state.render_width = state.output_mode_width;
         state.render_height = state.output_mode_height;
+        if (swapsDimensions(state.output_transform) != (state.rotation_degrees == 90 ||
+                                                        state.rotation_degrees == 270)) {
+            std::swap(state.render_width, state.render_height);
+        }
         return;
     }
 
@@ -366,7 +387,7 @@ constexpr zwlr_layer_surface_v1_listener kLayerSurfaceListener {
     .closed = onLayerSurfaceClosed,
 };
 
-void onOutputGeometry(void* /*data*/,
+void onOutputGeometry(void* data,
                       wl_output* /*output*/,
                       std::int32_t /*x*/,
                       std::int32_t /*y*/,
@@ -375,7 +396,14 @@ void onOutputGeometry(void* /*data*/,
                       std::int32_t /*subpixel*/,
                       const char* /*make*/,
                       const char* /*model*/,
-                      std::int32_t /*transform*/) {}
+                      std::int32_t transform) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+    state->output_transform = transform;
+    if (state->logical_width == 0 || state->logical_height == 0) return;
+    updateRenderExtent(*state);
+    logRenderGeometry(*state, "updated output transform");
+}
 
 void onOutputMode(void* data,
                   wl_output* /*output*/,
@@ -387,6 +415,9 @@ void onOutputMode(void* data,
     if (! state || (flags & WL_OUTPUT_MODE_CURRENT) == 0) return;
     state->output_mode_width = static_cast<std::uint32_t>(std::max(width, 0));
     state->output_mode_height = static_cast<std::uint32_t>(std::max(height, 0));
+    if (state->logical_width > 0 && state->logical_height > 0) {
+        updateRenderExtent(*state);
+    }
 }
 
 void onOutputDone(void* /*data*/, wl_output* /*output*/) {}
@@ -472,9 +503,13 @@ constexpr wl_registry_listener kRegistryListener {
     .global_remove = onRegistryRemove,
 };
 
-bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_t fallback_height) {
+bool initWayland(WaylandState& state,
+                 std::uint32_t fallback_width,
+                 std::uint32_t fallback_height,
+                 std::uint32_t rotation_degrees) {
     state.fallback_width = fallback_width;
     state.fallback_height = fallback_height;
+    state.rotation_degrees = rotation_degrees;
 
     state.display = wl_display_connect(nullptr);
     if (! state.display) {
@@ -515,6 +550,8 @@ bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_
         return false;
     }
     wl_surface_set_buffer_scale(state.surface, 1);
+    wl_surface_set_buffer_transform(
+        state.surface, bufferTransformForClockwiseRotation(state.rotation_degrees));
 
     if (state.viewporter) {
         state.viewport = wp_viewporter_get_viewport(state.viewporter, state.surface);
@@ -751,7 +788,10 @@ int main(int argc, char** argv) {
     }
 
     WaylandState wayland;
-    if (! initWayland(wayland, static_cast<std::uint32_t>(args.width), static_cast<std::uint32_t>(args.height))) {
+    if (! initWayland(wayland,
+                      static_cast<std::uint32_t>(args.width),
+                      static_cast<std::uint32_t>(args.height),
+                      args.rotation_degrees)) {
         destroyWayland(wayland);
         return 1;
     }
@@ -784,6 +824,8 @@ int main(int argc, char** argv) {
     config.version = 1;
     config.width = wayland.render_width;
     config.height = wayland.render_height;
+    config.fill_mode = static_cast<we_fill_mode_v1>(args.fill_mode);
+    config.rotation_degrees = args.rotation_degrees;
     // NVIDIA GPUs render using a hardware-specific pixel layout that AMD/Intel
     // GPUs do not understand.  vkGetMemoryFdKHR on NVIDIA produces dmabufs that
     // are tied to the nvidia-drm device; the compositor (running on the iGPU)

@@ -15,6 +15,8 @@ struct Args {
     int32_t     fps    { 15 };
     int32_t     width  { 1280 };
     int32_t     height { 720 };
+    uint32_t    fill_mode { 2 };
+    uint32_t    rotation_degrees { 0 };
 };
 
 inline void printUsage(const char* prog) {
@@ -54,6 +56,25 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
             }
             args.width  = std::atoi(v.substr(0, x).c_str());
             args.height = std::atoi(v.substr(x + 1).c_str());
+        } else if (a == "--fill-mode") {
+            std::string v;
+            if (! needValue(i, v)) return false;
+            if (v == "stretch") args.fill_mode = 0;
+            else if (v == "fit") args.fill_mode = 1;
+            else if (v == "crop") args.fill_mode = 2;
+            else {
+                err = "--fill-mode expects stretch, fit, or crop";
+                return false;
+            }
+        } else if (a == "--rotation") {
+            std::string v;
+            if (! needValue(i, v)) return false;
+            args.rotation_degrees = static_cast<uint32_t>(std::atoi(v.c_str()));
+            if (args.rotation_degrees != 0 && args.rotation_degrees != 90 &&
+                args.rotation_degrees != 180 && args.rotation_degrees != 270) {
+                err = "--rotation expects 0, 90, 180, or 270";
+                return false;
+            }
         } else if (a.empty() || a[0] == '-') {
             err = "unknown option: " + a;
             return false;
@@ -79,6 +100,8 @@ inline void printHelp(const char* prog) {
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"
+                 "  --fill-mode MODE     stretch, fit, or crop (default crop)\n"
+                 "  --rotation DEG       clockwise output rotation: 0, 90, 180, or 270\n"
                  "  -h, --help           show this help\n",
                  prog,
                  prog);
