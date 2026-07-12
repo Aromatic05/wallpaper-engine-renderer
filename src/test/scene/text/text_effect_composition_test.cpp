@@ -179,6 +179,18 @@ std::shared_ptr<wallpaper::Scene> ParseScene() {
                                             "visible": true
                                         }
                                     ]
+                                },
+                                {
+                                    "id": 32,
+                                    "name": "ClockWithoutEffects",
+                                    "text": "12:34",
+                                    "font": "sans",
+                                    "pointsize": 32,
+                                    "size": [160, 48],
+                                    "origin": [128, 32, 0],
+                                    "angles": [0, 0, 0],
+                                    "scale": [1, 1, 1],
+                                    "copybackground": true
                                 }
                             ]
                         })",
@@ -270,6 +282,11 @@ int main() {
             "glyph seed does not write the private text source");
     Require(!text_passes.front()->desc().clear_output,
             "glyph seed clears and destroys its framebuffer background prefill");
+
+    const auto direct_text_passes = FindTextPasses(*graph, 32);
+    Require(direct_text_passes.size() == 1 &&
+                direct_text_passes.front()->desc().output == wallpaper::SpecTex_Default,
+            "copybackground text without effects must write directly to the scene target");
 
     const auto background_index = FindPassIndex(*graph, background_pass);
     const auto glyph_index = FindPassIndex(*graph, text_passes.front());

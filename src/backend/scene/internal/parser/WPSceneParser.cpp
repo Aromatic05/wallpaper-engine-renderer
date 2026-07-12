@@ -5270,14 +5270,13 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
             BuildEffectVisibilityContract(wp_effect, context.user_properties);
         if (! effect_visibility.can_prune_at_parse_time) text_effect_count++;
     }
-    const bool has_effect       = text_effect_count > 0;
-    const bool uses_text_bridge = has_effect || text_obj.copybackground;
+    const bool has_effect  = text_effect_count > 0;
     auto       spWorldNode      = std::make_shared<SceneNode>(Vector3f(text_obj.origin.data()),
                                                               Vector3f(text_obj.scale.data()),
                                                               Vector3f(text_obj.angles.data()),
                                                               text_obj.name);
     spWorldNode->ID()           = text_obj.id;
-    auto spTextNode             = uses_text_bridge ? std::make_shared<SceneNode>() : spWorldNode;
+    auto spTextNode             = has_effect ? std::make_shared<SceneNode>() : spWorldNode;
     spTextNode->SetName(text_obj.name);
     spTextNode->ID() = text_obj.id;
     spTextNode->AddText(primitive);
@@ -5292,7 +5291,7 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& text_obj) {
                             text_obj.name,
                             worldNodeData);
 
-    if (uses_text_bridge) {
+    if (has_effect) {
         auto&             scene       = *context.scene;
         const std::string camera_name = getAddr(spTextNode.get());
         primitive->bridge.enabled     = true;
