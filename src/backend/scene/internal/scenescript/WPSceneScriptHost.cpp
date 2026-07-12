@@ -2041,21 +2041,23 @@ std::string ResolveScriptAssetFile(const Scene* scene, const ScriptAssetHandle& 
                                               : handle.file;
 }
 
-nlohmann::json NormalizeCreateLayerJson(const nlohmann::json& json) {
+nlohmann::json NormalizeCreateLayerJson(const Scene* scene, const nlohmann::json& json) {
     if (json.is_array()) {
         nlohmann::json array = nlohmann::json::array();
         for (const auto& item : json) {
-            array.push_back(NormalizeCreateLayerJson(item));
+            array.push_back(NormalizeCreateLayerJson(scene, item));
         }
         return array;
     }
 
     if (! json.is_object()) return json;
-    if (IsAssetHandleJson(json)) return json.at("file").get<std::string>();
+    if (const auto asset_handle = ReadScriptAssetHandle(json); asset_handle.has_value()) {
+        return ResolveScriptAssetFile(scene, *asset_handle);
+    }
 
     nlohmann::json object = nlohmann::json::object();
     for (const auto& [key, value] : json.items()) {
-        object[key] = NormalizeCreateLayerJson(value);
+        object[key] = NormalizeCreateLayerJson(scene, value);
     }
     return object;
 }
@@ -2078,7 +2080,7 @@ std::optional<nlohmann::json> MaterializeAssetHandleConfig(const Scene*         
 
     nlohmann::json config = nlohmann::json::object();
     if (file.ends_with(".ttf") || file.ends_with(".otf")) {
-        LOG_ERROR("dynamic text layers backed by font assets are not supported yet: %s",
+        LOG_ERROR("font assets must be supplied as the font field of a dynamic text layer: %s",
                   file.c_str());
         return std::nullopt;
     }
@@ -6971,7 +6973,7 @@ JSValue NativeCreateSceneLayer(JSContext* context, JSValueConst, int argc, JSVal
         if (! config.has_value()) return JS_NewInt32(context, 0);
         normalized_json = *config;
     } else if (create_layer_json->is_object()) {
-        normalized_json = NormalizeCreateLayerJson(*create_layer_json);
+        normalized_json = NormalizeCreateLayerJson(opaque->scene, *create_layer_json);
     } else {
         return JS_NewInt32(context, 0);
     }

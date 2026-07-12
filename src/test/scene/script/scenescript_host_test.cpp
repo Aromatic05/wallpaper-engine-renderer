@@ -5,11 +5,15 @@
 
 #include <cassert>
 #include <cmath>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <fontconfig/fontconfig.h>
 
 #include "backend/scene/internal/scene/include/scene/Scene.h"
 #include "backend/scene/internal/scene/include/scene/SceneMaterial.h"
@@ -87,6 +91,31 @@ public:
 private:
     std::unordered_map<std::string, std::string> m_files;
 };
+
+std::string LoadSystemFontBytes() {
+    FcConfig* config = FcInitLoadConfigAndFonts();
+    assert(config != nullptr);
+    FcPattern* pattern = FcNameParse(reinterpret_cast<const FcChar8*>("sans"));
+    assert(pattern != nullptr);
+    assert(FcConfigSubstitute(config, pattern, FcMatchPattern) == FcTrue);
+    FcDefaultSubstitute(pattern);
+
+    FcResult result = FcResultNoMatch;
+    FcPattern* match = FcFontMatch(config, pattern, &result);
+    assert(match != nullptr);
+    FcChar8* font_path = nullptr;
+    assert(FcPatternGetString(match, FC_FILE, 0, &font_path) == FcResultMatch);
+
+    std::ifstream input(reinterpret_cast<const char*>(font_path), std::ios::binary);
+    assert(input.good());
+    std::string bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    assert(! bytes.empty());
+
+    FcPatternDestroy(match);
+    FcPatternDestroy(pattern);
+    FcConfigDestroy(config);
+    return bytes;
+}
 
 void RegisterLayer(wallpaper::Scene& scene,
                    int32_t id,
@@ -942,6 +971,83 @@ int main() {
         assert(surviving_node != nullptr);
         assert(NearlyEqual(surviving_node->Translate().x(), 8.0));
         assert(NearlyEqual(surviving_node->Translate().y(), 9.0));
+    }
+
+    {
+        auto vfs = std::make_unique<wallpaper::fs::VFS>();
+        assert(vfs->Mount(
+            "/assets",
+            std::make_unique<MemoryFs>(std::unordered_map<std::string, std::string> {
+                { "/fonts/workshop/4242/runtime.ttf", LoadSystemFontBytes() },
+            })));
+        auto sound_manager = std::make_unique<wallpaper::audio::SoundManager>();
+        wallpaper::WPSceneParser parser;
+        auto scene_ptr = parser.Parse(
+            "dynamic-font-lifetime",
+            R"({
+                "camera":{"center":[0,0,0],"eye":[0,0,1],"up":[0,1,0]},
+                "general":{"clearcolor":[0,0,0],"orthogonalprojection":{"width":256,"height":128},"zoom":1},
+                "objects":[{
+                    "id":1,"name":"FontRoot","origin":[0,0,0],"angles":[0,0,0],
+                    "scale":[1,1,1],"visible":true
+                }]
+            })",
+            *vfs,
+            *sound_manager);
+        assert(scene_ptr != nullptr);
+        scene_ptr->vfs = std::move(vfs);
+        auto* root_node = scene_ptr->layerNodes.at(1);
+        assert(root_node != nullptr);
+        auto root_mesh = std::make_shared<SceneMesh>();
+        SceneMaterial root_material;
+        root_material.customShader.constValues["g_UserAlpha"] = ShaderValue(1.0f);
+        root_mesh->AddMaterial(std::move(root_material));
+        root_node->AddMesh(root_mesh);
+
+        WPSceneScriptHost host(scene_ptr.get());
+        auto registration = MakeRegistration(1,
+                                             "FontRoot",
+                                             "alpha",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float,
+                                             WPDynamicValue(1.0f));
+        registration.node = root_node;
+        registration.setting.script = R"(
+            let initialized = false;
+            export function update(value) {
+                if (initialized) return value;
+                initialized = true;
+                const fontAsset = engine.registerAsset('fonts/runtime.ttf');
+                fontAsset.workshopId = '4242';
+                const first = thisScene.createLayer({
+                    name: 'FirstDynamicFont', text: 'first', font: fontAsset, pointsize: 24,
+                    origin: [64, 32, 0], angles: [0, 0, 0], scale: [1, 1, 1], visible: true
+                });
+                if (!first) return 0;
+                thisScene.destroyLayer(first);
+                const again = thisScene.createLayer({
+                    name: 'LiveDynamicFont', text: 'second', font: fontAsset, pointsize: 24,
+                    origin: [128, 64, 0], angles: [0, 0, 0], scale: [1, 1, 1], visible: true
+                });
+                return again ? 1 : 0;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.1);
+        assert(scene_ptr->textLayers.size() == 2);
+        assert(scene_ptr->textPrimitives.size() == 2);
+
+        host.FrameBegin(0.1);
+        assert(scene_ptr->textLayers.size() == 1);
+        assert(scene_ptr->textPrimitives.size() == 1);
+        const auto live_it = scene_ptr->layerNameToId.find("LiveDynamicFont");
+        assert(live_it != scene_ptr->layerNameToId.end());
+        const auto text_it = scene_ptr->textLayers.find(live_it->second);
+        assert(text_it != scene_ptr->textLayers.end());
+        assert(text_it->second.object.font == "fonts/workshop/4242/runtime.ttf");
+        assert(text_it->second.object.text == "second");
+        assert(scene_ptr->textPrimitives.contains(live_it->second));
     }
 
     return 0;

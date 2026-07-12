@@ -313,11 +313,18 @@ atlas revision, expands auto-sized layout, and marks the text resource dirty. Th
 commit only adds a Waywallen plugin setting and daemon bridge call, so it is deliberately excluded from
 the renderer library and its stable host-neutral ABI.
 
-Dynamic asset creation remains a genuine parser/runtime operation locally: `engine.registerAsset()`
-handles for image model JSON can be passed to `thisScene.createLayer()`, then destroyed and recreated
-from the same asset without a preallocated clone pool. The lifecycle regression verifies that the
-removed image no longer owns a runtime layer while the recreated image keeps its scripted transform.
-Dynamic text is also created through the same path and destruction removes the logical layer, scene
+Dynamic asset creation remains a genuine parser/runtime operation locally. `engine.registerAsset()`
+handles for image model JSON can be passed directly to `thisScene.createLayer()`, then destroyed and
+recreated from the same asset without a preallocated clone pool. Font handles are accepted inside a
+dynamic text configuration, for example `{ text: "...", font: engine.registerAsset("fonts/x.ttf") }`.
+Nested handles retain their optional workshop namespace and are resolved through the scene VFS before
+the normal text parser runs, so `.ttf`/`.otf` layers reuse the existing FreeType, Fontconfig, Pango,
+glyph-atlas, effect-target resize, and cache path instead of introducing a script-only font loader. The
+dynamic-font regression creates, destroys, and recreates a text layer from a workshop-scoped font handle
+and verifies that the surviving runtime object and primitive retain the resolved asset path.
+
+The image lifecycle regression verifies that a removed image no longer owns a runtime layer while the
+recreated image keeps its scripted transform. Dynamic text destruction removes the logical layer, scene
 nodes, initial configuration, text runtime state, scene-owned primitive, atlas dirty state, and name
 index. Local text nodes and primitives are held by scene-owned `shared_ptr` objects, so the raw-pointer
 callback lifetime repair from upstream is structural rather than copied. `SceneVertexArray` now appends
