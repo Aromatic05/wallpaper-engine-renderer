@@ -50,7 +50,14 @@ constexpr std::string_view WE_IN_TEXCOORDVEC3C2 { "a_TexCoordVec3C2" };
 constexpr std::string_view WE_IN_TEXCOORDC2 { "a_TexCoordC2" };
 constexpr std::string_view WE_IN_TEXCOORDC3 { "a_TexCoordC3" };
 constexpr std::string_view WE_IN_TEXCOORDC4 { "a_TexCoordC4" };
+constexpr std::string_view WE_CB_BLENDMODE { "BLENDMODE" };
+constexpr std::string_view WE_CB_BONECOUNT { "BONECOUNT" };
+constexpr std::string_view WE_CB_SPRITESHEET { "SPRITESHEET" };
+constexpr std::string_view WE_CB_SPRITESHEETBLENDNPOT { "SPRITESHEETBLENDNPOT" };
 constexpr std::string_view WE_CB_THICK_FORMAT { "THICKFORMAT" };
+constexpr std::string_view WE_CB_TRAILRENDERER { "TRAILRENDERER" };
+constexpr std::string_view WE_CB_LIGHTING { "LIGHTING" };
+constexpr std::string_view WE_CB_SKINNING { "SKINNING" };
 constexpr std::string_view WE_PRENDER_ROPE { "PRENDER_ROPE" };
 constexpr std::string_view WE_PRENDER_ROPE_SUBDIVISION { "PRENDER_ROPE_SUBDIVISION" };
 

@@ -95,7 +95,7 @@ Reference branch:
 | `791f273` | audio bar shader compatibility | `DONE` | Packed two-dimensional spectrum accesses are flattened before DXC; scanner and end-to-end SPIR-V compilation tests cover the legacy form. |
 | `23e0b14` | update shader spec uniforms | `DONE` | Added new/legacy Daytime names and source-layer effect matrix contracts with runtime matrix/inverse tests. |
 | `2728164` | discover non-standard pkg names | `DONE` | Shared resolver maps `project.file` to matching package names; default `scene.pkg`, nested paths, and traversal rejection are covered by tests. |
-| `3ace9c4` | add special shader names | `PARTIAL` | Existing runtime names remain string-compatible; model/morph-only attributes and uniforms are deferred to the MDL/morph data-path migration instead of being declared without consumers. |
+| `3ace9c4` | add special shader names | `DONE` | Combo names with active local consumers are centralized and used by model, sprite, particle, lighting, and color-blend paths; morph-only and otherwise unconsumed names are intentionally not declared without a data path. |
 | `9a7063d` | rename special names module | `EXCLUDE` | Structural rename has no behavioral value. |
 | `f15539a` | remove workshop scene runtime tests | `EXCLUDE` | Local project intentionally keeps an optional workshop corpus. |
 
@@ -117,11 +117,17 @@ fixtures cover the cross-version field surface without requiring copyrighted wor
 object parsing now has one definition in `WPTextObject.cpp`; the duplicate archive definition in
 `WPTextLayer.cpp` was removed so link order can no longer select stale parsing behavior.
 
+Consumed shader combo names now have one contract in `SpecTexs.hpp`: blend mode, bone count,
+skinning, sprite-sheet/NPOT handling, thick particle format, trail rendering, and lighting. Parser,
+model, particle, and effect code no longer duplicates those literals. Names that only become meaningful
+with a future morph buffer, advanced model attribute, or unused lighting path remain absent rather than
+creating a false compatibility surface.
+
 ### Stage 3 — transform, puppet, and particles
 
 | Commit | Subject | Status | Local action |
 |---|---|---|---|
-| `8a07eeb` | degenerate node camera transforms | `PARTIAL` | Node camera now safely inverts the complete world frame and repairs/falls back from degenerate axes. The unrelated hidden linked-solid composite change remains Stage 4 work. |
+| `8a07eeb` | degenerate node camera transforms | `DONE` | Node cameras safely invert repaired world frames; the same commit's hidden linked-solid passthrough condition is covered by Stage 4 private link publication and hidden-source execution tests. |
 | `1a19a32` | child particle override inheritance | `DONE` | Child presets inherit only layer alpha/tint; their authored count/rate/lifetime/size/speed/control points remain independent. Local alpha already used the corrected linear scalar path. |
 | `1691a07` | hidden particles and rain drag | `DONE` | Drag uses authored linear strength. Local node-visibility traversal already skips generated descendants by subtree, now covered with assertions enabled. Font fallback is tracked separately in Stage 5. |
 | `ebd56ee` | node field animations | `DONE` | The shared property-animation registry already covers node origin/angles/scale across SceneNode-backed layers; an end-to-end light fixture verifies parser registration and midpoint runtime writes. Sound transforms remain part of Stage 5 spatialization. |
@@ -135,6 +141,9 @@ and still inherits animated parent deltas. SceneScript local/model transform con
 same parent contract. MDLE world-bind matrices remain preserved but observational because their
 runtime meaning is not yet validated. Synthetic MDLV17/21 tests cover bind-pose identity, centroid
 pivots, inherited root motion, and ordinary-model non-regression.
+The hidden linked-solid condition bundled into `8a07eeb` is no longer outstanding: linked solid layers
+without authored effects receive a synthetic passthrough only when they are dependency sources, and
+hidden sources continue executing their private publication path without writing into the visible frame.
 
 Image-layer `disablepropagation` is collected into Scene-owned metadata before layer materialization
 and reused by deferred/dynamic parsing. Both physically parented nodes and routed effect/world nodes

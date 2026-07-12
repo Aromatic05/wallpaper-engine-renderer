@@ -159,10 +159,24 @@ void TestLeadingZeroAnnotationNumber() {
             "leading-zero annotation dropped the material alias");
 }
 
+void TestConsumedSpecialShaderNames() {
+    Require(wallpaper::WE_CB_BLENDMODE == "BLENDMODE", "blend-mode combo name changed");
+    Require(wallpaper::WE_CB_BONECOUNT == "BONECOUNT", "bone-count combo name changed");
+    Require(wallpaper::WE_CB_SKINNING == "SKINNING", "skinning combo name changed");
+    Require(wallpaper::WE_CB_SPRITESHEET == "SPRITESHEET",
+            "sprite-sheet combo name changed");
+    Require(wallpaper::WE_CB_SPRITESHEETBLENDNPOT == "SPRITESHEETBLENDNPOT",
+            "sprite-sheet NPOT combo name changed");
+    Require(wallpaper::WE_CB_TRAILRENDERER == "TRAILRENDERER",
+            "trail-renderer combo name changed");
+    Require(wallpaper::WE_CB_LIGHTING == "LIGHTING", "lighting combo name changed");
+}
+
 } // namespace
 
 int main() {
     TestEffectLayerUniforms();
     TestLeadingZeroAnnotationNumber();
+    TestConsumedSpecialShaderNames();
     return 0;
 }

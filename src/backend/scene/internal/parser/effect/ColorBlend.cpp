@@ -1,6 +1,7 @@
 #include "ColorBlend.hpp"
 
 #include "wpscene/WPMaterial.h"
+#include "SpecTexs.hpp"
 
 namespace wallpaper
 {
@@ -19,7 +20,7 @@ ImageColorBlendPlan ResolveImageColorBlendPlan(int32_t color_blend_mode,
 
 void ApplyImageColorBlend(wpscene::WPMaterial& material, int32_t color_blend_mode) {
     if (color_blend_mode == 0) return;
-    material.combos["BLENDMODE"] = color_blend_mode;
+    material.combos[std::string(WE_CB_BLENDMODE)] = color_blend_mode;
 }
 
 void ApplyImageEffectContext(wpscene::WPMaterial& material, bool copy_background) {

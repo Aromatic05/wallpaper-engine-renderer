@@ -1479,7 +1479,9 @@ void ParseSpecTexName(std::string& name, const wpscene::WPMaterial& wpmat, const
     if (IsSpecTex(name)) {
         if (name == "_rt_FullFrameBuffer") {
             name = SpecTex_Default;
-            if (wpmat.shader == "genericimage2" && ! exists(sinfo.combos, "BLENDMODE")) name = "";
+            if (wpmat.shader == "genericimage2" &&
+                ! exists(sinfo.combos, std::string(WE_CB_BLENDMODE)))
+                name = "";
             /*
             if(wpmat.shader == "genericparticle") {
                 name = "_rt_ParticleRefract";
@@ -1718,11 +1720,11 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
                 material.hasSprite = true;
                 const auto& f1     = texh.spriteAnim.GetCurFrame();
                 if (wpmat.shader == "genericparticle" || wpmat.shader == "genericropeparticle") {
-                    pWPShaderInfo->combos["SPRITESHEET"] = "1";
-                    pWPShaderInfo->combos["THICKFORMAT"] = "1";
+                    pWPShaderInfo->combos[std::string(WE_CB_SPRITESHEET)] = "1";
+                    pWPShaderInfo->combos[std::string(WE_CB_THICK_FORMAT)] = "1";
                     if (algorism::IsPowOfTwo((u32)texh.width) &&
                         algorism::IsPowOfTwo((u32)texh.height)) {
-                        pWPShaderInfo->combos["SPRITESHEETBLENDNPOT"] = "1";
+                        pWPShaderInfo->combos[std::string(WE_CB_SPRITESHEETBLENDNPOT)] = "1";
                         resolution = ResolvePaddedSpriteSheetResolution(texh, f1);
                     }
                     materialShader.constValues["g_RenderVar1"] = std::array {
@@ -1737,9 +1739,9 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
             materialShader.constValues[gResolution] = array_cast<float>(resolution);
         }
     }
-    if (exists(pWPShaderInfo->combos, "LIGHTING")) {
+    if (exists(pWPShaderInfo->combos, std::string(WE_CB_LIGHTING))) {
         // pWPShaderInfo->combos["PRELIGHTING"] =
-        // pWPShaderInfo->combos.at("LIGHTING");
+        // pWPShaderInfo->combos.at(std::string(WE_CB_LIGHTING));
     }
 
     if (! WPShaderParser::CompileToSpv(
@@ -4547,7 +4549,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             ! color_material.FromJson(color_json)) {
             return;
         }
-        color_material.combos["BONECOUNT"] = 1;
+        color_material.combos[std::string(WE_CB_BONECOUNT)] = 1;
         ApplyImageColorBlend(color_material, wpimgobj.colorBlendMode);
         color_effect.name = std::string(kSyntheticColorBlendEffectName);
         color_effect.materials.push_back(std::move(color_material));
@@ -5811,11 +5813,11 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
             (float)in_SegmentUVTimeOffset,
             (float)in_SegmentMaxCount,
         };
-        shaderInfo.combos["THICKFORMAT"]   = "1";
-        shaderInfo.combos["TRAILRENDERER"] = "1";
+        shaderInfo.combos[std::string(WE_CB_THICK_FORMAT)] = "1";
+        shaderInfo.combos[std::string(WE_CB_TRAILRENDERER)] = "1";
     }
     if (render_rope) {
-        shaderInfo.combos["THICKFORMAT"] = "1";
+        shaderInfo.combos[std::string(WE_CB_THICK_FORMAT)] = "1";
     }
 
     if (! particle_obj.flags[wpscene::Particle::FlagEnum::spritenoframeblending] &&

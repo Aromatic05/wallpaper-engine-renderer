@@ -1135,12 +1135,12 @@ void WPMdlParser::GenStaticMesh(SceneMesh& mesh, const WPMdl::StaticChunk& chunk
 }
 
 void WPMdlParser::AddPuppetShaderInfo(WPShaderInfo& info, const WPMdl& mdl) {
-    info.combos["SKINNING"]  = "1";
-    info.combos["BONECOUNT"] = std::to_string(mdl.puppet->bones.size());
+    info.combos[std::string(WE_CB_SKINNING)]  = "1";
+    info.combos[std::string(WE_CB_BONECOUNT)] = std::to_string(mdl.puppet->bones.size());
 }
 
 void WPMdlParser::AddPuppetMatInfo(wpscene::WPMaterial& mat, const WPMdl& mdl) {
-    mat.combos["SKINNING"]  = 1;
-    mat.combos["BONECOUNT"] = (i32)mdl.puppet->bones.size();
+    mat.combos[std::string(WE_CB_SKINNING)]  = 1;
+    mat.combos[std::string(WE_CB_BONECOUNT)] = (i32)mdl.puppet->bones.size();
     mat.use_puppet          = true;
 }
