@@ -349,7 +349,7 @@ events when state is unchanged, and confirms current/previous RGBA thumbnails ar
 synthetic image parser and marked dirty. Upstream Waywallen MPRIS discovery and daemon bridge code remains
 outside the renderer library.
 
-### Stage 6 — final-output MSAA
+### Stage 6 — MSAA, public output, and host integration
 
 The renderer ABI now exposes append-only `we_render_config_v1.msaa_samples`. Legacy callers whose
 structure ends at `allow_shm_fallback` remain valid and resolve to the historical one-sample path;
@@ -389,28 +389,31 @@ path is 4x. The same test presents a 24x12 image through a device initialized at
 private MSAA color attachment is recreated for a changed output extent while the pipeline/render pass
 remains reusable.
 
-### Stage 7 — honest public output contract
+#### Public RenderPlan and Texture contracts
 
-The public C++ backend output contract now exposes only `RenderPlan`. `OutputSourceType` and the
+The public C++ backend source contract exposes only `RenderPlan`. `OutputSourceType` and the old
 `Texture`/`Surface` source variants were removed, as were the empty internal `TextureSource` and
-`SurfaceSource` placeholders. `OutputSource::renderPlan()` is a required virtual operation, and
-`RenderPlanSource` remains the convenience adapter for backends whose current plan is produced by a
-protected implementation hook.
+`SurfaceSource` placeholders. `OutputSource::renderPlan()` is mandatory; native surfaces remain valid
+presentation targets, but no backend claims to produce a separately owned native surface.
+
+Texture output is now a separate, real contract on `OutputTargetBinding`, not a second backend source
+type. Scene, Web, and Video bindings attach their completed offscreen swapchain to the same
+`acquireTexture()` operation. It returns a move-only `TextureFrame` with explicit RGBA/BGRA format,
+extent, DRM fourcc/modifier or linear SHM layout, per-plane offset/stride, premultiplication, owned file
+descriptors, and a binding-local monotonic revision. The current producers expose implicit acquire and
+release synchronization: a slot is published only after GPU completion, CEF frame delivery, or CPU copy,
+and no unimplemented fence/semaphore handle is advertised. Destruction of the frame closes every owned
+descriptor; callers can explicitly transfer descriptor ownership when adapting to another ABI.
+
+The C ABI now consumes this same contract instead of dynamic-casting Scene/Web/Video bindings and reading
+their private swapchains. `we_frame_v1` receives the moved descriptors while preserving its independent
+session-monotonic serial and existing `we_frame_release()` ownership rule. Dedicated tests cover SHM and
+DMA-BUF metadata, DRM-to-pixel-format mapping, move-only descriptor lifetime, empty/detached acquisition,
+revision increments, Web software and accelerated frames, and the real Video C ABI acquire/release path.
 
 Render-plan output is no longer a capability bit. `ContentBackend::outputSource()` is mandatory, so a
-`supportsRenderPlan=false` state was contradictory and allowed an invalid backend shape. The
-`OutputController` and `WallpaperSession` now bind the required render plan directly; backend
-capabilities are limited to optional behavior such as properties and input.
-
-This does not remove native surface presentation. `OutputTargetType::Surface` and surface binding kinds
-remain valid destinations for a render plan. It removes only the false claim that a backend can produce
-a native surface as an independently owned source. A future public texture source must arrive with a
-complete format, ownership, layout, synchronization, revision, lifetime, and export contract rather
-than enum values and unimplemented controller branches.
-
-The architecture guard rejects reintroduction of source-kind branching or output capability flags and
-rejects the old placeholder headers. Public API, session lifecycle, controller ownership, and host
-service tests compile and execute against the RenderPlan-only contract.
+`supportsRenderPlan=false` state was contradictory. The architecture guard rejects reintroduction of
+source-kind branching, false output capability flags, and the old placeholder headers.
 
 ## Migration rules
 

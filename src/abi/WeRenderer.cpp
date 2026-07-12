@@ -39,7 +39,7 @@ struct WeSessionState {
     wallpaper::BackendType     sourceType { wallpaper::BackendType::WEScene };
     bool                       sourceSet { false };
     std::shared_ptr<wallpaper::OutputTargetBinding> binding;
-    uint64_t                  frameSerial { 0 };
+    std::uint64_t frameSerial { 0 };
     wallpaper::DiagnosticsSnapshot abiDiagnostics;
 };
 
@@ -114,60 +114,35 @@ wallpaper::WallpaperSource make_source(const we_source_v1* source) {
     return out;
 }
 
-bool copy_dmabuf_frame(const wallpaper::ExHandle& handle, we_frame_v1* out_frame) {
-    if (!out_frame) return false;
-    std::memset(out_frame, 0, sizeof(*out_frame));
-    out_frame->size      = sizeof(*out_frame);
-    out_frame->version   = 1;
-    out_frame->kind      = WE_FRAME_KIND_DMABUF;
-    out_frame->width     = static_cast<uint32_t>(std::max(handle.width, 0));
-    out_frame->height    = static_cast<uint32_t>(std::max(handle.height, 0));
-    out_frame->drm_fourcc = handle.drm_fourcc;
-    out_frame->drm_modifier = handle.drm_modifier;
-    out_frame->n_planes  = handle.n_planes;
-    out_frame->flags     = handle.premultiplied ? 1u : 0u;
-    for (uint32_t i = 0; i < handle.n_planes && i < 4; ++i) {
-        out_frame->planes[i].fd     = handle.planes[i].fd;
-        out_frame->planes[i].offset = handle.planes[i].offset;
-        out_frame->planes[i].stride = handle.planes[i].stride;
-    }
-    return true;
-}
-
-bool copy_shm_frame(const wallpaper::ExHandle& handle, we_frame_v1* out_frame) {
-    if (! out_frame) return false;
-    if (handle.fd < 0 || handle.width <= 0 || handle.height <= 0 || handle.size == 0
-        || handle.shm_stride == 0) {
-        return false;
-    }
+bool move_texture_frame_to_abi(wallpaper::TextureFrame frame, we_frame_v1* out_frame) {
+    if (! out_frame || ! frame.valid()) return false;
+    if (frame.shmSize > std::numeric_limits<std::uint32_t>::max()) return false;
 
     std::memset(out_frame, 0, sizeof(*out_frame));
     out_frame->size = sizeof(*out_frame);
     out_frame->version = 1;
-    out_frame->kind = WE_FRAME_KIND_SHM;
-    out_frame->width = static_cast<uint32_t>(handle.width);
-    out_frame->height = static_cast<uint32_t>(handle.height);
-    out_frame->shm_stride = handle.shm_stride;
-    out_frame->shm_size = static_cast<uint32_t>(handle.size);
-    out_frame->flags = handle.premultiplied ? 1u : 0u;
-    out_frame->planes[0].fd = handle.fd;
+    out_frame->width = frame.extent.width;
+    out_frame->height = frame.extent.height;
+    out_frame->flags = frame.premultiplied ? 1u : 0u;
+
+    if (frame.exportKind == wallpaper::TextureExportKind::DmaBuf) {
+        out_frame->kind = WE_FRAME_KIND_DMABUF;
+        out_frame->drm_fourcc = frame.drmFourcc;
+        out_frame->drm_modifier = frame.drmModifier;
+        out_frame->n_planes = frame.planeCount;
+    } else {
+        out_frame->kind = WE_FRAME_KIND_SHM;
+        out_frame->n_planes = 1;
+        out_frame->shm_stride = frame.planes[0].stride;
+        out_frame->shm_size = static_cast<std::uint32_t>(frame.shmSize);
+    }
+
+    for (std::uint32_t index = 0; index < out_frame->n_planes; ++index) {
+        out_frame->planes[index].fd = frame.planes[index].descriptor.release();
+        out_frame->planes[index].offset = frame.planes[index].offset;
+        out_frame->planes[index].stride = frame.planes[index].stride;
+    }
     return true;
-}
-
-// Centralised dynamic_cast helpers. The base class does not expose
-// swapchain() because scene and web bindings have different
-// lifecycle semantics around it; the ABI is the one place that
-// needs to read frames, so it pays the cast cost.
-wallpaper::WESceneOutputBinding* asSceneBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
-    return std::dynamic_pointer_cast<wallpaper::WESceneOutputBinding>(b).get();
-}
-
-wallpaper::WebOutputBinding* asWebBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
-    return std::dynamic_pointer_cast<wallpaper::WebOutputBinding>(b).get();
-}
-
-wallpaper::VideoOutputBinding* asVideoBinding(const std::shared_ptr<wallpaper::OutputTargetBinding>& b) {
-    return std::dynamic_pointer_cast<wallpaper::VideoOutputBinding>(b).get();
 }
 } // namespace
 
@@ -371,61 +346,15 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
     if (out_frame->size != 0 && out_frame->size < sizeof(we_frame_v1)) return -1;
     if (!state->binding) return 1;
 
-    // Dispatch to the right swapchain based on state->sourceKind.
-    // swapchain() lives on the derived binding, not the base, so a
-    // dynamic_cast is the cheapest way to read it.
-    wallpaper::ExSwapchain* ex_swapchain = nullptr;
-    if (state->sourceType == wallpaper::BackendType::WEScene) {
-        auto* sceneBinding = asSceneBinding(state->binding);
-        if (! sceneBinding) return -1;
-        ex_swapchain = sceneBinding->swapchain();
-    } else if (state->sourceType == wallpaper::BackendType::Web) {
-        auto* webBinding = asWebBinding(state->binding);
-        if (! webBinding) return -1;
-        ex_swapchain = webBinding->swapchain();
-    } else if (state->sourceType == wallpaper::BackendType::Video) {
-        auto* videoBinding = asVideoBinding(state->binding);
-        if (! videoBinding) return -1;
-        ex_swapchain = videoBinding->swapchain();
-    } else {
+    auto acquired = state->binding->acquireTexture();
+    if (! acquired) {
+        if (acquired.error().code == wallpaper::ResultCode::NotFound) return 1;
+        if (acquired.error().code == wallpaper::ResultCode::NotSupported) return -2;
+        append_abi_error(state, "abi.frame.acquire", acquired.error());
         return -1;
     }
-    if (! ex_swapchain) return 1;
-
-    auto* frame = ex_swapchain->eatFrame();
-    if (!frame) return 1;
-    if (frame->isDmabuf()) {
-        if (! copy_dmabuf_frame(*frame, out_frame)) {
-            return -1;
-        }
-    } else if (frame->isShm()) {
-        if (! copy_shm_frame(*frame, out_frame)) {
-            return -1;
-        }
-    } else {
-        return -2;
-    }
+    if (! move_texture_frame_to_abi(std::move(acquired.value()), out_frame)) return -1;
     out_frame->serial = ++state->frameSerial;
-    if (out_frame->kind == WE_FRAME_KIND_DMABUF) {
-        std::array<int, 4> duplicated_fds { -1, -1, -1, -1 };
-        for (uint32_t i = 0; i < out_frame->n_planes && i < 4; ++i) {
-            if (out_frame->planes[i].fd < 0) continue;
-            duplicated_fds[i] = ::dup(out_frame->planes[i].fd);
-            if (duplicated_fds[i] < 0) {
-                for (int duplicated_fd : duplicated_fds) {
-                    if (duplicated_fd >= 0) ::close(duplicated_fd);
-                }
-                return -1;
-            }
-        }
-        for (uint32_t i = 0; i < out_frame->n_planes && i < 4; ++i) {
-            if (duplicated_fds[i] >= 0) out_frame->planes[i].fd = duplicated_fds[i];
-        }
-    } else if (out_frame->kind == WE_FRAME_KIND_SHM) {
-        const int dup_fd = ::dup(out_frame->planes[0].fd);
-        if (dup_fd < 0) return -1;
-        out_frame->planes[0].fd = dup_fd;
-    }
     return 0;
 }
 

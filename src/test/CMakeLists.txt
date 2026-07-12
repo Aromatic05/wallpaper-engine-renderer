@@ -325,6 +325,16 @@ target_compile_options(output-controller-contract-test PRIVATE ${warn_opts})
 add_test(NAME output-controller-contract-test COMMAND output-controller-contract-test)
 
 add_executable(
+  texture-output-contract-test
+  output/texture_output_contract_test.cpp)
+
+target_link_libraries(texture-output-contract-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(texture-output-contract-test PRIVATE ..)
+target_compile_options(texture-output-contract-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME texture-output-contract-test COMMAND texture-output-contract-test)
+
+add_executable(
   final-output-msaa-test
   output/final_output_msaa_test.cpp)
 

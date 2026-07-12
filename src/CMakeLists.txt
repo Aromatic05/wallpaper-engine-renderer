@@ -42,6 +42,7 @@ set(wallpaper_renderer_sources
   backend/web/WebBrowserHost.cpp
   host/HostServices.cpp
   output/OutputController.cpp
+  output/TextureOutput.cpp
   runtime/WallpaperRuntime.cpp
   runtime/session/WallpaperSession.cpp)
 

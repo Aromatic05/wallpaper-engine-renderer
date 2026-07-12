@@ -230,12 +230,14 @@ int main() {
     assert(software_frame_lifecycle);
     requireAt(software_frame_lifecycle.value().frameRequested,
               "software paint should request frame");
-    auto* software_frame = binding->swapchain()->eatFrame();
-    requireAt(software_frame != nullptr, "software frame should be published");
-    requireAt(software_frame->isShm(), "software frame should use shm");
-    requireAt(software_frame->width == 320, "software frame width");
-    requireAt(software_frame->height == 240, "software frame height");
-    requireAt(software_frame->fd >= 0, "software frame fd");
+    auto software_frame_result = binding->acquireTexture();
+    requireAt(software_frame_result.ok(), "software frame should be published");
+    auto software_frame = std::move(software_frame_result.value());
+    requireAt(software_frame.exportKind == wallpaper::TextureExportKind::SharedMemory,
+              "software frame should use shm");
+    requireAt(software_frame.extent.width == 320, "software frame width");
+    requireAt(software_frame.extent.height == 240, "software frame height");
+    requireAt(software_frame.planes[0].descriptor.valid(), "software frame fd");
 
     mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
     diagnostics = backend->diagnostics();
@@ -313,16 +315,17 @@ int main() {
     auto lifecycle = backend->tick();
     assert(lifecycle);
     assert(lifecycle.value().frameRequested);
-    assert(binding->swapchain() != nullptr);
-    auto* ex_frame = binding->swapchain()->eatFrame();
-    assert(ex_frame != nullptr);
-    assert(ex_frame->isDmabuf());
-    assert(ex_frame->width == 640);
-    assert(ex_frame->height == 480);
-    assert(ex_frame->drm_fourcc == DRM_FORMAT_ABGR8888);
-    assert(ex_frame->planes[0].stride == 800u * 4u);
-    assert(ex_frame->planes[0].offset == 128u + 20u * 800u * 4u + 10u * 4u);
-    assert(ex_frame->planes[0].fd >= 0);
+    auto ex_frame_result = binding->acquireTexture();
+    assert(ex_frame_result);
+    auto ex_frame = std::move(ex_frame_result.value());
+    assert(ex_frame.exportKind == wallpaper::TextureExportKind::DmaBuf);
+    assert(ex_frame.format == wallpaper::TexturePixelFormat::Rgba8Unorm);
+    assert(ex_frame.extent.width == 640);
+    assert(ex_frame.extent.height == 480);
+    assert(ex_frame.drmFourcc == DRM_FORMAT_ABGR8888);
+    assert(ex_frame.planes[0].stride == 800u * 4u);
+    assert(ex_frame.planes[0].offset == 128u + 20u * 800u * 4u + 10u * 4u);
+    assert(ex_frame.planes[0].descriptor.valid());
     ::close(frame_fd);
 
     // Stop -> Shutdown.

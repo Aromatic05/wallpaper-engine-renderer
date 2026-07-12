@@ -8,16 +8,9 @@
 
 namespace wallpaper
 {
-// OutputTargetBinding for the CEF-based web backend. Mirrors
-// WESceneOutputBinding's surface API (RenderInitInfo + swapchain
-// attachment) but advertises OutputTargetBindingKind::WebRenderTarget
-// so the OutputController validate path picks the right kind check
-// and the C ABI's central dynamic_cast routes eatFrame() to the
-// web's swapchain rather than the scene's.
-//
-// `swapchain()` lives on the binding rather than the base class so
-// the scene and web paths stay decoupled; the ABI does the
-// dynamic_cast at the single point that needs to read frames.
+// OutputTargetBinding for the CEF-based web backend. Backend-specific render-plan binding remains
+// separate, while SHM and DMA-BUF frames are acquired through OutputTargetBinding's public texture
+// contract just like scene and video outputs.
 class WebOutputBinding : public OutputTargetBinding {
 public:
     explicit WebOutputBinding(RenderInitInfo renderInitInfo);
@@ -25,11 +18,9 @@ public:
     OutputTargetBindingKind kind() const override;
     const RenderInitInfo&   renderInitInfo() const;
     void                    attachSwapchain(ExSwapchain* swapchain);
-    ExSwapchain*            swapchain() const;
 
 private:
     RenderInitInfo m_renderInitInfo;
-    ExSwapchain*   m_swapchain { nullptr };
 };
 
 std::shared_ptr<WebOutputBinding> MakeWebOutputBinding(const RenderInitInfo& renderInitInfo);
@@ -48,10 +39,9 @@ inline const RenderInitInfo& WebOutputBinding::renderInitInfo() const {
 }
 
 inline void WebOutputBinding::attachSwapchain(ExSwapchain* swapchain) {
-    m_swapchain = swapchain;
+    attachTextureSwapchain(swapchain);
 }
 
-inline ExSwapchain* WebOutputBinding::swapchain() const { return m_swapchain; }
 
 inline std::shared_ptr<WebOutputBinding> MakeWebOutputBinding(const RenderInitInfo& renderInitInfo) {
     return std::make_shared<WebOutputBinding>(renderInitInfo);

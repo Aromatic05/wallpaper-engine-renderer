@@ -15,11 +15,9 @@ public:
     OutputTargetBindingKind kind() const override;
     const RenderInitInfo&   renderInitInfo() const;
     void                    attachSwapchain(ExSwapchain* swapchain);
-    ExSwapchain*            swapchain() const;
 
 private:
     RenderInitInfo m_renderInitInfo;
-    ExSwapchain*   m_swapchain { nullptr };
 };
 
 std::shared_ptr<WESceneOutputBinding> MakeWESceneOutputBinding(const RenderInitInfo& renderInitInfo);
@@ -38,10 +36,9 @@ inline const RenderInitInfo& WESceneOutputBinding::renderInitInfo() const {
 }
 
 inline void WESceneOutputBinding::attachSwapchain(ExSwapchain* swapchain) {
-    m_swapchain = swapchain;
+    attachTextureSwapchain(swapchain);
 }
 
-inline ExSwapchain* WESceneOutputBinding::swapchain() const { return m_swapchain; }
 
 inline std::shared_ptr<WESceneOutputBinding> MakeWESceneOutputBinding(
     const RenderInitInfo& renderInitInfo) {
