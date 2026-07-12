@@ -15,8 +15,10 @@ namespace
 {
 class MinimalOutputSource final : public wallpaper::OutputSource {
 public:
-    wallpaper::OutputSourceType type() const override {
-        return wallpaper::OutputSourceType::Surface;
+    wallpaper::Result<wallpaper::RenderPlanPtr> renderPlan() const override {
+        return wallpaper::Result<wallpaper::RenderPlanPtr>::failure(
+            wallpaper::ResultCode::InvalidState,
+            "host services test backend has no loaded render plan");
     }
 };
 

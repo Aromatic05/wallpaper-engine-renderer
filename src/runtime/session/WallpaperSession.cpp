@@ -144,10 +144,8 @@ struct WallpaperSession::Impl {
         }
 
         auto result = resolvedPlan
-                          ? candidateController.bind(
-                                candidateTarget, outputSource, backend->capabilities(), resolvedPlan)
-                          : candidateController.bind(
-                                candidateTarget, outputSource, backend->capabilities());
+                          ? candidateController.bind(candidateTarget, resolvedPlan)
+                          : candidateController.bind(candidateTarget, outputSource);
         if (! result) {
             return result;
         }
@@ -187,9 +185,6 @@ struct WallpaperSession::Impl {
             return Result<bool>::success(true);
         }
 
-        if (outputSource.type() != OutputSourceType::RenderPlan) {
-            return Result<bool>::success(false);
-        }
 
         auto planResult = outputSource.renderPlan();
         if (! planResult) {

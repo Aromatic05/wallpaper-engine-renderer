@@ -92,17 +92,18 @@ Backends do not own the external lifecycle. They only respond to `load/start/pau
 
 `output` decides where the produced content goes.
 
-Stage one keeps only three output source kinds:
+The current public output-source contract exposes one kind:
 
 - `RenderPlan`
-- `Texture`
-- `Surface`
 
-Expected usage:
+All built-in backends produce a `RenderPlan`. A render plan may target either a native surface or an
+offscreen/export binding, so presentation destination remains an `OutputTarget` concern rather than a
+second source type.
 
-- WE scene backend primarily produces `RenderPlan`
-- image/video or offscreen paths may produce `Texture`
-- future web backend may produce `Surface` or `Texture`
+`Texture` is intentionally not public yet. A future texture source must first define format, extent,
+ownership, image layout, acquire/release synchronization, lifetime/revision, and exportability.
+`Surface` is not planned as a renderer source contract: hosts own Wayland/native presentation while the
+renderer produces frames or render plans.
 
 ## Frame Lifecycle
 

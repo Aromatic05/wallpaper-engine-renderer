@@ -82,11 +82,7 @@ class FakeBackend final : public wallpaper::ContentBackend {
 public:
     wallpaper::BackendType type() const override { return wallpaper::BackendType::WEScene; }
 
-    wallpaper::BackendCapabilities capabilities() const override {
-        wallpaper::BackendCapabilities capabilities;
-        capabilities.supportsRenderPlan = true;
-        return capabilities;
-    }
+    wallpaper::BackendCapabilities capabilities() const override { return {}; }
 
     wallpaper::Result<void> load(const wallpaper::WallpaperSource&) override {
         ready = wallpaper::BackendReadyState::Loading;

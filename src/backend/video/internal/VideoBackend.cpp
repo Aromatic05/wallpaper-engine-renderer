@@ -410,9 +410,6 @@ BackendType VideoBackend::type() const { return BackendType::Video; }
 BackendCapabilities VideoBackend::capabilities() const {
     BackendCapabilities capabilities;
     capabilities.supportsProperties = true;
-    capabilities.supportsRenderPlan = true;
-    capabilities.supportsTextureOutput = false;
-    capabilities.supportsSurfaceOutput = false;
     return capabilities;
 }
 

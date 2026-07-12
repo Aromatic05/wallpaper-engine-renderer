@@ -159,9 +159,6 @@ private:
 } // namespace
 
 int main() {
-    wallpaper::BackendCapabilities capabilities;
-    capabilities.supportsRenderPlan = true;
-
     auto plan   = std::make_shared<FakeSceneRenderPlan>(7);
     auto source = FakeRenderPlanSource(plan);
 
@@ -170,14 +167,14 @@ int main() {
     wallpaper::OutputTarget wrongTarget;
     wrongTarget.type    = wallpaper::OutputTargetType::Surface;
     wrongTarget.binding = std::make_shared<WrongBinding>();
-    auto wrongResult    = controller.bind(wrongTarget, source, capabilities);
+    auto wrongResult    = controller.bind(wrongTarget, source);
     assert(! wrongResult);
     assert(! plan->prepared);
 
     wallpaper::RenderInitInfo initInfo;
     auto                      sceneBinding = wallpaper::MakeWESceneOutputBinding(initInfo);
     auto                      goodTarget   = wallpaper::MakeWESceneOutputTarget(sceneBinding);
-    auto                      goodResult   = controller.bind(goodTarget, source, capabilities);
+    auto                      goodResult   = controller.bind(goodTarget, source);
     assert(goodResult);
     assert(plan->prepared);
     assert(controller.boundRenderPlanRevision().has_value());
@@ -185,7 +182,7 @@ int main() {
 
     auto failingPlan   = std::make_shared<FakeSceneRenderPlan>(9, true);
     auto failingSource = FakeRenderPlanSource(failingPlan);
-    auto failingResult = controller.bind(goodTarget, failingSource, capabilities);
+    auto failingResult = controller.bind(goodTarget, failingSource);
     assert(! failingResult);
     assert(failingPlan->prepared);
     assert(controller.boundRenderPlanRevision().has_value());
@@ -196,7 +193,7 @@ int main() {
     auto unstablePlanA = std::make_shared<FakeSceneRenderPlan>(13);
     auto unstablePlanB = std::make_shared<FakeSceneRenderPlan>(17);
     auto unstableSource = SequentialRenderPlanSource(unstablePlanA, unstablePlanB);
-    auto unstableResult = unstableController.bind(goodTarget, unstableSource, capabilities);
+    auto unstableResult = unstableController.bind(goodTarget, unstableSource);
     assert(unstableResult);
     assert(unstablePlanA->bindCalls == 1);
     assert(unstablePlanB->bindCalls == 0);
@@ -207,7 +204,7 @@ int main() {
     wallpaper::OutputController ownedPlanController;
     {
         auto ephemeralSource = EphemeralRenderPlanSource(destructionCount);
-        auto ownedResult     = ownedPlanController.bind(goodTarget, ephemeralSource, capabilities);
+        auto ownedResult     = ownedPlanController.bind(goodTarget, ephemeralSource);
         assert(ownedResult);
         assert(! ephemeralSource.lastPlan().expired());
     }
@@ -222,7 +219,7 @@ int main() {
     wallpaper::OutputTarget genericTarget;
     genericTarget.type    = wallpaper::OutputTargetType::Surface;
     genericTarget.binding = genericTargetBinding;
-    auto genericResult    = controller.bind(genericTarget, genericSource, capabilities);
+    auto genericResult    = controller.bind(genericTarget, genericSource);
     assert(genericResult);
     assert(genericPlan->prepared);
     assert(controller.boundRenderPlanRevision().has_value());

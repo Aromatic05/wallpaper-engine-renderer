@@ -75,9 +75,6 @@ BackendCapabilities WESceneBackend::capabilities() const {
     BackendCapabilities capabilities;
     capabilities.supportsProperties    = true;
     capabilities.supportsInput         = true;
-    capabilities.supportsRenderPlan    = true;
-    capabilities.supportsTextureOutput = false;
-    capabilities.supportsSurfaceOutput = false;
     return capabilities;
 }
 

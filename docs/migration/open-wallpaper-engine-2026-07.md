@@ -381,6 +381,29 @@ path is 4x. The same test presents a 24x12 image through a device initialized at
 private MSAA color attachment is recreated for a changed output extent while the pipeline/render pass
 remains reusable.
 
+### Stage 7 — honest public output contract
+
+The public C++ backend output contract now exposes only `RenderPlan`. `OutputSourceType` and the
+`Texture`/`Surface` source variants were removed, as were the empty internal `TextureSource` and
+`SurfaceSource` placeholders. `OutputSource::renderPlan()` is a required virtual operation, and
+`RenderPlanSource` remains the convenience adapter for backends whose current plan is produced by a
+protected implementation hook.
+
+Render-plan output is no longer a capability bit. `ContentBackend::outputSource()` is mandatory, so a
+`supportsRenderPlan=false` state was contradictory and allowed an invalid backend shape. The
+`OutputController` and `WallpaperSession` now bind the required render plan directly; backend
+capabilities are limited to optional behavior such as properties and input.
+
+This does not remove native surface presentation. `OutputTargetType::Surface` and surface binding kinds
+remain valid destinations for a render plan. It removes only the false claim that a backend can produce
+a native surface as an independently owned source. A future public texture source must arrive with a
+complete format, ownership, layout, synchronization, revision, lifetime, and export contract rather
+than enum values and unimplemented controller branches.
+
+The architecture guard rejects reintroduction of source-kind branching or output capability flags and
+rejects the old placeholder headers. Public API, session lifecycle, controller ownership, and host
+service tests compile and execute against the RenderPlan-only contract.
+
 ## Migration rules
 
 1. A commit is not marked `DONE` from code similarity alone.
