@@ -1125,10 +1125,11 @@ void WPMdlParser::GenStaticMesh(SceneMesh& mesh, const WPMdl::StaticChunk& chunk
         vertex.SetVertexs(i, one_vert);
     }
 
-    std::vector<uint32_t> indices;
-    size_t                u16_count = chunk.indices.size() * 3;
-    indices.resize(u16_count / 2 + 1);
-    memcpy(indices.data(), chunk.indices.data(), u16_count * sizeof(uint16_t));
+    std::vector<uint16_t> indices;
+    indices.reserve(chunk.indices.size() * 3);
+    for (const auto& triangle : chunk.indices) {
+        indices.insert(indices.end(), triangle.begin(), triangle.end());
+    }
 
     mesh.AddVertexArray(std::move(vertex));
     mesh.AddIndexArray(SceneIndexArray(indices));

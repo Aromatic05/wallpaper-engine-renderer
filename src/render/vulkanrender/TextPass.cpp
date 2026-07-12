@@ -520,7 +520,7 @@ bool TextPass::ensureMeshBuffers(SceneMesh& mesh, MeshBuffers& buffers, Renderin
 
     if (mesh.IndexCount() > 0) {
         const auto& index = mesh.GetIndexArray(0);
-        buffers.draw_count = static_cast<uint32_t>((index.RenderDataCount() * 2) / 3) * 3;
+        buffers.draw_count = static_cast<uint32_t>(index.RenderIndexCount());
         if (!dyn_buf->writeToBuf(buffers.index_buf,
                                  { reinterpret_cast<uint8_t*>(const_cast<uint32_t*>(index.Data())),
                                    index.DataSizeOf() })) {

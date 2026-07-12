@@ -372,6 +372,9 @@ void TestRuntimeUint32IndexUpload() {
     Require(indexArray.DataCount() == 3, "runtime index count mismatch");
     Require(indexArray.Data()[2] == 65'536,
             "runtime uint32 index must not be truncated to uint16");
+    Require(indexArray.IndexElementType() == wallpaper::SceneIndexArray::ElementType::Uint32
+                && indexArray.IndexCount() == 3,
+            "runtime mesh must retain the MDL's 32-bit index contract");
 }
 void TestRuntimePositionOffset() {
     wallpaper::WPMdl mdl;

@@ -389,13 +389,8 @@ VkDeviceSize DynamicVertexUploadSize(const wallpaper::SceneVertexArray& vertex) 
 }
 
 VkDeviceSize DynamicIndexUploadSize(const wallpaper::SceneIndexArray& indice) {
-    // Index buffers follow the same bootstrap rule as vertices, but CustomShaderPass binds them as
-    // VK_INDEX_TYPE_UINT16 at draw time. SceneIndexArray stores both 32-bit model indices and
-    // packed 16-bit particle indices behind the same byte-count API, so the non-empty dynamic floor
-    // must match the GPU binding size. The effect-dependency route added for private image
-    // composites can expose one-quad particle helpers with only 12 bytes of authored capacity;
-    // using a 24-byte uint32_t floor makes those valid helpers fail before their first dynamic
-    // upload.
+    // SceneIndexArray owns the physical index width. The bootstrap floor stays at one packed quad,
+    // which is sufficient for both 16-bit helpers and 32-bit MDL geometry.
     return InitialDynamicSuballocationSize(static_cast<VkDeviceSize>(indice.CapacitySizeof()),
                                            static_cast<VkDeviceSize>(indice.DataSizeOf()),
                                            kDynamicIndexQuadFloorSize);
@@ -1004,8 +999,10 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
 
         if (mesh.IndexCount() > 0) {
             auto&  indice     = mesh.GetIndexArray(0);
-            size_t count      = (indice.DataCount() * 2) / 3;
-            m_desc.draw_count = (u32)count * 3;
+            m_desc.draw_count = static_cast<u32>(indice.IndexCount());
+            m_desc.index_type = indice.IndexElementType() == SceneIndexArray::ElementType::Uint32
+                ? VK_INDEX_TYPE_UINT32
+                : VK_INDEX_TYPE_UINT16;
             auto& buf         = m_desc.index_buf;
             if (! m_desc.dyn_vertex) {
                 if (indice.CapacitySizeof() >= 1024 * 1024) {
@@ -1101,11 +1098,13 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
             auto&       vertex_bufs      = m_desc.vertex_bufs;
             auto&       draw_count       = m_desc.draw_count;
             auto&       index_buf        = m_desc.index_buf;
+            auto&       index_type       = m_desc.index_type;
             auto&       force_dyn_upload = m_desc.force_dyn_upload;
             update_dyn_buf_op                = [&mesh,
                                                 &vertex_bufs,
                                                 &draw_count,
                                                 &index_buf,
+                                                &index_type,
                                                 dyn_buf,
                                                 &force_dyn_upload]() {
                 const bool dirty        = mesh.Dirty().load();
@@ -1207,8 +1206,10 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                             mesh.SetDirty();
                             return;
                         }
-                        u32 count  = (u32)((indice.RenderDataCount() * 2) / 3);
-                        draw_count = count * 3;
+                        draw_count = static_cast<u32>(indice.RenderIndexCount());
+                        index_type = indice.IndexElementType() == SceneIndexArray::ElementType::Uint32
+                            ? VK_INDEX_TYPE_UINT32
+                            : VK_INDEX_TYPE_UINT16;
                         auto& buf  = index_buf;
                         if (! dyn_buf->writeToBuf(
                                 buf, { (uint8_t*)indice.Data(), indice.DataSizeOf() })) {
@@ -1742,7 +1743,7 @@ void CustomShaderPass::execute(const Device& device, RenderingResources& rr) {
         cmd.BindVertexBuffers((u32)i, 1, &gpu_buf, &buf.offset);
     }
     if (m_desc.index_buf) {
-        cmd.BindIndexBuffer(gpu_buf, m_desc.index_buf.offset, VK_INDEX_TYPE_UINT16);
+        cmd.BindIndexBuffer(gpu_buf, m_desc.index_buf.offset, m_desc.index_type);
         cmd.DrawIndexed(m_desc.draw_count, 1, 0, 0, 0);
     } else {
         cmd.Draw(m_desc.draw_count, 1, 0, 0);

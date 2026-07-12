@@ -14,7 +14,14 @@ class SceneIndexArray : NoCopy {
     constexpr static size_t Unit_Byte_Size { sizeof(uint32_t) };
 
 public:
+    enum class ElementType : uint8_t
+    {
+        Uint16,
+        Uint32,
+    };
+
     SceneIndexArray(usize indexCount);
+    SceneIndexArray(std::span<const uint16_t> data);
     SceneIndexArray(std::span<const uint32_t> data);
 
     SceneIndexArray(SceneIndexArray&&) noexcept;
@@ -27,9 +34,14 @@ public:
     const uint32_t* Data() const { return m_pData; }
     usize           DataCount() const { return m_size; }
     usize           DataSizeOf() const { return m_size * Unit_Byte_Size; }
+    ElementType     IndexElementType() const { return m_element_type; }
+    usize           IndexCount() const {
+        return m_element_type == ElementType::Uint16 ? m_size * 2 : m_size;
+    }
 
-    usize RenderDataCount() const noexcept {
-        return m_render_size > m_size ? m_size : m_render_size;
+    usize RenderIndexCount() const noexcept {
+        const auto stored_count = m_render_size > m_size ? m_size : m_render_size;
+        return m_element_type == ElementType::Uint16 ? stored_count * 2 : stored_count;
     }
     void SetRenderDataCount(usize val) noexcept { m_render_size = val; }
 
@@ -52,6 +64,7 @@ private:
     uint32_t* m_pData;
     usize     m_size;
     usize     m_capacity;
+    ElementType m_element_type { ElementType::Uint16 };
 
     usize m_render_size { std::numeric_limits<usize>::max() };
 

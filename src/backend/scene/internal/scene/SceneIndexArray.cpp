@@ -9,16 +9,23 @@ SceneIndexArray::SceneIndexArray(std::size_t indexCount): m_size(0), m_capacity(
     std::memset(m_pData, 0, m_capacity * sizeof(uint32_t));
 }
 SceneIndexArray::SceneIndexArray(std::span<const uint32_t> data)
-    : m_size(data.size()), m_capacity(m_size) {
+    : m_size(data.size()), m_capacity(m_size), m_element_type(ElementType::Uint32) {
     auto      dataSize = data.size();
     uint32_t* newdata  = new uint32_t[dataSize];
     std::memcpy(newdata, &data[0], DataSizeOf());
+    m_pData = newdata;
+};
+SceneIndexArray::SceneIndexArray(std::span<const uint16_t> data)
+    : m_size((data.size() + 1) / 2), m_capacity(m_size), m_element_type(ElementType::Uint16) {
+    uint32_t* newdata = new uint32_t[m_size] {};
+    std::memcpy(newdata, data.data(), data.size_bytes());
     m_pData = newdata;
 };
 SceneIndexArray::SceneIndexArray(SceneIndexArray&& o) noexcept
     : m_pData(std::exchange(o.m_pData, nullptr)),
       m_size(o.m_size),
       m_capacity(o.m_capacity),
+      m_element_type(o.m_element_type),
       m_render_size(o.m_render_size),
       m_id(o.m_id) {}
 

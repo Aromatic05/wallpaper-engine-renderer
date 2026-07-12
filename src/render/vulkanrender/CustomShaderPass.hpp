@@ -68,6 +68,7 @@ public:
         bool                          force_dyn_upload { false };
         std::vector<StagingBufferRef> vertex_bufs;
         StagingBufferRef              index_buf;
+        VkIndexType                   index_type { VK_INDEX_TYPE_UINT16 };
         StagingBufferRef              ubo_buf;
 
         // pipeline
