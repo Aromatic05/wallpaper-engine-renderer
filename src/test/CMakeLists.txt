@@ -48,6 +48,16 @@ target_compile_options(we-renderer-config-test PRIVATE ${warn_opts})
 add_test(NAME we-renderer-config-test COMMAND we-renderer-config-test)
 
 add_executable(
+  we-renderer-frame-status-test
+  abi/we_renderer_frame_status_test.cpp)
+
+target_link_libraries(we-renderer-frame-status-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(we-renderer-frame-status-test PRIVATE ..)
+target_compile_options(we-renderer-frame-status-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME we-renderer-frame-status-test COMMAND we-renderer-frame-status-test)
+
+add_executable(
   we-project-source-test
   abi/we_project_source_test.cpp)
 

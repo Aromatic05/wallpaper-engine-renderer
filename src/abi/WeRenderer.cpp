@@ -2,6 +2,7 @@
 #include "WeRendererOptions.hpp"
 #include "WeRendererConfig.hpp"
 #include "WeProjectSource.hpp"
+#include "WeRendererFrameStatus.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
 #include "wallpaper/Diagnostics.hpp"
@@ -348,10 +349,12 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
 
     auto acquired = state->binding->acquireTexture();
     if (! acquired) {
-        if (acquired.error().code == wallpaper::ResultCode::NotFound) return 1;
-        if (acquired.error().code == wallpaper::ResultCode::NotSupported) return -2;
-        append_abi_error(state, "abi.frame.acquire", acquired.error());
-        return -1;
+        const auto status =
+            wallpaper::MapTextureAcquireErrorToAbiStatus(acquired.error().code);
+        if (status.publishDiagnostic) {
+            append_abi_error(state, "abi.frame.acquire", acquired.error());
+        }
+        return status.abiStatus;
     }
     if (! move_texture_frame_to_abi(std::move(acquired.value()), out_frame)) return -1;
     out_frame->serial = ++state->frameSerial;
