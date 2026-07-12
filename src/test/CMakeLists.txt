@@ -63,6 +63,20 @@ add_test(
           -DNM=${CMAKE_NM}
           -P ${CMAKE_CURRENT_SOURCE_DIR}/abi/abi_symbols_test.cmake)
 
+find_program(WP_RUSTC_EXECUTABLE rustc)
+if(WP_RUSTC_EXECUTABLE)
+  add_test(
+    NAME we-renderer-rust-abi-test
+    COMMAND ${CMAKE_COMMAND}
+            -DRUSTC=${WP_RUSTC_EXECUTABLE}
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/abi/we_renderer_rust_abi_test.rs
+            -DLIBRARY=$<TARGET_FILE:${PROJECT_NAME}>
+            -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/we-renderer-rust-abi-test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/abi/rust_abi_test.cmake)
+else()
+  message(WARNING "rustc not found; Rust ABI consumer test is disabled")
+endif()
+
 add_executable(
   user-properties-json-test
   scene/user_properties_json_test.cpp)

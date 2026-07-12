@@ -71,6 +71,7 @@ Reference branch:
 | Validation layer | `DONE` | Existing append-only render config field |
 | Diagnostics JSON | `DONE` | Two-call buffer contract and error-source assertions |
 | Pure C consumer | `DONE` | `we-renderer-c-abi-test` |
+| Rust ABI consumer | `DONE` | `we-renderer-rust-abi-test` compiles a real `repr(C)` caller with `rustc`, links the shared library, verifies append-only layouts, legacy source prefixes, diagnostics, and source-options errors. |
 | Exported ABI symbols | `DONE` | `we-renderer-abi-symbols-test` |
 
 ## Recent upstream commit matrix
