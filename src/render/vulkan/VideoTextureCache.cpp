@@ -263,6 +263,17 @@ enum class VideoPipelineMode
     NvidiaStatelessCudaNv12,
 };
 
+VideoTexturePipelineMode ToPublicPipelineMode(VideoPipelineMode mode) {
+    switch (mode) {
+    case VideoPipelineMode::CpuRgba: return VideoTexturePipelineMode::CpuRgba;
+    case VideoPipelineMode::VaMemoryBgra: return VideoTexturePipelineMode::VaMemoryBgra;
+    case VideoPipelineMode::NvidiaCudaNv12: return VideoTexturePipelineMode::NvidiaCudaNv12;
+    case VideoPipelineMode::NvidiaStatelessCudaNv12:
+        return VideoTexturePipelineMode::NvidiaStatelessCudaNv12;
+    }
+    return VideoTexturePipelineMode::CpuRgba;
+}
+
 #if HANABI_HAS_CUDA_INTEROP
 bool IsNvidiaCudaMode(VideoPipelineMode mode) {
     return mode == VideoPipelineMode::NvidiaCudaNv12 ||
@@ -336,6 +347,10 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode) {
             "! qtdemux name=demux "
             "demux.video_0 ! queue "
             "! h264parse "
+            // MP4 carries AVC length-prefixed NAL units, while common software fallbacks such as
+            // openh264dec only advertise byte-stream input. Normalize before decodebin so a system
+            // without gst-libav can still use its installed H.264 decoder.
+            "! video/x-h264,stream-format=(string)byte-stream,alignment=(string)au "
             "! decodebin "
             "! videoconvert "
             "! appsink name=sink sync=true max-buffers=1 drop=true",
@@ -2117,6 +2132,23 @@ std::size_t VideoTextureCache::GetTrackedBytes() const {
         }
     }
     return total;
+}
+
+std::optional<VideoTextureStatus> VideoTextureCache::GetStatus(std::string_view key) const {
+    const auto* entry = find(key);
+    if (entry == nullptr) return std::nullopt;
+
+    return VideoTextureStatus {
+        .pipeline_mode = ToPublicPipelineMode(entry->pipeline_mode),
+        .pipeline_failed = entry->pipeline_failed,
+        .paused = entry->paused,
+        .stopped = entry->stopped,
+        .waiting_for_loop_sample = entry->eos_loop_waiting_for_sample,
+        .loop_rebuild_attempted = entry->eos_loop_rebuild_attempted,
+        .upload_pending = entry->dirty || entry->cuda_rgba_dirty || entry->va_dmabuf_dirty,
+        .loop_count = entry->eos_loop_count,
+        .uploaded_sample_count = entry->uploaded_sample_count,
+    };
 }
 
 std::size_t VideoTextureCache::GetTrackedEntryCount() const {

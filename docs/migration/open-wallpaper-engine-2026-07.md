@@ -288,11 +288,11 @@ reshow retention, and direct-final effect ownership. No parallel `SceneNode` alp
 | `ebb7031` | dynamic audio setting | `NOT_APPLICABLE` | Upstream change is confined to the Waywallen plugin/host audio gate; renderer ABI/source volume and mute remain host-neutral. |
 | `182340f` | initial user property strings | `DONE` | Stage 1 JSON path accepts strings and applies before source load. |
 | `3198eff` | calendar text layer scripts | `DONE` | Cross-layer text writes rebuild the first-class text primitive, atlas, and auto-sized layout immediately. |
-| `a66f60d` | looped texture frames | `REVIEW` | Local GStreamer loop boundary test. |
-| `08da17e` | hardware video textures | `REVIEW` | Compare behavior, keep local VA/CUDA/SHM architecture. |
+| `a66f60d` | looped texture frames | `DONE` | Embedded H.264 playback reaches EOS, performs the flushing loop seek, uploads a new sample, and retains the same sampled image/view/sampler across the boundary. |
+| `08da17e` | hardware video textures | `DONE` | Keep the local GStreamer architecture; AMD VA VAMemory is imported through DMA-BUF and copied into the stable Vulkan sampled image, with a forced CPU RGBA fallback regression. NVIDIA CUDA paths remain structurally covered but were not executable on this AMD host. |
 | `c4cb8bb` | dynamic asset layers | `DONE` | Registered image-model assets create real runtime layers through the existing parser, and destroy/recreate uses normal ownership and resource release rather than an upstream fixed clone pool. |
 | `07b26a1` | dynamic text loading | `DONE` | Scene-owned text nodes/primitives avoid the upstream raw-pointer callback lifetime issue; VertexArray append/move ownership, index resource IDs, shader annotation leading-zero numbers, and dynamic text destruction are covered directly. |
-| `898d2b4` | MPRIS media events | `REVIEW` | Compare host media event contract; do not import Waywallen bridge. |
+| `898d2b4` | MPRIS media events | `DONE` | Renderer-local thumbnail/properties/playback callbacks, change de-duplication, and current/previous thumbnail texture registration are covered; the Waywallen MPRIS bridge remains host-side and is not imported. |
 
 SceneScript layer proxies now expose `getEffect(nameOrIndex)` and resolve authored effect names to the
 same index-based proxy already used by effect property scripts. Visibility writes therefore retain the
@@ -316,6 +316,21 @@ through the active tail, accepts the final capacity slot, and transfers all owne
 move construction/assignment; both `SceneVertexArray` and `SceneIndexArray` start with an explicit
 unassigned ID so moving a newly-created geometry buffer never reads indeterminate state. Shader metadata
 parsing normalizes malformed numeric literals such as `[0,01]` outside strings before JSON parsing.
+
+The media cluster keeps the local renderer pipeline rather than adopting upstream's device and bridge
+layout. A checked-in 64x64 two-frame H.264 fixture exercises real GStreamer playback. On the current AMD
+host, the requested VA path decodes to VAMemory, exports/imports the frame through DMA-BUF, records the GPU
+copy into the stable sampled image, and repeats the same operation after the EOS loop seek without changing
+the image, view, or sampler handles. A second Vulkan device deliberately omits external-memory extensions
+and forces the CPU RGBA path; MP4 AVC input is normalized to H.264 byte-stream before `decodebin`, allowing
+`openh264dec` to work on systems without `gst-libav`. The NVIDIA CUDA and stateless CUDA paths are retained
+unchanged and participate in the same status/upload contract, but they were not run on this AMD machine.
+
+Media-state regression uses the renderer's host-neutral `ApplyMediaState` boundary. It verifies independent
+`mediaThumbnailChanged`, `mediaPropertiesChanged`, and `mediaPlaybackChanged` delivery, suppresses duplicate
+events when state is unchanged, and confirms current/previous RGBA thumbnails are registered in the
+synthetic image parser and marked dirty. Upstream Waywallen MPRIS discovery and daemon bridge code remains
+outside the renderer library.
 
 ## Migration rules
 

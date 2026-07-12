@@ -5,6 +5,8 @@
 #include "scene/SceneTexture.h"
 
 #include <memory>
+#include <cstdint>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,6 +35,25 @@ struct VideoTexturePipelineSettings {
     VideoTextureGpuPipeline gpu_pipeline { VideoTextureGpuPipeline::Nvidia };
 };
 
+enum class VideoTexturePipelineMode : uint32_t {
+    CpuRgba,
+    VaMemoryBgra,
+    NvidiaCudaNv12,
+    NvidiaStatelessCudaNv12,
+};
+
+struct VideoTextureStatus {
+    VideoTexturePipelineMode pipeline_mode { VideoTexturePipelineMode::CpuRgba };
+    bool pipeline_failed { false };
+    bool paused { false };
+    bool stopped { false };
+    bool waiting_for_loop_sample { false };
+    bool loop_rebuild_attempted { false };
+    bool upload_pending { false };
+    uint64_t loop_count { 0 };
+    uint64_t uploaded_sample_count { 0 };
+};
+
 class VideoTextureCache : NoCopy, NoMove {
 public:
     VideoTextureCache(const Device&, VideoTexturePipelineSettings settings = {});
@@ -53,6 +74,7 @@ public:
     bool          Release(std::string_view key);
     std::size_t   GetTrackedBytes() const;
     std::size_t   GetTrackedEntryCount() const;
+    std::optional<VideoTextureStatus> GetStatus(std::string_view key) const;
 
 private:
     struct Entry;

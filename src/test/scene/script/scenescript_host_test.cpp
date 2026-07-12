@@ -1,5 +1,7 @@
 #include "backend/scene/internal/scenescript/WPSceneScriptHost.hpp"
 #include "backend/scene/internal/parser/WPSceneParser.hpp"
+#include "backend/scene/internal/parser/WPSyntheticImageParser.hpp"
+#include "backend/scene/internal/scenescript/WPSceneScriptMedia.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -704,6 +706,124 @@ int main() {
         assert(text_it->second.primitive->atlas_version > initial_atlas_version);
         assert(text_it->second.primitive->layout.visible_display_size[0] > initial_width);
         assert(scene.dirtyTextLayerIds.contains(100));
+    }
+
+    {
+        Scene scene;
+        scene.imageParser = std::make_unique<wallpaper::WPSyntheticImageParser>(nullptr);
+        auto node = MakeLayerNode(110, "MediaOwner");
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 110, node, R"({"id":110,"name":"MediaOwner"})");
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(110,
+                                             "MediaOwner",
+                                             "origin",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float3,
+                                             WPDynamicValue(std::array<float, 3> { 0.0f, 0.0f, 0.0f }));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            let thumbnailEvents = 0;
+            let propertyEvents = 0;
+            let playbackEvents = 0;
+
+            export function mediaThumbnailChanged(event) {
+                if (!event.hasThumbnail) return;
+                thumbnailEvents++;
+                if (!(Math.abs(event.primaryColor.x - 0.1) < 0.0001 &&
+                      Math.abs(event.secondaryColor.y - 0.5) < 0.0001 &&
+                      Math.abs(event.tertiaryColor.z - 0.9) < 0.0001 &&
+                      Math.abs(event.textColor.x - 1) < 0.0001 &&
+                      Math.abs(event.highContrastColor.z - 0.25) < 0.0001)) {
+                    thumbnailEvents += 1000;
+                }
+            }
+
+            export function mediaPropertiesChanged(event) {
+                if (event.title === '' && event.artist === '') return;
+                propertyEvents++;
+                if (!((event.title === 'Track' || event.title === 'Track 2') &&
+                      event.artist === 'Artist' &&
+                      event.albumTitle === 'Album' &&
+                      event.albumArtist === 'Album Artist' &&
+                      event.subTitle === 'Subtitle' &&
+                      event.genres === 'Ambient' &&
+                      event.contentType === 'music')) {
+                    propertyEvents += 1000;
+                }
+            }
+
+            export function mediaPlaybackChanged(event) {
+                if (event.state === MediaPlaybackEvent.PLAYBACK_STOPPED) return;
+                playbackEvents++;
+                if (event.state !== MediaPlaybackEvent.PLAYBACK_PLAYING &&
+                    event.state !== MediaPlaybackEvent.PLAYBACK_PAUSED) {
+                    playbackEvents += 1000;
+                }
+            }
+
+            export function update() {
+                return new Vec3(thumbnailEvents, propertyEvents, playbackEvents);
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+
+        wallpaper::WPSceneScriptMediaState media_state;
+        media_state.has_thumbnail = true;
+        media_state.playback_state = 1;
+        media_state.primary_color = { 0.1f, 0.2f, 0.3f };
+        media_state.secondary_color = { 0.4f, 0.5f, 0.6f };
+        media_state.tertiary_color = { 0.7f, 0.8f, 0.9f };
+        media_state.text_color = { 1.0f, 0.75f, 0.5f };
+        media_state.high_contrast_color = { 0.75f, 0.5f, 0.25f };
+        media_state.title = "Track";
+        media_state.artist = "Artist";
+        media_state.album_title = "Album";
+        media_state.album_artist = "Album Artist";
+        media_state.sub_title = "Subtitle";
+        media_state.genres = "Ambient";
+        media_state.content_type = "music";
+        media_state.thumbnail_width = 2;
+        media_state.thumbnail_height = 1;
+        media_state.thumbnail_rgba = { 255, 0, 0, 255, 0, 255, 0, 255 };
+        media_state.previous_thumbnail_width = 1;
+        media_state.previous_thumbnail_height = 1;
+        media_state.previous_thumbnail_rgba = { 0, 0, 255, 255 };
+
+        host.ApplyMediaState(media_state, true);
+        host.FrameBegin(0.1);
+        const auto require_event_counts = [&](float thumbnail, float properties, float playback) {
+            assert(NearlyEqual(node->Translate().x(), thumbnail));
+            assert(NearlyEqual(node->Translate().y(), properties));
+            assert(NearlyEqual(node->Translate().z(), playback));
+        };
+        require_event_counts(1.0f, 1.0f, 1.0f);
+        assert(scene.textures.at(std::string(
+                   wallpaper::WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE)).width == 2);
+        assert(scene.textures.at(std::string(
+                   wallpaper::WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE)).height == 1);
+        assert(scene.dirtyImportedTextureKeys.contains(std::string(
+            wallpaper::WP_SCENE_SCRIPT_MEDIA_THUMBNAIL_TEXTURE)));
+        assert(scene.dirtyImportedTextureKeys.contains(std::string(
+            wallpaper::WP_SCENE_SCRIPT_MEDIA_PREVIOUS_THUMBNAIL_TEXTURE)));
+        auto* synthetic_parser = wallpaper::AsSyntheticImageParser(scene.imageParser.get());
+        assert(synthetic_parser != nullptr && synthetic_parser->TrackedImageCount() == 2);
+
+        host.ApplyMediaState(media_state, false);
+        host.FrameBegin(0.1);
+        require_event_counts(1.0f, 1.0f, 1.0f);
+
+        media_state.title = "Track 2";
+        host.ApplyMediaState(media_state, false);
+        host.FrameBegin(0.1);
+        require_event_counts(1.0f, 2.0f, 1.0f);
+
+        media_state.playback_state = 2;
+        host.ApplyMediaState(media_state, false);
+        host.FrameBegin(0.1);
+        require_event_counts(1.0f, 2.0f, 2.0f);
     }
 
     {
