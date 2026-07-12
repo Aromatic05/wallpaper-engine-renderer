@@ -239,6 +239,9 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
         case WE_FILL_MODE_ASPECT_FIT:
             scene_fill_mode = 1;
             break;
+        case WE_FILL_MODE_CENTER:
+            scene_fill_mode = 3;
+            break;
         case WE_FILL_MODE_ASPECT_CROP:
             break;
         }

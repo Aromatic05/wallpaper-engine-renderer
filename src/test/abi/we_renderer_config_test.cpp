@@ -80,7 +80,11 @@ int main() {
             "unsupported output rotation must be rejected");
     current.rotation_degrees = 0;
 
-    current.fill_mode = static_cast<we_fill_mode_v1>(3);
+    current.fill_mode = WE_FILL_MODE_CENTER;
+    Require(wallpaper::ParseRendererRenderConfig(&current)->fill_mode == WE_FILL_MODE_CENTER,
+            "center fill mode must be preserved");
+
+    current.fill_mode = static_cast<we_fill_mode_v1>(4);
     Require(! wallpaper::ParseRendererRenderConfig(&current).has_value(),
             "unsupported fill mode must be rejected");
     current.fill_mode = WE_FILL_MODE_ASPECT_FIT;

@@ -25,6 +25,7 @@ typedef enum we_fill_mode_v1 {
     WE_FILL_MODE_ASPECT_CROP = 0,
     WE_FILL_MODE_STRETCH = 1,
     WE_FILL_MODE_ASPECT_FIT = 2,
+    WE_FILL_MODE_CENTER = 3,
 } we_fill_mode_v1;
 
 typedef enum we_input_event_type_v2 {

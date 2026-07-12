@@ -62,8 +62,9 @@ inline bool parseArgs(int argc, char** argv, Args& args, std::string& err) {
             if (v == "stretch") args.fill_mode = 1;
             else if (v == "fit") args.fill_mode = 2;
             else if (v == "crop") args.fill_mode = 0;
+            else if (v == "center") args.fill_mode = 3;
             else {
-                err = "--fill-mode expects stretch, fit, or crop";
+                err = "--fill-mode expects stretch, fit, crop, or center";
                 return false;
             }
         } else if (a == "--rotation") {
@@ -100,7 +101,7 @@ inline void printHelp(const char* prog) {
                  "  --cache-path PATH    cache directory\n"
                  "  --fps N              scene fps (default 15)\n"
                  "  --resolution WxH     output size (default 1280x720)\n"
-                 "  --fill-mode MODE     stretch, fit, or crop (default crop)\n"
+                 "  --fill-mode MODE     stretch, fit, crop, or center (default crop)\n"
                  "  --rotation DEG       clockwise output rotation: 0, 90, 180, or 270\n"
                  "  -h, --help           show this help\n",
                  prog,

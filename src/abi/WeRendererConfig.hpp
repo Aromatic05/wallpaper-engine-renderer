@@ -71,7 +71,8 @@ inline std::optional<RendererRenderConfig> ParseRendererRenderConfig(
                                      sizeof(config->fill_mode))) {
         if (config->fill_mode != WE_FILL_MODE_STRETCH &&
             config->fill_mode != WE_FILL_MODE_ASPECT_FIT &&
-            config->fill_mode != WE_FILL_MODE_ASPECT_CROP) {
+            config->fill_mode != WE_FILL_MODE_ASPECT_CROP &&
+            config->fill_mode != WE_FILL_MODE_CENTER) {
             return std::nullopt;
         }
         result.fill_mode = config->fill_mode;
