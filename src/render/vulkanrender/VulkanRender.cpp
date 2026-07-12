@@ -1464,6 +1464,14 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
         }
         perspective_aspect = fboAspect;
         break;
+    case FillMode::CENTER:
+        // Scene coordinates are authored in pixels. Match one scene unit to
+        // one output pixel and keep the global camera centered, allowing
+        // smaller outputs to crop and larger outputs to retain empty space.
+        framed_width = width;
+        framed_height = height;
+        perspective_aspect = fboAspect;
+        break;
     }
 
     gCam.SetWidth(std::max(1.0, framed_width / active_global_zoom));
