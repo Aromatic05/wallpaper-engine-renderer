@@ -3,6 +3,7 @@
 #include "WeRendererConfig.hpp"
 #include "WeProjectSource.hpp"
 #include "WeRendererFrameStatus.hpp"
+#include "WeRendererFrameReady.hpp"
 #include "WeRendererRuntime.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
@@ -37,6 +38,7 @@ namespace
 // we_session_set_render_config from state->sourceKind.
 struct WeSessionState {
     wallpaper::WallpaperRuntime runtime;
+    std::shared_ptr<wallpaper::RendererFrameReadySignal> frameReadySignal;
     std::unique_ptr<wallpaper::WallpaperSession> session;
     wallpaper::RenderInitInfo renderInitInfo;
     wallpaper::BackendType     sourceType { wallpaper::BackendType::WEScene };
@@ -136,6 +138,16 @@ wallpaper::WallpaperSource make_source(const we_source_v1* source) {
 }
 
 
+void install_frame_ready_callback(
+    const std::shared_ptr<wallpaper::RendererFrameReadySignal>& signal,
+    const std::shared_ptr<wallpaper::OutputTargetBinding>& binding) {
+    if (! binding) return;
+    std::weak_ptr<wallpaper::RendererFrameReadySignal> weak_signal = signal;
+    binding->setFrameReadyCallback([weak_signal]() {
+        if (auto locked = weak_signal.lock()) locked->notify();
+    });
+}
+
 wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_output(
     WeSessionState* state) {
     if (! state || ! state->session) {
@@ -151,8 +163,10 @@ wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_
             return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
                 result.error());
         }
+        auto binding = std::static_pointer_cast<wallpaper::OutputTargetBinding>(result.value());
+        install_frame_ready_callback(state->frameReadySignal, binding);
         return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
-            std::static_pointer_cast<wallpaper::OutputTargetBinding>(result.value()));
+            std::move(binding));
     }
     case wallpaper::BackendType::Web: {
         auto binding = wallpaper::MakeWebOutputBinding(state->renderInitInfo);
@@ -161,6 +175,7 @@ wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_
             return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
                 result.error());
         }
+        install_frame_ready_callback(state->frameReadySignal, binding);
         return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
             std::move(binding));
     }
@@ -171,6 +186,7 @@ wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_
             return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>(
                 result.error());
         }
+        install_frame_ready_callback(state->frameReadySignal, binding);
         return wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>>::success(
             std::move(binding));
     }
@@ -221,7 +237,12 @@ we_session_t* we_session_create(void) {
 
 we_session_t* we_session_create_with_cache_path(const char* cache_path) {
     auto* state = new (std::nothrow) WeSessionState();
-    if (!state) return nullptr;
+    if (! state) return nullptr;
+    state->frameReadySignal = std::make_shared<wallpaper::RendererFrameReadySignal>();
+    if (! state->frameReadySignal || ! state->frameReadySignal->valid()) {
+        delete state;
+        return nullptr;
+    }
     state->session = wallpaper::CreateBuiltinSession(
         state->runtime, cache_path ? std::string(cache_path) : std::string {});
     return as_handle(state);
@@ -496,12 +517,19 @@ int32_t we_session_tick(we_session_t* session) {
     return result ? 0 : static_cast<int32_t>(result.error().code) + 1;
 }
 
+int32_t we_session_get_frame_ready_fd(we_session_t* session) {
+    auto* state = as_state(session);
+    if (! state || ! state->frameReadySignal || ! state->frameReadySignal->valid()) return -1;
+    return state->frameReadySignal->descriptor();
+}
+
 int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) {
     auto* state = as_state(session);
     if (!state || !state->session || !out_frame) return -1;
     if (out_frame->size != 0 && out_frame->size < sizeof(we_frame_v1)) return -1;
     if (!state->binding) return 1;
 
+    if (state->frameReadySignal) state->frameReadySignal->consume();
     auto acquired = state->binding->acquireTexture();
     if (! acquired) {
         const auto status =

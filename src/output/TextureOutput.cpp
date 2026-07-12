@@ -68,6 +68,12 @@ bool TextureFrame::valid() const {
 }
 
 
+void OutputTargetBinding::setFrameReadyCallback(std::function<void()> callback) {
+    std::scoped_lock lock(m_textureSwapchainMutex);
+    m_frameReadyCallback = std::move(callback);
+    if (m_textureSwapchain) m_textureSwapchain->setOnReady(m_frameReadyCallback);
+}
+
 Result<TextureFrame> OutputTargetBinding::acquireTexture() {
     std::scoped_lock lock(m_textureSwapchainMutex);
     auto* swapchain = m_textureSwapchain;

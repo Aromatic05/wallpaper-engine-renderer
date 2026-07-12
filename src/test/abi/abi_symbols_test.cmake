@@ -32,6 +32,7 @@ set(required_symbols
   we_session_pause
   we_session_stop
   we_session_tick
+  we_session_get_frame_ready_fd
   we_session_acquire_frame
   we_frame_release
   we_session_send_input_event)

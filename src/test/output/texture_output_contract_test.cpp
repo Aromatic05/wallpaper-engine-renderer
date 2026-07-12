@@ -70,6 +70,10 @@ int main() {
     assert(missing.error().code == wallpaper::ResultCode::InvalidState);
 
     TestSwapchain swapchain;
+    std::atomic<int> ready_notifications { 0 };
+    binding.setFrameReadyCallback([&ready_notifications]() {
+        ready_notifications.fetch_add(1);
+    });
     binding.attach(&swapchain);
 
     const int shm_source_fd = MakeReadableFd();
@@ -83,6 +87,7 @@ int main() {
     shm->shm_stride = 64u * 4u;
     shm->premultiplied = true;
     swapchain.renderFrame();
+    assert(ready_notifications.load() == 1);
 
     int owned_shm_fd = -1;
     {
@@ -193,6 +198,8 @@ int main() {
     ::close(second_source_fd);
 
     binding.attach(nullptr);
+    swapchain.renderFrame();
+    assert(ready_notifications.load() == 3);
     auto detached = binding.acquireTexture();
     assert(! detached);
     assert(detached.error().code == wallpaper::ResultCode::InvalidState);

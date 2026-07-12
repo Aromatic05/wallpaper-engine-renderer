@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
+#include <mutex>
 
 namespace wallpaper
 {
@@ -26,6 +28,17 @@ public:
     void renderFrame() {
         inprogress() = ready().exchange(inprogress());
         dirty().exchange(true);
+        std::function<void()> on_ready;
+        {
+            std::scoped_lock lock(m_callback_mutex);
+            on_ready = m_on_ready;
+        }
+        if (on_ready) on_ready();
+    }
+
+    void setOnReady(std::function<void()> callback) {
+        std::scoped_lock lock(m_callback_mutex);
+        m_on_ready = std::move(callback);
     }
 
     T* getInprogress() { return inprogress(); }
@@ -43,6 +56,8 @@ protected:
 private:
     std::atomic<bool>& dirty() { return m_dirty; }
 
-    std::atomic<bool> m_dirty { false };
+    std::atomic<bool>    m_dirty { false };
+    std::mutex            m_callback_mutex;
+    std::function<void()> m_on_ready;
 };
 } // namespace wallpaper

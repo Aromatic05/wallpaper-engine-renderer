@@ -5,6 +5,7 @@
 #include <linux/input-event-codes.h>
 #include <poll.h>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
 #include <wayland-client.h>
 
@@ -890,32 +891,49 @@ int main(int argc, char** argv) {
 
     std::uint64_t acquired = 0;
     std::uint64_t presented = 0;
-    std::uint64_t no_frame_polls = 0;
+    std::uint64_t spurious_frame_wakes = 0;
     std::int32_t last_acquire_status = 1;
     auto last_log = std::chrono::steady_clock::now();
     const int display_fd = wl_display_get_fd(wayland.display);
-    constexpr auto kPollInterval = std::chrono::milliseconds(5);
+    const int frame_ready_fd = we_session_get_frame_ready_fd(session);
+    if (frame_ready_fd < 0) {
+        std::fprintf(stderr, "sceneviewer-layer: failed to get frame-ready fd\n");
+        we_session_stop(session);
+        we_session_destroy(session);
+        destroyWayland(wayland);
+        return 1;
+    }
+    const int tick_fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (tick_fd < 0) {
+        std::fprintf(stderr, "sceneviewer-layer: timerfd_create failed: %s\n", std::strerror(errno));
+        we_session_stop(session);
+        we_session_destroy(session);
+        destroyWayland(wayland);
+        return 1;
+    }
+    const std::int64_t tick_interval_ns =
+        1000000000LL / static_cast<std::int64_t>(std::max(args.fps, 1));
+    itimerspec tick_timer {};
+    tick_timer.it_value.tv_sec = tick_interval_ns / 1000000000LL;
+    tick_timer.it_value.tv_nsec = tick_interval_ns % 1000000000LL;
+    tick_timer.it_interval = tick_timer.it_value;
+    if (::timerfd_settime(tick_fd, 0, &tick_timer, nullptr) != 0) {
+        std::fprintf(stderr, "sceneviewer-layer: timerfd_settime failed: %s\n", std::strerror(errno));
+        ::close(tick_fd);
+        we_session_stop(session);
+        we_session_destroy(session);
+        destroyWayland(wayland);
+        return 1;
+    }
+
+    if (we_session_tick(session) != 0) {
+        std::fprintf(stderr, "sceneviewer-layer: initial we_session_tick failed\n");
+        wayland.running = false;
+    }
 
     while (wayland.running) {
-        if (we_session_tick(session) != 0) {
-            std::fprintf(stderr, "sceneviewer-layer: we_session_tick failed\n");
-            break;
-        }
-
-        we_frame_v1 frame {};
-        frame.size = sizeof(frame);
-        frame.version = 1;
-        const std::int32_t acquire_result = we_session_acquire_frame(session, &frame);
-        last_acquire_status = acquire_result;
-        if (acquire_result == 0) {
-            ++acquired;
-            if (presentFrame(wayland, frame)) ++presented;
-            we_frame_release(&frame);
-        } else if (acquire_result == 1) {
-            ++no_frame_polls;
-        } else {
-            std::fprintf(stderr, "sceneviewer-layer: we_session_acquire_frame failed: %d\n", acquire_result);
-        }
+        while (wl_display_dispatch_pending(wayland.display) > 0) {}
+        collectReleasedBuffers(wayland);
 
         bool flush_blocked = false;
         if (wl_display_flush(wayland.display) < 0) {
@@ -937,44 +955,80 @@ int main(int argc, char** argv) {
             if (last_acquire_status == 1) acquire_status_text = "no-frame";
             else if (last_acquire_status != 0) acquire_status_text = "error";
             std::fprintf(stderr,
-                         "sceneviewer-layer: acquired=%lu presented=%lu no_frame_polls=%lu last_acquire_status=%s(%d)\n",
+                         "sceneviewer-layer: acquired=%lu presented=%lu spurious_frame_wakes=%lu last_acquire_status=%s(%d)\n",
                          static_cast<unsigned long>(acquired),
                          static_cast<unsigned long>(presented),
-                         static_cast<unsigned long>(no_frame_polls),
+                         static_cast<unsigned long>(spurious_frame_wakes),
                          acquire_status_text,
                          last_acquire_status);
         }
 
-        pollfd pfd {};
-        pfd.fd = display_fd;
-        pfd.events = POLLIN | (flush_blocked ? POLLOUT : 0);
-        const int poll_result = ::poll(&pfd, 1, static_cast<int>(kPollInterval.count()));
+        pollfd pfds[3] {};
+        pfds[0].fd = display_fd;
+        pfds[0].events = POLLIN | (flush_blocked ? POLLOUT : 0);
+        pfds[1].fd = frame_ready_fd;
+        pfds[1].events = POLLIN;
+        pfds[2].fd = tick_fd;
+        pfds[2].events = POLLIN;
+        const int poll_result = ::poll(pfds, 3, -1);
         if (poll_result < 0) {
             if (errno == EINTR) continue;
             std::fprintf(stderr, "sceneviewer-layer: poll failed: %s\n", std::strerror(errno));
             break;
         }
-        if (poll_result == 0) {
-            while (wl_display_dispatch_pending(wayland.display) > 0) {}
-            collectReleasedBuffers(wayland);
-            continue;
-        }
-        if ((pfd.revents & (POLLERR | POLLHUP)) != 0) {
+        if ((pfds[0].revents & (POLLERR | POLLHUP)) != 0) {
             std::fprintf(stderr, "sceneviewer-layer: Wayland connection closed\n");
             break;
         }
-        if ((pfd.revents & POLLIN) != 0) {
+        if ((pfds[1].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            std::fprintf(stderr, "sceneviewer-layer: frame-ready fd closed\n");
+            break;
+        }
+        if ((pfds[2].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            std::fprintf(stderr, "sceneviewer-layer: tick timer fd closed\n");
+            break;
+        }
+        if ((pfds[0].revents & POLLIN) != 0) {
             if (wl_display_dispatch(wayland.display) < 0) {
                 std::fprintf(stderr, "sceneviewer-layer: wl_display_dispatch failed\n");
                 break;
             }
             collectReleasedBuffers(wayland);
         }
-        if ((pfd.revents & POLLOUT) != 0 && wl_display_flush(wayland.display) >= 0) {
+        if ((pfds[0].revents & POLLOUT) != 0 && wl_display_flush(wayland.display) >= 0) {
             releasePendingSendFds(wayland);
             collectReleasedBuffers(wayland);
         }
+        if ((pfds[2].revents & POLLIN) != 0) {
+            std::uint64_t expirations = 0;
+            while (::read(tick_fd, &expirations, sizeof(expirations)) < 0 && errno == EINTR) {}
+            if (we_session_tick(session) != 0) {
+                std::fprintf(stderr, "sceneviewer-layer: we_session_tick failed\n");
+                wayland.running = false;
+                continue;
+            }
+        }
+        if ((pfds[1].revents & POLLIN) != 0) {
+            we_frame_v1 frame {};
+            frame.size = sizeof(frame);
+            frame.version = 1;
+            const std::int32_t acquire_result = we_session_acquire_frame(session, &frame);
+            last_acquire_status = acquire_result;
+            if (acquire_result == 0) {
+                ++acquired;
+                if (presentFrame(wayland, frame)) ++presented;
+                we_frame_release(&frame);
+            } else if (acquire_result == 1) {
+                ++spurious_frame_wakes;
+            } else {
+                std::fprintf(stderr,
+                             "sceneviewer-layer: we_session_acquire_frame failed: %d\n",
+                             acquire_result);
+            }
+        }
     }
+
+    ::close(tick_fd);
 
     we_session_stop(session);
     we_session_destroy(session);

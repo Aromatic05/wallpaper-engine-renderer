@@ -55,6 +55,7 @@ struct LegacyWeRenderConfigV1 {
 unsafe extern "C" {
     fn we_session_create() -> *mut c_void;
     fn we_session_destroy(session: *mut c_void);
+    fn we_session_get_frame_ready_fd(session: *mut c_void) -> i32;
     fn we_session_set_source(session: *mut c_void, source: *const WeSourceV1) -> i32;
     fn we_session_set_user_properties_json(session: *mut c_void, json: *const c_char) -> i32;
     fn we_session_get_diagnostics_json(
@@ -137,6 +138,7 @@ fn main() {
 
         let session = we_session_create();
         assert!(!session.is_null());
+        assert!(we_session_get_frame_ready_fd(session) >= 0);
         let options = CString::new(r#"{"version":2}"#).expect("options CString");
         let source = WeSourceV1 {
             size: size_of::<WeSourceV1>() as u32,

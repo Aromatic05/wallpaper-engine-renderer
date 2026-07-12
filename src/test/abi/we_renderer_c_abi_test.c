@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <fcntl.h>
 
 struct legacy_we_source_v1 {
     uint32_t size;
@@ -45,6 +46,11 @@ int main(void) {
     if (diagnostics_size <= 1) {
         we_session_destroy(session);
         return 3;
+    }
+    const int frame_ready_fd = we_session_get_frame_ready_fd(session);
+    if (frame_ready_fd < 0 || (fcntl(frame_ready_fd, F_GETFL) & O_NONBLOCK) == 0) {
+        we_session_destroy(session);
+        return 4;
     }
 
     we_session_destroy(session);

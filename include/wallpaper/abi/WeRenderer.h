@@ -186,6 +186,9 @@ WE_RENDERER_API int32_t we_session_play(we_session_t* session);
 WE_RENDERER_API int32_t we_session_pause(we_session_t* session);
 WE_RENDERER_API int32_t we_session_stop(we_session_t* session);
 WE_RENDERER_API int32_t we_session_tick(we_session_t* session);
+// Returns a borrowed nonblocking eventfd that remains valid until session destruction.
+// The descriptor becomes readable whenever the bound output publishes a frame.
+WE_RENDERER_API int32_t we_session_get_frame_ready_fd(we_session_t* session);
 
 WE_RENDERER_API int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame);
 WE_RENDERER_API void    we_frame_release(we_frame_v1* frame);

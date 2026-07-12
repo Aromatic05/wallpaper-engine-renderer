@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 namespace wallpaper
@@ -28,16 +29,21 @@ public:
 
     virtual OutputTargetBindingKind kind() const = 0;
     Result<TextureFrame> acquireTexture();
+    void setFrameReadyCallback(std::function<void()> callback);
 
 protected:
     void attachTextureSwapchain(ExSwapchain* swapchain) {
         std::scoped_lock lock(m_textureSwapchainMutex);
+        if (m_textureSwapchain == swapchain) return;
+        if (m_textureSwapchain) m_textureSwapchain->setOnReady({});
         m_textureSwapchain = swapchain;
+        if (m_textureSwapchain) m_textureSwapchain->setOnReady(m_frameReadyCallback);
     }
 
 private:
-    mutable std::mutex       m_textureSwapchainMutex;
-    ExSwapchain*             m_textureSwapchain { nullptr };
+    mutable std::mutex        m_textureSwapchainMutex;
+    ExSwapchain*              m_textureSwapchain { nullptr };
+    std::function<void()>     m_frameReadyCallback;
     std::atomic<std::uint64_t> m_textureRevision { 0 };
 };
 
