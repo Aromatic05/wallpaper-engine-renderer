@@ -259,6 +259,11 @@ Result<void> WebBackend::start() {
     if (! m_browserHost->OpenWallpaper(*m_manifest, m_workshopDir, width, height)) {
         return Result<void>::failure(ResultCode::InternalError, "CEF CreateBrowser failed");
     }
+    m_browserHost->SetFrameRate(m_fps);
+    m_browserHost->ApplyVolume(m_muted ? 0.0f : m_volume);
+    if (m_audioSamples && ! m_audioSamples->empty()) {
+        m_browserHost->PushAudioData(m_audioSamples->data(), m_audioSamples->size());
+    }
 
     m_sharedState->readyState.store(BackendReadyState::OutputReady);
     m_sharedState->contentStateChanged.store(true);
@@ -300,33 +305,38 @@ Result<void> WebBackend::stop() {
 }
 
 Result<void> WebBackend::setProperty(std::string_view name, PropertyValue value) {
-    // Pre-start, the C ABI's we_session_set_source already pushes the
-    // WE volume / fps / speed / muted fields into the initial
-    // properties map, but those take effect only after start() has
-    // wired the BrowserHost. After start, route them through the
-    // host.
-    if (! m_browserHost) {
-        return Result<void>::success();
-    }
     if (name == WE_SCENE_PROPERTY_VOLUME) {
         if (const auto* v = std::get_if<float>(&value)) {
-            m_browserHost->ApplyVolume(*v);
+            m_volume = std::clamp(*v, 0.0f, 1.0f);
+            if (m_browserHost) m_browserHost->ApplyVolume(m_muted ? 0.0f : m_volume);
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_FPS) {
         if (const auto* v = std::get_if<std::int32_t>(&value)) {
-            m_browserHost->SetFrameRate(*v);
+            m_fps = *v;
+            if (m_browserHost) m_browserHost->SetFrameRate(m_fps);
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_MUTED) {
         if (const auto* v = std::get_if<bool>(&value)) {
-            m_browserHost->ApplyVolume(*v ? 0.0f : 1.0f);
+            m_muted = *v;
+            if (m_browserHost) m_browserHost->ApplyVolume(m_muted ? 0.0f : m_volume);
+            return Result<void>::success();
+        }
+    } else if (name == WE_SCENE_PROPERTY_AUDIO_SAMPLES) {
+        if (const auto* object = std::get_if<PropertyObject>(&value); object && *object) {
+            m_audioSamples = std::static_pointer_cast<std::vector<float>>(*object);
+            if (m_browserHost && m_audioSamples && ! m_audioSamples->empty()) {
+                m_browserHost->PushAudioData(m_audioSamples->data(), m_audioSamples->size());
+            }
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_SPEED) {
-        appendDiagnostic(DiagnosticSeverity::Warning,
-                         "web backend ignored unsupported property: " + std::string(name));
-        return Result<void>::success();
+        return Result<void>::failure(ResultCode::NotSupported,
+                                     "web backend does not support playback speed");
+    } else if (name == WE_SCENE_PROPERTY_FILLMODE || name == WE_SCENE_PROPERTY_MEDIA_STATE) {
+        return Result<void>::failure(ResultCode::NotSupported,
+                                     "web backend does not support scene-only runtime properties");
     } else if (name == WE_SCENE_PROPERTY_ASSETS) {
         return Result<void>::failure(ResultCode::NotSupported,
                                      "web backend does not support setting assets");

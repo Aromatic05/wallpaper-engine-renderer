@@ -79,6 +79,33 @@ int main() {
     source.options_json = options.c_str();
     assert(we_session_set_source(session, &source) == 0);
 
+    we_runtime_settings_v1 runtimeSettings {};
+    runtimeSettings.size = sizeof(runtimeSettings);
+    runtimeSettings.version = 1;
+    runtimeSettings.fields = WE_RUNTIME_SETTINGS_FPS | WE_RUNTIME_SETTINGS_SPEED
+                             | WE_RUNTIME_SETTINGS_VOLUME | WE_RUNTIME_SETTINGS_MUTED
+                             | WE_RUNTIME_SETTINGS_FILL_MODE;
+    runtimeSettings.fps = 60;
+    runtimeSettings.speed = 1.5f;
+    runtimeSettings.volume = 0.4f;
+    runtimeSettings.muted = false;
+    runtimeSettings.fill_mode = WE_FILL_MODE_ASPECT_FIT;
+    assert(we_session_apply_runtime_settings(session, &runtimeSettings) == 0);
+
+    const float audioSamples[] { 0.1f, 0.2f, 0.3f, 0.4f };
+    assert(we_session_push_audio_samples(session, audioSamples, 4) == 0);
+
+    we_media_state_v1 mediaState {};
+    mediaState.size = sizeof(mediaState);
+    mediaState.version = 1;
+    mediaState.playback_state = 1;
+    mediaState.title = "ABI media title";
+    mediaState.artist = "ABI media artist";
+    assert(we_session_set_media_state(session, &mediaState) == 0);
+
+    runtimeSettings.fps = 4;
+    assert(we_session_apply_runtime_settings(session, &runtimeSettings) == -1);
+
     assert(we_session_set_user_properties_json(
                session, R"({"enabled":false,"scale":2.0,"title":"updated"})")
            == 0);

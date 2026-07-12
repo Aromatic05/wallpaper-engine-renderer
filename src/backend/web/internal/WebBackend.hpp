@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace wallpaper
 {
@@ -81,6 +82,10 @@ private:
     std::shared_ptr<WebOutputBinding>    m_renderBinding;
     std::unique_ptr<WebFrameSwapchain>   m_frameSwapchain;
     DiagnosticsSnapshot                  m_diagnostics;
+    float                                m_volume { 1.0f };
+    std::int32_t                         m_fps { 30 };
+    bool                                 m_muted { false };
+    std::shared_ptr<std::vector<float>>  m_audioSamples;
     bool                                 m_paused { false };
     bool                                 m_softwareFallbackEnabled { false };
     bool                                 m_reportedSoftwareFallbackUnsupported { false };

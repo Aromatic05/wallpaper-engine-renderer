@@ -3,8 +3,10 @@
 #include "WeRendererConfig.hpp"
 #include "WeProjectSource.hpp"
 #include "WeRendererFrameStatus.hpp"
+#include "WeRendererRuntime.hpp"
 
 #include "wallpaper/WallpaperSession.hpp"
+#include "wallpaper/MediaState.hpp"
 #include "wallpaper/Diagnostics.hpp"
 #include "wallpaper/InputEvent.hpp"
 #include "backend/BuiltinSessionFactory.hpp"
@@ -87,6 +89,24 @@ int32_t to_error_with_diagnostic(WeSessionState* state,
 
 bool source_has_field(const we_source_v1* source, std::size_t field_offset, std::size_t field_size) {
     return source && source->size >= field_offset + field_size;
+}
+
+std::int32_t scene_fill_mode(we_fill_mode_v1 fill_mode) {
+    switch (fill_mode) {
+    case WE_FILL_MODE_STRETCH: return 0;
+    case WE_FILL_MODE_ASPECT_FIT: return 1;
+    case WE_FILL_MODE_CENTER: return 3;
+    case WE_FILL_MODE_ASPECT_CROP: return 2;
+    }
+    return 2;
+}
+
+wallpaper::Result<void> unsupported_runtime_setting(std::string name,
+                                                    wallpaper::BackendType backend) {
+    return wallpaper::Result<void>::failure(
+        wallpaper::ResultCode::NotSupported,
+        std::move(name) + " is not supported by backend "
+            + std::to_string(static_cast<std::int32_t>(backend)));
 }
 
 wallpaper::WallpaperSource make_source(const we_source_v1* source) {
@@ -231,22 +251,8 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
 
     switch (state->sourceType) {
     case wallpaper::BackendType::WEScene: {
-        std::int32_t scene_fill_mode = 2;
-        switch (parsed_config->fill_mode) {
-        case WE_FILL_MODE_STRETCH:
-            scene_fill_mode = 0;
-            break;
-        case WE_FILL_MODE_ASPECT_FIT:
-            scene_fill_mode = 1;
-            break;
-        case WE_FILL_MODE_CENTER:
-            scene_fill_mode = 3;
-            break;
-        case WE_FILL_MODE_ASPECT_CROP:
-            break;
-        }
         auto fill_mode_result = wallpaper::SetWESceneFillMode(
-            *state->session, scene_fill_mode);
+            *state->session, scene_fill_mode(parsed_config->fill_mode));
         if (! fill_mode_result) {
             return to_error_with_diagnostic(state, "abi.render-config.fill-mode", fill_mode_result);
         }
@@ -299,6 +305,100 @@ int32_t we_session_set_user_properties_json(we_session_t* session,
     auto result = state->session->setProperty(
         wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES_JSON, normalized.value());
     return to_error_with_diagnostic(state, "abi.user-properties", result);
+}
+
+
+int32_t we_session_apply_runtime_settings(we_session_t* session,
+                                          const we_runtime_settings_v1* settings) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! state->sourceSet) return -1;
+    const auto parsed = wallpaper::ParseRendererRuntimeSettings(settings);
+    if (! parsed) return -1;
+
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_FILL_MODE) != 0
+        && state->sourceType != wallpaper::BackendType::WEScene) {
+        const auto unsupported = unsupported_runtime_setting("fill mode", state->sourceType);
+        return to_error_with_diagnostic(state, "abi.runtime.fill-mode", unsupported);
+    }
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_SPEED) != 0
+        && state->sourceType == wallpaper::BackendType::Web) {
+        const auto unsupported = unsupported_runtime_setting("speed", state->sourceType);
+        return to_error_with_diagnostic(state, "abi.runtime.speed", unsupported);
+    }
+
+    const auto apply = [&](std::string_view name,
+                           wallpaper::PropertyValue value,
+                           const char* diagnostic_source) -> int32_t {
+        auto result = state->session->setProperty(name, std::move(value));
+        return to_error_with_diagnostic(state, diagnostic_source, result);
+    };
+
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_FPS) != 0) {
+        const auto status = apply(wallpaper::WE_SCENE_PROPERTY_FPS,
+                                  parsed->fps,
+                                  "abi.runtime.fps");
+        if (status != 0) return status;
+    }
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_SPEED) != 0) {
+        const auto status = apply(wallpaper::WE_SCENE_PROPERTY_SPEED,
+                                  parsed->speed,
+                                  "abi.runtime.speed");
+        if (status != 0) return status;
+    }
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_VOLUME) != 0) {
+        const auto status = apply(wallpaper::WE_SCENE_PROPERTY_VOLUME,
+                                  parsed->volume,
+                                  "abi.runtime.volume");
+        if (status != 0) return status;
+    }
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_MUTED) != 0) {
+        const auto status = apply(wallpaper::WE_SCENE_PROPERTY_MUTED,
+                                  parsed->muted,
+                                  "abi.runtime.muted");
+        if (status != 0) return status;
+    }
+    if ((parsed->fields & WE_RUNTIME_SETTINGS_FILL_MODE) != 0) {
+        const auto status = apply(wallpaper::WE_SCENE_PROPERTY_FILLMODE,
+                                  scene_fill_mode(parsed->fillMode),
+                                  "abi.runtime.fill-mode");
+        if (status != 0) return status;
+    }
+    return 0;
+}
+
+int32_t we_session_set_media_state(we_session_t* session,
+                                   const we_media_state_v1* media_state) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! state->sourceSet) return -1;
+    if (state->sourceType != wallpaper::BackendType::WEScene) {
+        const auto unsupported = unsupported_runtime_setting("media state", state->sourceType);
+        return to_error_with_diagnostic(state, "abi.media", unsupported);
+    }
+    auto parsed = wallpaper::ParseRendererMediaState(media_state);
+    if (! parsed) return -1;
+    auto result = state->session->setProperty(
+        wallpaper::WE_SCENE_PROPERTY_MEDIA_STATE,
+        std::static_pointer_cast<void>(
+            std::make_shared<wallpaper::MediaState>(std::move(*parsed))));
+    return to_error_with_diagnostic(state, "abi.media", result);
+}
+
+int32_t we_session_push_audio_samples(we_session_t* session,
+                                      const float* samples,
+                                      uint32_t count) {
+    auto* state = as_state(session);
+    if (! state || ! state->session || ! state->sourceSet) return -1;
+    if (state->sourceType == wallpaper::BackendType::Video) {
+        const auto unsupported = unsupported_runtime_setting("audio samples", state->sourceType);
+        return to_error_with_diagnostic(state, "abi.audio", unsupported);
+    }
+    auto copied = wallpaper::CopyRendererAudioSamples(samples, count);
+    if (! copied) return -1;
+    auto result = state->session->setProperty(
+        wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES,
+        std::static_pointer_cast<void>(
+            std::make_shared<std::vector<float>>(std::move(*copied))));
+    return to_error_with_diagnostic(state, "abi.audio", result);
 }
 
 int32_t we_session_get_diagnostics_json(we_session_t* session,

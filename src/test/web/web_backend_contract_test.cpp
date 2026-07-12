@@ -184,6 +184,26 @@ int main() {
     assert(setFps);
     assert(mock->last_fps == 30);
 
+
+    // Muting preserves the configured volume so unmute restores it instead of forcing 1.0.
+    assert(backend->setProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, true));
+    assert(mock->last_volume == 0.0f);
+    assert(backend->setProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, 0.4f));
+    assert(mock->last_volume == 0.0f);
+    assert(backend->setProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, false));
+    assert(mock->last_volume == 0.4f);
+
+    auto audio = std::make_shared<std::vector<float>>(std::initializer_list<float> { 0.1f, 0.2f });
+    assert(backend->setProperty(
+        wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES,
+        std::static_pointer_cast<void>(audio)));
+    assert(mock->push_audio_count == 1);
+    assert(mock->last_audio == *audio);
+
+    auto unsupportedSpeed = backend->setProperty(wallpaper::WE_SCENE_PROPERTY_SPEED, 2.0f);
+    assert(! unsupportedSpeed);
+    assert(unsupportedSpeed.error().code == wallpaper::ResultCode::NotSupported);
+
     // Pointer event -> OnMouseMove(x, y) + (on Down) OnMouseButton.
     wallpaper::InputEvent move;
     move.type = wallpaper::InputEventType::PointerMove;

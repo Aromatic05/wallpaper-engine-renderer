@@ -69,6 +69,7 @@ int main() {
     static_assert(wallpaper::WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES == "load_user_properties");
     static_assert(wallpaper::WE_SCENE_PROPERTY_USER_PROPERTIES == "user_properties");
     static_assert(wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES == "audio_samples");
+    static_assert(wallpaper::WE_SCENE_PROPERTY_MEDIA_STATE == "media_state");
     static_assert(wallpaper::WE_SCENE_PROPERTY_CAPTURE_FRAME == "capture_frame");
     static_assert(wallpaper::WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER == "capture_frame_number");
     (void)source;

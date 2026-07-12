@@ -1,5 +1,6 @@
 #include "WESceneRuntimeDriver.hpp"
 #include "WESceneRuntimeSurface.hpp"
+#include "wallpaper/MediaState.hpp"
 
 #include "utils/Logging.h"
 #include "looper/Looper.hpp"
@@ -8,6 +9,7 @@
 #include "utils/FpsCounter.h"
 #include "parser/WPSceneParser.hpp"
 #include "scenescript/WPSceneScriptHost.hpp"
+#include "scenescript/WPSceneScriptMedia.hpp"
 #include "scene/Scene.h"
 #include "settings/WPUserProperties.hpp"
 #include "settings/WPUserPropertiesJson.hpp"
@@ -241,6 +243,31 @@ bool ApplyParticleRuntimeProperty(Scene& scene, std::string_view property,
 
     return false;
 }
+
+WPSceneScriptMediaState ToScriptMediaState(const MediaState& source) {
+    WPSceneScriptMediaState result;
+    result.has_thumbnail = source.hasThumbnail;
+    result.playback_state = source.playbackState;
+    result.primary_color = source.primaryColor;
+    result.secondary_color = source.secondaryColor;
+    result.tertiary_color = source.tertiaryColor;
+    result.text_color = source.textColor;
+    result.high_contrast_color = source.highContrastColor;
+    result.title = source.title;
+    result.artist = source.artist;
+    result.album_title = source.albumTitle;
+    result.album_artist = source.albumArtist;
+    result.sub_title = source.subTitle;
+    result.genres = source.genres;
+    result.content_type = source.contentType;
+    result.thumbnail_width = static_cast<int32_t>(source.thumbnailWidth);
+    result.thumbnail_height = static_cast<int32_t>(source.thumbnailHeight);
+    result.thumbnail_rgba = source.thumbnailRgba;
+    result.previous_thumbnail_width = static_cast<int32_t>(source.previousThumbnailWidth);
+    result.previous_thumbnail_height = static_cast<int32_t>(source.previousThumbnailHeight);
+    result.previous_thumbnail_rgba = source.previousThumbnailRgba;
+    return result;
+}
 } // namespace
 
 namespace wallpaper
@@ -290,6 +317,7 @@ public:
                                        : std::string_view(m_graphviz_path);
     }
     const auto& audioSamples() const { return m_audio_samples; }
+    const auto& mediaState() const { return m_media_state; }
 
 private:
     void loadScene();
@@ -318,6 +346,7 @@ private:
     UserPropertyMap                      m_default_user_properties;
     UserPropertyMap                      m_user_properties;
     std::shared_ptr<std::vector<float>>  m_audio_samples;
+    std::shared_ptr<MediaState>           m_media_state;
     int32_t                              m_capture_frame_number { 1 };
     std::chrono::steady_clock::time_point m_load_started_at {};
 
@@ -341,6 +370,7 @@ public:
         CMD_MOUSE_LEFT_BUTTON,
         CMD_APPLY_USER_PROPERTIES,
         CMD_APPLY_AUDIO_SAMPLES,
+        CMD_APPLY_MEDIA_STATE,
         CMD_CAPTURE_FRAME,
         CMD_STOP,
         CMD_DRAW,
@@ -373,6 +403,7 @@ public:
                 CASE_CMD(MOUSE_LEFT_BUTTON);
                 CASE_CMD(APPLY_USER_PROPERTIES);
                 CASE_CMD(APPLY_AUDIO_SAMPLES);
+                CASE_CMD(APPLY_MEDIA_STATE);
                 CASE_CMD(CAPTURE_FRAME);
                 CASE_CMD(INIT_VULKAN);
             default: break;
@@ -506,6 +537,10 @@ private:
             if (main_handler.audioSamples()) {
                 m_scene->scriptHost->ApplyAudioSamples(*main_handler.audioSamples());
             }
+            if (main_handler.mediaState()) {
+                m_scene->scriptHost->ApplyMediaState(
+                    ToScriptMediaState(*main_handler.mediaState()), false);
+            }
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
             {
@@ -528,6 +563,14 @@ private:
             return;
 
         m_scene->scriptHost->ApplyAudioSamples(*audio_samples);
+    }
+    MHANDLER_CMD(APPLY_MEDIA_STATE) {
+        std::shared_ptr<MediaState> media_state;
+        if (! msg->findObject("value", &media_state) || ! m_scene || ! m_scene->scriptHost
+            || ! media_state) {
+            return;
+        }
+        m_scene->scriptHost->ApplyMediaState(ToScriptMediaState(*media_state), false);
     }
     MHANDLER_CMD(CAPTURE_FRAME) {
         std::string path;
@@ -803,6 +846,13 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                 CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_AUDIO_SAMPLES);
             nmsg->setObject("value", m_audio_samples);
             nmsg->post();
+        } else if (property == PROPERTY_MEDIA_STATE) {
+            if (msg->findObject("value", &m_media_state) && m_media_state) {
+                auto nmsg =
+                    CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_APPLY_MEDIA_STATE);
+                nmsg->setObject("value", m_media_state);
+                nmsg->post();
+            }
         } else if (property == PROPERTY_CAPTURE_FRAME) {
             std::string path;
             if (msg->findString("value", &path) && !path.empty()) {

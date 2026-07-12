@@ -23,6 +23,9 @@ set(required_symbols
   we_session_set_source
   we_session_set_render_config
   we_session_set_user_properties_json
+  we_session_apply_runtime_settings
+  we_session_set_media_state
+  we_session_push_audio_samples
   we_session_get_diagnostics_json
   we_session_play
   we_session_pause

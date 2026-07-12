@@ -24,6 +24,7 @@ constexpr std::string_view WE_SCENE_PROPERTY_USER_PROPERTIES           = "user_p
 constexpr std::string_view WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES_JSON = "load_user_properties_json";
 constexpr std::string_view WE_SCENE_PROPERTY_USER_PROPERTIES_JSON      = "user_properties_json";
 constexpr std::string_view WE_SCENE_PROPERTY_AUDIO_SAMPLES             = "audio_samples";
+constexpr std::string_view WE_SCENE_PROPERTY_MEDIA_STATE               = "media_state";
 constexpr std::string_view WE_SCENE_PROPERTY_CAPTURE_FRAME             = "capture_frame";
 constexpr std::string_view WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER      = "capture_frame_number";
 } // namespace wallpaper
