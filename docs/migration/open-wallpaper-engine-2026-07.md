@@ -435,6 +435,12 @@ session-monotonic serial and existing `we_frame_release()` ownership rule. Dedic
 DMA-BUF metadata, DRM-to-pixel-format mapping, move-only descriptor lifetime, empty/detached acquisition,
 revision increments, Web software and accelerated frames, and the real Video C ABI acquire/release path.
 
+Multi-session isolation is covered independently of backend implementation. Two sessions sharing one
+factory retain separate cache roots, initial and live properties, input queues, RenderPlan instances,
+tick state, and diagnostics; an error injected into one session is absent from the other. Output-frame
+revisions are binding-local as well: after one binding has published multiple frames, a second binding's
+first acquired frame still starts at revision 1.
+
 Render-plan output is no longer a capability bit. `ContentBackend::outputSource()` is mandatory, so a
 `supportsRenderPlan=false` state was contradictory. The architecture guard rejects reintroduction of
 source-kind branching, false output capability flags, and the old placeholder headers.

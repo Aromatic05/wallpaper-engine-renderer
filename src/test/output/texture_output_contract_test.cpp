@@ -169,6 +169,29 @@ int main() {
     RequireClosed(owned_dma_fd);
     ::close(dma_source_fd);
 
+    TestBinding second_binding;
+    TestSwapchain second_swapchain;
+    second_binding.attach(&second_swapchain);
+    const int second_source_fd = MakeReadableFd();
+    auto* second_shm = second_swapchain.getInprogress();
+    assert(second_shm != nullptr);
+    second_shm->handle_type = wallpaper::ExternalFrameHandleType::SHM;
+    second_shm->fd = second_source_fd;
+    second_shm->width = 8;
+    second_shm->height = 4;
+    second_shm->size = 8u * 4u * 4u;
+    second_shm->shm_stride = 8u * 4u;
+    second_swapchain.renderFrame();
+    {
+        auto acquired = second_binding.acquireTexture();
+        assert(acquired);
+        auto frame = std::move(acquired.value());
+        assert(frame.revision == 1);
+        assert(frame.extent.width == 8);
+        assert(frame.extent.height == 4);
+    }
+    ::close(second_source_fd);
+
     binding.attach(nullptr);
     auto detached = binding.acquireTexture();
     assert(! detached);

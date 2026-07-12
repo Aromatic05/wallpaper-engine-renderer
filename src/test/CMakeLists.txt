@@ -9,6 +9,16 @@ target_compile_options(wallpaper-session-contract-test PRIVATE ${warn_opts})
 add_test(NAME wallpaper-session-contract-test COMMAND wallpaper-session-contract-test)
 
 add_executable(
+  wallpaper-session-isolation-test
+  runtime/wallpaper_session_isolation_test.cpp)
+
+target_link_libraries(wallpaper-session-isolation-test PRIVATE wallpaper-engine-renderer-internal)
+target_include_directories(wallpaper-session-isolation-test PRIVATE ..)
+target_compile_options(wallpaper-session-isolation-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME wallpaper-session-isolation-test COMMAND wallpaper-session-isolation-test)
+
+add_executable(
   wallpaper-public-api-test
   runtime/wallpaper_public_api_test.cpp)
 
