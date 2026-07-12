@@ -67,7 +67,7 @@ Reference branch:
 | Live user properties | `DONE` | `we_session_set_user_properties_json` |
 | Default metadata preservation | `DONE` | `user-properties-json-test` |
 | Graphviz path | `DONE` | Public contract and source options mapping |
-| Pointer input | `DONE` | Existing input event ABI and regression test |
+| Input events | `DONE` | C ABI validates move/down/up/wheel/key/focus events and field layout; Web forwards every supported class, Scene intentionally accepts pointer position/buttons only. |
 | Validation layer | `DONE` | Existing append-only render config field |
 | Diagnostics JSON | `DONE` | Two-call buffer contract and error-source assertions |
 | Pure C consumer | `DONE` | `we-renderer-c-abi-test` |
@@ -378,7 +378,8 @@ capability advertising.
 The standalone Wayland viewer maps every product-facing control through the C ABI. `--user-properties
 FILE` and `--graphviz FILE` build versioned `options_json`; `--valid-layer` and `--msaa N` populate the
 append-only render config; `--mouse-position X,Y` sends normalized pointer events and prevents real
-pointer callbacks from overriding the locked coordinates; `--diagnostics` reads and prints structured
+pointer callbacks from overriding the locked coordinates; Wayland pointer-axis events map to ABI wheel
+deltas; `--diagnostics` reads and prints structured
 diagnostics JSON. The viewer never includes scene-runtime, RenderGraph, or user-property implementation
 types. Its parser validates positive MSAA counts and normalized pointer coordinates before creating a
 session.

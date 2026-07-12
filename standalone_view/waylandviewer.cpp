@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -307,11 +309,39 @@ void onPointerButton(void* data,
     we_session_send_input_event(state->session, &event);
 }
 
-void onPointerAxis(void* /*data*/,
+void onPointerAxis(void* data,
                    wl_pointer* /*pointer*/,
                    std::uint32_t /*time*/,
-                   std::uint32_t /*axis*/,
-                   wl_fixed_t /*value*/) {}
+                   std::uint32_t axis,
+                   wl_fixed_t value) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state || ! state->session || state->surface_width == 0 || state->surface_height == 0) return;
+
+    const double raw_delta = std::round(wl_fixed_to_double(value));
+    const double clamped_delta = std::clamp(
+        raw_delta,
+        static_cast<double>(std::numeric_limits<std::int32_t>::min()),
+        static_cast<double>(std::numeric_limits<std::int32_t>::max()));
+
+    we_input_event_v2 event {};
+    event.size = sizeof(event);
+    event.version = 2;
+    event.type = WE_INPUT_POINTER_WHEEL;
+    event.pointer_x = state->fixed_pointer_position
+        ? state->fixed_pointer_x
+        : static_cast<float>(state->pointer_x / state->surface_width);
+    event.pointer_y = state->fixed_pointer_position
+        ? state->fixed_pointer_y
+        : static_cast<float>(state->pointer_y / state->surface_height);
+    if (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
+        event.wheel_delta_x = static_cast<std::int32_t>(clamped_delta);
+    } else if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
+        event.wheel_delta_y = static_cast<std::int32_t>(clamped_delta);
+    } else {
+        return;
+    }
+    we_session_send_input_event(state->session, &event);
+}
 
 void onPointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
 
