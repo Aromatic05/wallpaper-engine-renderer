@@ -91,6 +91,8 @@ struct WaylandState {
     std::uint32_t           logical_height { 0 };
     std::uint32_t           render_width { 0 };
     std::uint32_t           render_height { 0 };
+    std::uint32_t           bound_render_width { 0 };
+    std::uint32_t           bound_render_height { 0 };
     std::uint32_t           fallback_width { 0 };
     std::uint32_t           fallback_height { 0 };
     double                  pointer_x { 0.0 };
@@ -180,6 +182,8 @@ std::int32_t bufferTransformForClockwiseRotation(std::uint32_t rotation_degrees)
     }
 }
 
+void logRenderGeometry(const WaylandState& state, const char* reason);
+
 void updateRenderExtent(WaylandState& state) {
     if (state.output_mode_width > 0 && state.output_mode_height > 0) {
         state.render_width = state.output_mode_width;
@@ -199,6 +203,29 @@ void updateRenderExtent(WaylandState& state) {
 
     state.render_width = scaledExtent(logical_width, scale_factor);
     state.render_height = scaledExtent(logical_height, scale_factor);
+}
+
+void resizeBoundOutputIfNeeded(WaylandState& state, const char* reason) {
+    if (! state.session || state.render_width == 0 || state.render_height == 0) return;
+    if (state.render_width == state.bound_render_width
+        && state.render_height == state.bound_render_height) {
+        return;
+    }
+    const std::int32_t result =
+        we_session_resize_output(state.session, state.render_width, state.render_height);
+    if (result != 0) {
+        std::fprintf(stderr,
+                     "sceneviewer-layer: output resize failed reason=%s extent=%ux%u status=%d\n",
+                     reason,
+                     state.render_width,
+                     state.render_height,
+                     result);
+        return;
+    }
+    state.bound_render_width = state.render_width;
+    state.bound_render_height = state.render_height;
+    state.extent_mismatch_reported = false;
+    logRenderGeometry(state, reason);
 }
 
 void updateViewportDestination(WaylandState& state) {
@@ -373,6 +400,7 @@ void onLayerSurfaceConfigure(void* data,
     updateRenderExtent(*state);
     updateViewportDestination(*state);
     updateSurfaceRegions(*state);
+    resizeBoundOutputIfNeeded(*state, "resized configured wallpaper surface");
     logRenderGeometry(*state, "configured wallpaper surface");
 }
 
@@ -402,6 +430,7 @@ void onOutputGeometry(void* data,
     state->output_transform = transform;
     if (state->logical_width == 0 || state->logical_height == 0) return;
     updateRenderExtent(*state);
+    resizeBoundOutputIfNeeded(*state, "resized after output transform");
     logRenderGeometry(*state, "updated output transform");
 }
 
@@ -417,6 +446,7 @@ void onOutputMode(void* data,
     state->output_mode_height = static_cast<std::uint32_t>(std::max(height, 0));
     if (state->logical_width > 0 && state->logical_height > 0) {
         updateRenderExtent(*state);
+        resizeBoundOutputIfNeeded(*state, "resized after output mode");
     }
 }
 
@@ -428,6 +458,7 @@ void onOutputScale(void* data, wl_output* /*output*/, std::int32_t factor) {
     state->output_scale = static_cast<std::uint32_t>(std::max(factor, 1));
     if (state->logical_width == 0 || state->logical_height == 0) return;
     updateRenderExtent(*state);
+    resizeBoundOutputIfNeeded(*state, "resized after output scale");
     logRenderGeometry(*state, "updated output scale");
 }
 
@@ -446,6 +477,7 @@ void onFractionalScalePreferredScale(void* data,
     state->preferred_fractional_scale = std::max(scale, kFractionalScaleDenominator);
     if (state->logical_width == 0 || state->logical_height == 0) return;
     updateRenderExtent(*state);
+    resizeBoundOutputIfNeeded(*state, "resized after fractional scale");
     logRenderGeometry(*state, "updated fractional scale");
 }
 
@@ -846,6 +878,8 @@ int main(int argc, char** argv) {
         destroyWayland(wayland);
         return 1;
     }
+    wayland.bound_render_width = wayland.render_width;
+    wayland.bound_render_height = wayland.render_height;
 
     if (const std::int32_t r = we_session_play(session); r != 0) {
         std::cerr << "we_session_play failed: " << r << "\n";
