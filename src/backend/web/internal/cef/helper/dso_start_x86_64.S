@@ -17,3 +17,5 @@ _start:
     mov main@GOTPCREL(%rip), %rdi
     call __libc_start_main@PLT
     hlt
+
+.section .note.GNU-stack,"",@progbits

@@ -72,7 +72,8 @@ if(BUILD_WEWEB)
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
     target_link_options(we-cef-helper PRIVATE
         -Wl,-e,_start
-        -Wl,-export-dynamic)
+        -Wl,-export-dynamic
+        -Wl,-z,noexecstack)
     add_custom_command(TARGET we-cef-helper POST_BUILD
         COMMAND chmod +x $<TARGET_FILE:we-cef-helper>)
 
