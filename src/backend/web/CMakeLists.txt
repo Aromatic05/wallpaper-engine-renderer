@@ -68,7 +68,8 @@ if(BUILD_WEWEB)
         libcef_dll_wrapper)
     target_include_directories(we-cef-helper PRIVATE
         ../..
-        ../../../include)
+        ../../../include
+        ${CEF_ROOT})
     target_compile_options(we-cef-helper PRIVATE ${warn_opts} -fno-exceptions)
     target_link_options(we-cef-helper PRIVATE
         -Wl,-e,_start
