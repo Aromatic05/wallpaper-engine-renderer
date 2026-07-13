@@ -77,6 +77,12 @@ struct DecoderDmabufCapsInfo {
     std::string              caps_string;
 };
 
+bool IsTextureOutputCompatibleDrmFormat(std::string_view drm_format) {
+    const auto base_format = drm_format.substr(0, drm_format.find(':'));
+    return base_format == "AB24" || base_format == "XB24" || base_format == "AR24"
+        || base_format == "XR24";
+}
+
 std::optional<DecoderDmabufCapsInfo> QueryVaDmabufDecoderCaps() {
     GstElementFactory* factory = gst_element_factory_find("vah264dec");
     if (factory == nullptr) return std::nullopt;
@@ -594,41 +600,47 @@ void VideoBackend::destroyPipeline() {
 Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
     destroyPipeline();
 
-    m_pipelineMode = mode;
     m_selectedDmabufDrmFormat.reset();
     m_lastLoggedDmabufSampleSignature.reset();
     m_eos = false;
     if (mode == PipelineMode::Dmabuf) {
-        GstElementFactory* factory = gst_element_factory_find("vah264dec");
-        if (factory == nullptr) {
-            std::fprintf(stderr, "video-backend: vah264dec not found\n");
-            return unsupportedVaH264Dmabuf("missing vah264dec decoder");
+        const auto decoder_caps = QueryVaDmabufDecoderCaps();
+        if (! decoder_caps.has_value()) {
+            appendDiagnostic(DiagnosticSeverity::Warning,
+                             "video backend DMA-BUF decoder capabilities are unavailable; using SHM");
+            mode = PipelineMode::Shm;
+        } else {
+            const auto compatible_format = std::find_if(
+                decoder_caps->drm_formats.begin(),
+                decoder_caps->drm_formats.end(),
+                IsTextureOutputCompatibleDrmFormat);
+            if (compatible_format == decoder_caps->drm_formats.end()) {
+                appendDiagnostic(
+                    DiagnosticSeverity::Warning,
+                    "video backend found no DMA-BUF format compatible with texture output; using SHM");
+                mode = PipelineMode::Shm;
+            } else {
+                m_selectedDmabufDrmFormat = *compatible_format;
+            }
         }
+    }
+    m_pipelineMode = mode;
+
+    if (mode == PipelineMode::Dmabuf) {
+        GstElementFactory* factory = gst_element_factory_find("vah264dec");
+        if (factory == nullptr) return unsupportedVaH264Dmabuf("missing vah264dec decoder");
         gst_object_unref(factory);
     }
 
     const std::string escapedPath = EscapeGstPropertyString(m_sourcePath.string());
     std::string pipelineDescription;
     if (mode == PipelineMode::Dmabuf) {
-        const auto decoder_caps = QueryVaDmabufDecoderCaps();
-        if (! decoder_caps.has_value()) {
-            std::fprintf(stderr, "video-backend: failed to query vah264dec caps\n");
-            return unsupportedVaH264Dmabuf("failed to query vah264dec DMA-BUF caps");
+        if (! m_selectedDmabufDrmFormat.has_value()) {
+            return Result<void>::failure(ResultCode::InternalError,
+                                         "DMA-BUF pipeline selected without a compatible DRM format");
         }
-        if (decoder_caps->drm_formats.empty()) {
-            std::fprintf(stderr, "video-backend: vah264dec exposes no DMA-BUF drm-format\n");
-            return unsupportedVaH264Dmabuf("decoder exposed no DMA-BUF drm-format");
-        }
-
-        m_selectedDmabufDrmFormat = decoder_caps->drm_formats.front();
-        appendDiagnostic(DiagnosticSeverity::Warning,
-                         "video backend DMA-BUF path currently requires MP4/H.264/vah264dec; "
-                         "importer drm-format intersection is not implemented yet (TODO), so "
-                         "selection currently uses decoder-advertised drm-format only");
         std::fprintf(stderr,
-                     "video-backend[debug]: pipeline-mode=dmabuf decoder-caps=%s selected-drm-format=%s\n",
-                     decoder_caps->caps_string.empty() ? "<unavailable>"
-                                                       : decoder_caps->caps_string.c_str(),
+                     "video-backend[debug]: pipeline-mode=dmabuf selected-drm-format=%s\n",
                      m_selectedDmabufDrmFormat->c_str());
         pipelineDescription =
             "filesrc location=\"" + escapedPath + "\" "
