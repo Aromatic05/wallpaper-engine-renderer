@@ -75,6 +75,13 @@ void requireAt(bool condition, const char* label) {
 int main() {
     WorkshopFixture workshop;
 
+    requireAt(::setenv("WE_CEF_CACHE_DIR", "/tmp/web-backend-contract-env-cache", 1) == 0,
+              "set CEF cache environment");
+    auto defaultServices = wallpaper::CreateDefaultWebEngineServices();
+    requireAt(defaultServices->provideCefCacheDir() == "/tmp/web-backend-contract-env-cache",
+              "default service uses CEF cache environment");
+    requireAt(::unsetenv("WE_CEF_CACHE_DIR") == 0, "unset CEF cache environment");
+
     wallpaper::WallpaperRuntime runtime;
     auto services = std::make_shared<wallpaper::WebEngineServices>();
     services->provideCefResourcesDir = []() { return std::filesystem::path("/usr/lib/cef"); };

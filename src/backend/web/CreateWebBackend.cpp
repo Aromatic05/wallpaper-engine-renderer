@@ -83,6 +83,13 @@ std::filesystem::path helperPathFromEnv() {
     return {};
 }
 
+std::filesystem::path cachePathFromEnv() {
+    if (const char* value = std::getenv("WE_CEF_CACHE_DIR")) {
+        if (*value) return value;
+    }
+    return {};
+}
+
 std::filesystem::path userLocalLibDir() {
     if (const char* home = std::getenv("HOME")) {
         if (*home) return std::filesystem::path(home) / ".local" / "lib";
@@ -219,6 +226,9 @@ std::shared_ptr<WebEngineServices> CreateDefaultWebEngineServicesImpl(const Back
         return resolveDefaultCefLocalesDir();
     };
     services->provideCefCacheDir     = [cache_path = context.cachePath]() -> std::filesystem::path {
+        if (auto fromEnv = cachePathFromEnv(); ! fromEnv.empty()) {
+            return fromEnv;
+        }
         if (! cache_path.empty()) {
             return std::filesystem::path(cache_path) / "web-cef";
         }
