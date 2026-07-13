@@ -111,28 +111,56 @@ wallpaper::Result<void> unsupported_runtime_setting(std::string name,
             + std::to_string(static_cast<std::int32_t>(backend)));
 }
 
-wallpaper::WallpaperSource make_source(const we_source_v1* source) {
+wallpaper::WallpaperSource make_source(const we_source_v1* source,
+                                         wallpaper::BackendType backend) {
     wallpaper::WallpaperSource out;
-    if (!source) return out;
+    if (! source) return out;
     if (source_has_field(source, offsetof(we_source_v1, uri), sizeof(source->uri)) && source->uri) {
         out.uri = source->uri;
     }
-    if (source_has_field(source, offsetof(we_source_v1, assets_uri), sizeof(source->assets_uri)) &&
-        source->assets_uri && *source->assets_uri) {
-        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_ASSETS)] = source->assets_uri;
-    }
-    if (source_has_field(source, offsetof(we_source_v1, fps), sizeof(source->fps)) &&
-        source->fps > 0) {
-        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_FPS)] = source->fps;
-    }
-    if (source_has_field(source, offsetof(we_source_v1, speed), sizeof(source->speed))) {
-        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_SPEED)] = source->speed;
-    }
-    if (source_has_field(source, offsetof(we_source_v1, volume), sizeof(source->volume))) {
-        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_VOLUME)] = source->volume;
-    }
-    if (source_has_field(source, offsetof(we_source_v1, muted), sizeof(source->muted))) {
-        out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_MUTED)] = source->muted;
+
+    const auto add_fps = [&]() {
+        if (source_has_field(source, offsetof(we_source_v1, fps), sizeof(source->fps))
+            && source->fps > 0) {
+            out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_FPS)] = source->fps;
+        }
+    };
+    const auto add_volume = [&]() {
+        if (source_has_field(source, offsetof(we_source_v1, volume), sizeof(source->volume))) {
+            out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_VOLUME)] = source->volume;
+        }
+    };
+    const auto add_muted = [&]() {
+        if (source_has_field(source, offsetof(we_source_v1, muted), sizeof(source->muted))) {
+            out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_MUTED)] = source->muted;
+        }
+    };
+
+    switch (backend) {
+    case wallpaper::BackendType::WEScene:
+        if (source_has_field(source, offsetof(we_source_v1, assets_uri), sizeof(source->assets_uri))
+            && source->assets_uri && *source->assets_uri) {
+            out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_ASSETS)] =
+                source->assets_uri;
+        }
+        add_fps();
+        if (source_has_field(source, offsetof(we_source_v1, speed), sizeof(source->speed))) {
+            out.initialProperties[std::string(wallpaper::WE_SCENE_PROPERTY_SPEED)] = source->speed;
+        }
+        add_volume();
+        add_muted();
+        break;
+    case wallpaper::BackendType::Web:
+        add_fps();
+        add_volume();
+        add_muted();
+        break;
+    case wallpaper::BackendType::Video:
+        add_volume();
+        add_muted();
+        break;
+    case wallpaper::BackendType::Image:
+        break;
     }
     return out;
 }
@@ -263,7 +291,7 @@ int32_t we_session_set_source(we_session_t* session, const we_source_v1* source)
     if (! parsed) return to_error_with_diagnostic(state, "abi.source", parsed);
 
     state->sourceType = parsed.value().type;
-    wallpaper::WallpaperSource normalized = make_source(source);
+    wallpaper::WallpaperSource normalized = make_source(source, parsed.value().type);
     normalized.type = parsed.value().type;
     normalized.uri  = parsed.value().backendUri;
     if (source_has_field(source,

@@ -42,14 +42,30 @@ int main() {
     assert(session != nullptr);
 
     we_source_v1 source {};
-    source.size = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
+    // A legacy caller is allowed to send the complete source structure for every
+    // backend. The ABI adapter must filter scene-only initial properties before
+    // loading a web wallpaper rather than requiring callers to truncate `size`.
+    source.size = sizeof(source);
     source.version = 1;
     source.uri = fixture.dir.c_str();
     source.assets_uri = fixture.dir.c_str();
     source.fps = 30;
+    source.speed = 1.0f;
+    source.volume = 0.5f;
+    source.muted = false;
 
     const std::int32_t set_source_result = we_session_set_source(session, &source);
     assert(set_source_result == 0);
+
+    // Filtering applies only to initial source adaptation. Explicit runtime
+    // attempts to change web playback speed remain unsupported.
+    we_runtime_settings_v1 runtime_settings {};
+    runtime_settings.size = sizeof(runtime_settings);
+    runtime_settings.version = 1;
+    runtime_settings.fields = WE_RUNTIME_SETTINGS_SPEED;
+    runtime_settings.speed = 2.0f;
+    assert(we_session_apply_runtime_settings(session, &runtime_settings) ==
+           static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
 
     we_render_config_v1 shm_config {};
     shm_config.size = sizeof(shm_config);
