@@ -30,7 +30,8 @@
 #include "viewporter-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
-namespace {
+namespace
+{
 
 bool envVarEnabled(const char* name) {
     const char* value = std::getenv(name);
@@ -42,70 +43,209 @@ bool envVarEquals(const char* name, const char* expected) {
     return value != nullptr && std::strcmp(value, expected) == 0;
 }
 
-std::uint32_t toOpaqueDrmFourcc(std::uint32_t drm_fourcc) {
-    switch (drm_fourcc) {
-    case DRM_FORMAT_ABGR8888: return DRM_FORMAT_XBGR8888;
-    case DRM_FORMAT_ARGB8888: return DRM_FORMAT_XRGB8888;
-    default: return drm_fourcc;
-    }
-}
-
 constexpr std::uint32_t kLayerSurfaceAnchors =
-    ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-    ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-    ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-    ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+    ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
 constexpr std::uint32_t kFractionalScaleDenominator = 120;
 
 struct WaylandBuffer {
-    wl_buffer* buffer { nullptr };
-    bool       released { false };
+    wl_buffer*       buffer { nullptr };
+    bool             released { false };
     std::vector<int> pending_send_fds;
 };
 
+struct DmabufFormatModifierEntry {
+    std::uint32_t format { 0 };
+    std::uint64_t modifier { 0 };
+};
+
+struct DmabufFeedbackState {
+    zwp_linux_dmabuf_feedback_v1*          feedback { nullptr };
+    we_session_t*                          session { nullptr };
+    void*                                  mapped_table { nullptr };
+    std::size_t                            mapped_table_size { 0 };
+    std::vector<DmabufFormatModifierEntry> format_table;
+    std::vector<DmabufFormatModifierEntry> preferred_formats;
+};
+
 struct WaylandState {
-    wl_display*             display { nullptr };
-    wl_registry*            registry { nullptr };
-    wl_compositor*          compositor { nullptr };
-    wl_surface*             surface { nullptr };
-    wl_seat*                seat { nullptr };
-    wl_pointer*             pointer { nullptr };
-    wl_output*              output { nullptr };
-    wp_viewporter*          viewporter { nullptr };
-    wp_viewport*            viewport { nullptr };
-    zwlr_layer_shell_v1*    layer_shell { nullptr };
-    zwlr_layer_surface_v1*  layer_surface { nullptr };
-    zwp_linux_dmabuf_v1*    dmabuf { nullptr };
-    wl_shm*                 shm { nullptr };
-    wp_fractional_scale_manager_v1* fractional_scale_manager { nullptr };
-    wp_fractional_scale_v1* fractional_scale { nullptr };
-    std::uint32_t           dmabuf_version { 0 };
-    std::uint32_t           compositor_version { 0 };
-    std::uint32_t           output_count { 0 };
-    std::uint32_t           output_scale { 1 };
-    std::uint32_t           preferred_fractional_scale { 0 };
-    std::uint32_t           output_mode_width { 0 };
-    std::uint32_t           output_mode_height { 0 };
-    std::int32_t            output_transform { WL_OUTPUT_TRANSFORM_NORMAL };
-    std::uint32_t           rotation_degrees { 0 };
-    std::uint32_t           logical_width { 0 };
-    std::uint32_t           logical_height { 0 };
-    std::uint32_t           render_width { 0 };
-    std::uint32_t           render_height { 0 };
-    std::uint32_t           bound_render_width { 0 };
-    std::uint32_t           bound_render_height { 0 };
-    std::uint32_t           fallback_width { 0 };
-    std::uint32_t           fallback_height { 0 };
-    double                  pointer_x { 0.0 };
-    double                  pointer_y { 0.0 };
-    bool                    running { true };
-    bool                    configured { false };
-    bool                    extent_mismatch_reported { false };
-    we_session_t*           session { nullptr };
+    wl_display*                                 display { nullptr };
+    wl_registry*                                registry { nullptr };
+    wl_compositor*                              compositor { nullptr };
+    wl_surface*                                 surface { nullptr };
+    wl_seat*                                    seat { nullptr };
+    wl_pointer*                                 pointer { nullptr };
+    wl_output*                                  output { nullptr };
+    wp_viewporter*                              viewporter { nullptr };
+    wp_viewport*                                viewport { nullptr };
+    zwlr_layer_shell_v1*                        layer_shell { nullptr };
+    zwlr_layer_surface_v1*                      layer_surface { nullptr };
+    zwp_linux_dmabuf_v1*                        dmabuf { nullptr };
+    wl_shm*                                     shm { nullptr };
+    wp_fractional_scale_manager_v1*             fractional_scale_manager { nullptr };
+    wp_fractional_scale_v1*                     fractional_scale { nullptr };
+    std::uint32_t                               dmabuf_version { 0 };
+    std::uint32_t                               compositor_version { 0 };
+    std::uint32_t                               output_count { 0 };
+    std::uint32_t                               output_scale { 1 };
+    std::uint32_t                               preferred_fractional_scale { 0 };
+    std::uint32_t                               output_mode_width { 0 };
+    std::uint32_t                               output_mode_height { 0 };
+    std::int32_t                                output_transform { WL_OUTPUT_TRANSFORM_NORMAL };
+    std::uint32_t                               rotation_degrees { 0 };
+    std::uint32_t                               logical_width { 0 };
+    std::uint32_t                               logical_height { 0 };
+    std::uint32_t                               render_width { 0 };
+    std::uint32_t                               render_height { 0 };
+    std::uint32_t                               bound_render_width { 0 };
+    std::uint32_t                               bound_render_height { 0 };
+    std::uint32_t                               fallback_width { 0 };
+    std::uint32_t                               fallback_height { 0 };
+    double                                      pointer_x { 0.0 };
+    double                                      pointer_y { 0.0 };
+    bool                                        running { true };
+    bool                                        configured { false };
+    bool                                        extent_mismatch_reported { false };
+    we_session_t*                               session { nullptr };
     std::vector<std::unique_ptr<WaylandBuffer>> in_flight_buffers;
+    DmabufFeedbackState                         surface_feedback;
+    std::vector<DmabufFormatModifierEntry>      legacy_dmabuf_formats;
 };
 
 void destroyWayland(WaylandState& state);
+
+void onLegacyDmabufFormat(void*, zwp_linux_dmabuf_v1*, std::uint32_t) {}
+
+void onLegacyDmabufModifier(void* data, zwp_linux_dmabuf_v1*, std::uint32_t format,
+                            std::uint32_t modifier_hi, std::uint32_t modifier_lo) {
+    auto* state = static_cast<WaylandState*>(data);
+    if (! state) return;
+    const std::uint64_t modifier = (static_cast<std::uint64_t>(modifier_hi) << 32u) | modifier_lo;
+    const DmabufFormatModifierEntry entry { format, modifier };
+    const auto duplicate = std::find_if(state->legacy_dmabuf_formats.begin(),
+                                        state->legacy_dmabuf_formats.end(),
+                                        [&entry](const DmabufFormatModifierEntry& current) {
+                                            return current.format == entry.format &&
+                                                   current.modifier == entry.modifier;
+                                        });
+    if (duplicate == state->legacy_dmabuf_formats.end()) {
+        state->legacy_dmabuf_formats.push_back(entry);
+    }
+}
+
+constexpr zwp_linux_dmabuf_v1_listener kLegacyDmabufListener {
+    .format   = onLegacyDmabufFormat,
+    .modifier = onLegacyDmabufModifier,
+};
+
+void destroyDmabufFeedback(DmabufFeedbackState& feedback) {
+    if (feedback.mapped_table != nullptr && feedback.mapped_table_size != 0) {
+        ::munmap(feedback.mapped_table, feedback.mapped_table_size);
+        feedback.mapped_table      = nullptr;
+        feedback.mapped_table_size = 0;
+    }
+    if (feedback.feedback != nullptr) {
+        zwp_linux_dmabuf_feedback_v1_destroy(feedback.feedback);
+        feedback.feedback = nullptr;
+    }
+    feedback.format_table.clear();
+    feedback.preferred_formats.clear();
+    feedback.session = nullptr;
+}
+
+std::int32_t applyDmabufFormats(we_session_t*                                 session,
+                                const std::vector<DmabufFormatModifierEntry>& formats) {
+    if (session == nullptr) return 0;
+    std::vector<std::uint32_t> fourccs;
+    std::vector<std::uint64_t> modifiers;
+    fourccs.reserve(formats.size());
+    modifiers.reserve(formats.size());
+    for (const auto& format : formats) {
+        fourccs.push_back(format.format);
+        modifiers.push_back(format.modifier);
+    }
+    return we_session_set_dmabuf_formats(session,
+                                         fourccs.empty() ? nullptr : fourccs.data(),
+                                         modifiers.empty() ? nullptr : modifiers.data(),
+                                         static_cast<std::uint32_t>(fourccs.size()));
+}
+
+std::int32_t applyDmabufFeedback(DmabufFeedbackState& feedback) {
+    return applyDmabufFormats(feedback.session, feedback.preferred_formats);
+}
+
+void onDmabufFeedbackDone(void* data, zwp_linux_dmabuf_feedback_v1*) {
+    auto* feedback = static_cast<DmabufFeedbackState*>(data);
+    if (! feedback || feedback->session == nullptr) return;
+    const std::int32_t result = applyDmabufFeedback(*feedback);
+    if (result != 0) {
+        std::fprintf(stderr, "sceneviewer-layer: updated DMA-BUF feedback failed: %d\n", result);
+    }
+}
+
+void onDmabufFeedbackFormatTable(void* data, zwp_linux_dmabuf_feedback_v1*, int32_t fd,
+                                 uint32_t size) {
+    auto* feedback = static_cast<DmabufFeedbackState*>(data);
+    if (! feedback) {
+        if (fd >= 0) ::close(fd);
+        return;
+    }
+    if (feedback->mapped_table != nullptr && feedback->mapped_table_size != 0) {
+        ::munmap(feedback->mapped_table, feedback->mapped_table_size);
+        feedback->mapped_table      = nullptr;
+        feedback->mapped_table_size = 0;
+    }
+    feedback->format_table.clear();
+    feedback->preferred_formats.clear();
+    if (fd < 0 || size == 0) {
+        if (fd >= 0) ::close(fd);
+        return;
+    }
+
+    void* mapped = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (mapped == MAP_FAILED) return;
+
+    feedback->mapped_table      = mapped;
+    feedback->mapped_table_size = size;
+    const auto* bytes           = static_cast<const std::uint8_t*>(mapped);
+    for (std::size_t offset = 0; offset + 16 <= size; offset += 16) {
+        std::uint32_t format { 0 };
+        std::uint64_t modifier { 0 };
+        std::memcpy(&format, bytes + offset, sizeof(format));
+        std::memcpy(&modifier, bytes + offset + 8, sizeof(modifier));
+        feedback->format_table.push_back({ format, modifier });
+    }
+}
+
+void onDmabufFeedbackMainDevice(void*, zwp_linux_dmabuf_feedback_v1*, wl_array*) {}
+void onDmabufFeedbackTrancheDone(void*, zwp_linux_dmabuf_feedback_v1*) {}
+void onDmabufFeedbackTrancheTargetDevice(void*, zwp_linux_dmabuf_feedback_v1*, wl_array*) {}
+
+void onDmabufFeedbackTrancheFormats(void* data, zwp_linux_dmabuf_feedback_v1*, wl_array* indices) {
+    auto* feedback = static_cast<DmabufFeedbackState*>(data);
+    if (! feedback || ! indices) return;
+    const auto  count      = indices->size / sizeof(std::uint16_t);
+    const auto* index_data = static_cast<const std::uint16_t*>(indices->data);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto table_index = static_cast<std::size_t>(index_data[index]);
+        if (table_index < feedback->format_table.size()) {
+            feedback->preferred_formats.push_back(feedback->format_table[table_index]);
+        }
+    }
+}
+
+void onDmabufFeedbackTrancheFlags(void*, zwp_linux_dmabuf_feedback_v1*, std::uint32_t) {}
+
+constexpr zwp_linux_dmabuf_feedback_v1_listener kDmabufFeedbackListener {
+    .done                  = onDmabufFeedbackDone,
+    .format_table          = onDmabufFeedbackFormatTable,
+    .main_device           = onDmabufFeedbackMainDevice,
+    .tranche_done          = onDmabufFeedbackTrancheDone,
+    .tranche_target_device = onDmabufFeedbackTrancheTargetDevice,
+    .tranche_formats       = onDmabufFeedbackTrancheFormats,
+    .tranche_flags         = onDmabufFeedbackTrancheFlags,
+};
 
 void onWlBufferRelease(void* data, wl_buffer* /*buffer*/) {
     auto* entry = static_cast<WaylandBuffer*>(data);
@@ -187,10 +327,10 @@ void logRenderGeometry(const WaylandState& state, const char* reason);
 
 void updateRenderExtent(WaylandState& state) {
     if (state.output_mode_width > 0 && state.output_mode_height > 0) {
-        state.render_width = state.output_mode_width;
+        state.render_width  = state.output_mode_width;
         state.render_height = state.output_mode_height;
-        if (swapsDimensions(state.output_transform) != (state.rotation_degrees == 90 ||
-                                                        state.rotation_degrees == 270)) {
+        if (swapsDimensions(state.output_transform) !=
+            (state.rotation_degrees == 90 || state.rotation_degrees == 270)) {
             std::swap(state.render_width, state.render_height);
         }
         return;
@@ -202,14 +342,14 @@ void updateRenderExtent(WaylandState& state) {
         state.logical_height > 0 ? state.logical_height : state.fallback_height;
     const double scale_factor = renderScaleFactor(state);
 
-    state.render_width = scaledExtent(logical_width, scale_factor);
+    state.render_width  = scaledExtent(logical_width, scale_factor);
     state.render_height = scaledExtent(logical_height, scale_factor);
 }
 
 void resizeBoundOutputIfNeeded(WaylandState& state, const char* reason) {
     if (! state.session || state.render_width == 0 || state.render_height == 0) return;
-    if (state.render_width == state.bound_render_width
-        && state.render_height == state.bound_render_height) {
+    if (state.render_width == state.bound_render_width &&
+        state.render_height == state.bound_render_height) {
         return;
     }
     const std::int32_t result =
@@ -223,16 +363,17 @@ void resizeBoundOutputIfNeeded(WaylandState& state, const char* reason) {
                      result);
         return;
     }
-    state.bound_render_width = state.render_width;
-    state.bound_render_height = state.render_height;
+    state.bound_render_width       = state.render_width;
+    state.bound_render_height      = state.render_height;
     state.extent_mismatch_reported = false;
     logRenderGeometry(state, reason);
 }
 
 void updateViewportDestination(WaylandState& state) {
     if (! state.viewport || state.logical_width == 0 || state.logical_height == 0) return;
-    wp_viewport_set_destination(
-        state.viewport, static_cast<std::int32_t>(state.logical_width), static_cast<std::int32_t>(state.logical_height));
+    wp_viewport_set_destination(state.viewport,
+                                static_cast<std::int32_t>(state.logical_width),
+                                static_cast<std::int32_t>(state.logical_height));
 }
 
 void updateSurfaceRegions(WaylandState& state) {
@@ -252,7 +393,6 @@ void updateSurfaceRegions(WaylandState& state) {
     }
 
     if (state.logical_width == 0 || state.logical_height == 0) return;
-
 }
 
 void logRenderGeometry(const WaylandState& state, const char* reason) {
@@ -268,27 +408,18 @@ void logRenderGeometry(const WaylandState& state, const char* reason) {
                  state.output_mode_height);
 }
 
-void onPointerEnter(void* data,
-                    wl_pointer* /*pointer*/,
-                    std::uint32_t /*serial*/,
-                    wl_surface* /*surface*/,
-                    wl_fixed_t sx,
-                    wl_fixed_t sy) {
+void onPointerEnter(void* data, wl_pointer* /*pointer*/, std::uint32_t /*serial*/,
+                    wl_surface* /*surface*/, wl_fixed_t sx, wl_fixed_t sy) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state) return;
     state->pointer_x = wl_fixed_to_double(sx);
     state->pointer_y = wl_fixed_to_double(sy);
 }
 
-void onPointerLeave(void* /*data*/,
-                    wl_pointer* /*pointer*/,
-                    std::uint32_t /*serial*/,
+void onPointerLeave(void* /*data*/, wl_pointer* /*pointer*/, std::uint32_t /*serial*/,
                     wl_surface* /*surface*/) {}
 
-void onPointerMotion(void* data,
-                     wl_pointer* /*pointer*/,
-                     std::uint32_t /*time*/,
-                     wl_fixed_t sx,
+void onPointerMotion(void* data, wl_pointer* /*pointer*/, std::uint32_t /*time*/, wl_fixed_t sx,
                      wl_fixed_t sy) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state || ! state->session || state->logical_width == 0 || state->logical_height == 0) {
@@ -299,20 +430,18 @@ void onPointerMotion(void* data,
     state->pointer_y = wl_fixed_to_double(sy);
 
     we_input_event_v2 event {};
-    event.size = sizeof(event);
+    event.size    = sizeof(event);
     event.version = 2;
-    event.type = WE_INPUT_POINTER_MOVE;
-    event.pointer_x = static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
-    event.pointer_y = static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
+    event.type    = WE_INPUT_POINTER_MOVE;
+    event.pointer_x =
+        static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
+    event.pointer_y =
+        static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
     we_session_send_input_event(state->session, &event);
 }
 
-void onPointerButton(void* data,
-                     wl_pointer* /*pointer*/,
-                     std::uint32_t /*serial*/,
-                     std::uint32_t /*time*/,
-                     std::uint32_t button,
-                     std::uint32_t button_state) {
+void onPointerButton(void* data, wl_pointer* /*pointer*/, std::uint32_t /*serial*/,
+                     std::uint32_t /*time*/, std::uint32_t button, std::uint32_t button_state) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state || ! state->session || state->logical_width == 0 || state->logical_height == 0) {
         return;
@@ -320,48 +449,40 @@ void onPointerButton(void* data,
     if (button != BTN_LEFT) return;
 
     we_input_event_v2 event {};
-    event.size = sizeof(event);
+    event.size    = sizeof(event);
     event.version = 2;
-    event.type = button_state == WL_POINTER_BUTTON_STATE_PRESSED
-        ? WE_INPUT_POINTER_DOWN
-        : WE_INPUT_POINTER_UP;
-    event.pointer_x = static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
-    event.pointer_y = static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
+    event.type    = button_state == WL_POINTER_BUTTON_STATE_PRESSED ? WE_INPUT_POINTER_DOWN
+                                                                    : WE_INPUT_POINTER_UP;
+    event.pointer_x =
+        static_cast<float>(state->pointer_x / static_cast<double>(state->logical_width));
+    event.pointer_y =
+        static_cast<float>(state->pointer_y / static_cast<double>(state->logical_height));
     event.button = 0;
     we_session_send_input_event(state->session, &event);
 }
 
-void onPointerAxis(void* /*data*/,
-                   wl_pointer* /*pointer*/,
-                   std::uint32_t /*time*/,
-                   std::uint32_t /*axis*/,
-                   wl_fixed_t /*value*/) {}
+void onPointerAxis(void* /*data*/, wl_pointer* /*pointer*/, std::uint32_t /*time*/,
+                   std::uint32_t /*axis*/, wl_fixed_t /*value*/) {}
 
 void onPointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
 
-void onPointerAxisSource(void* /*data*/,
-                         wl_pointer* /*pointer*/,
-                         std::uint32_t /*axis_source*/) {}
+void onPointerAxisSource(void* /*data*/, wl_pointer* /*pointer*/, std::uint32_t /*axis_source*/) {}
 
-void onPointerAxisStop(void* /*data*/,
-                       wl_pointer* /*pointer*/,
-                       std::uint32_t /*time*/,
+void onPointerAxisStop(void* /*data*/, wl_pointer* /*pointer*/, std::uint32_t /*time*/,
                        std::uint32_t /*axis*/) {}
 
-void onPointerAxisDiscrete(void* /*data*/,
-                           wl_pointer* /*pointer*/,
-                           std::uint32_t /*axis*/,
+void onPointerAxisDiscrete(void* /*data*/, wl_pointer* /*pointer*/, std::uint32_t /*axis*/,
                            std::int32_t /*discrete*/) {}
 
 constexpr wl_pointer_listener kPointerListener {
-    .enter = onPointerEnter,
-    .leave = onPointerLeave,
-    .motion = onPointerMotion,
-    .button = onPointerButton,
-    .axis = onPointerAxis,
-    .frame = onPointerFrame,
-    .axis_source = onPointerAxisSource,
-    .axis_stop = onPointerAxisStop,
+    .enter         = onPointerEnter,
+    .leave         = onPointerLeave,
+    .motion        = onPointerMotion,
+    .button        = onPointerButton,
+    .axis          = onPointerAxis,
+    .frame         = onPointerFrame,
+    .axis_source   = onPointerAxisSource,
+    .axis_stop     = onPointerAxisStop,
     .axis_discrete = onPointerAxisDiscrete,
 };
 
@@ -383,20 +504,17 @@ void onSeatName(void* /*data*/, wl_seat* /*seat*/, const char* /*name*/) {}
 
 constexpr wl_seat_listener kSeatListener {
     .capabilities = onSeatCapabilities,
-    .name = onSeatName,
+    .name         = onSeatName,
 };
 
-void onLayerSurfaceConfigure(void* data,
-                             zwlr_layer_surface_v1* layer_surface,
-                             std::uint32_t serial,
-                             std::uint32_t width,
-                             std::uint32_t height) {
+void onLayerSurfaceConfigure(void* data, zwlr_layer_surface_v1* layer_surface, std::uint32_t serial,
+                             std::uint32_t width, std::uint32_t height) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state) return;
 
     zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
-    state->configured = true;
-    state->logical_width = width > 0 ? width : state->fallback_width;
+    state->configured     = true;
+    state->logical_width  = width > 0 ? width : state->fallback_width;
     state->logical_height = height > 0 ? height : state->fallback_height;
     updateRenderExtent(*state);
     updateViewportDestination(*state);
@@ -413,18 +531,12 @@ void onLayerSurfaceClosed(void* data, zwlr_layer_surface_v1* /*layer_surface*/) 
 
 constexpr zwlr_layer_surface_v1_listener kLayerSurfaceListener {
     .configure = onLayerSurfaceConfigure,
-    .closed = onLayerSurfaceClosed,
+    .closed    = onLayerSurfaceClosed,
 };
 
-void onOutputGeometry(void* data,
-                      wl_output* /*output*/,
-                      std::int32_t /*x*/,
-                      std::int32_t /*y*/,
-                      std::int32_t /*physical_width*/,
-                      std::int32_t /*physical_height*/,
-                      std::int32_t /*subpixel*/,
-                      const char* /*make*/,
-                      const char* /*model*/,
+void onOutputGeometry(void* data, wl_output* /*output*/, std::int32_t /*x*/, std::int32_t /*y*/,
+                      std::int32_t /*physical_width*/, std::int32_t /*physical_height*/,
+                      std::int32_t /*subpixel*/, const char* /*make*/, const char* /*model*/,
                       std::int32_t transform) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state) return;
@@ -435,15 +547,11 @@ void onOutputGeometry(void* data,
     logRenderGeometry(*state, "updated output transform");
 }
 
-void onOutputMode(void* data,
-                  wl_output* /*output*/,
-                  std::uint32_t flags,
-                  std::int32_t width,
-                  std::int32_t height,
-                  std::int32_t /*refresh*/) {
+void onOutputMode(void* data, wl_output* /*output*/, std::uint32_t flags, std::int32_t width,
+                  std::int32_t height, std::int32_t /*refresh*/) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state || (flags & WL_OUTPUT_MODE_CURRENT) == 0) return;
-    state->output_mode_width = static_cast<std::uint32_t>(std::max(width, 0));
+    state->output_mode_width  = static_cast<std::uint32_t>(std::max(width, 0));
     state->output_mode_height = static_cast<std::uint32_t>(std::max(height, 0));
     if (state->logical_width > 0 && state->logical_height > 0) {
         updateRenderExtent(*state);
@@ -465,13 +573,12 @@ void onOutputScale(void* data, wl_output* /*output*/, std::int32_t factor) {
 
 constexpr wl_output_listener kOutputListener {
     .geometry = onOutputGeometry,
-    .mode = onOutputMode,
-    .done = onOutputDone,
-    .scale = onOutputScale,
+    .mode     = onOutputMode,
+    .done     = onOutputDone,
+    .scale    = onOutputScale,
 };
 
-void onFractionalScalePreferredScale(void* data,
-                                     wp_fractional_scale_v1* /*fractional_scale*/,
+void onFractionalScalePreferredScale(void* data, wp_fractional_scale_v1* /*fractional_scale*/,
                                      std::uint32_t scale) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state) return;
@@ -486,43 +593,41 @@ constexpr wp_fractional_scale_v1_listener kFractionalScaleListener {
     .preferred_scale = onFractionalScalePreferredScale,
 };
 
-void onRegistryGlobal(void* data,
-                      wl_registry* registry,
-                      std::uint32_t name,
-                      const char* interface,
+void onRegistryGlobal(void* data, wl_registry* registry, std::uint32_t name, const char* interface,
                       std::uint32_t version) {
     auto* state = static_cast<WaylandState*>(data);
     if (! state || ! interface) return;
 
     if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
         const std::uint32_t bind_version = std::min(version, 4u);
-        state->compositor =
-            static_cast<wl_compositor*>(wl_registry_bind(registry, name, &wl_compositor_interface, bind_version));
+        state->compositor                = static_cast<wl_compositor*>(
+            wl_registry_bind(registry, name, &wl_compositor_interface, bind_version));
         state->compositor_version = bind_version;
     } else if (std::strcmp(interface, wl_output_interface.name) == 0) {
         ++state->output_count;
         if (! state->output) {
-            state->output =
-                static_cast<wl_output*>(wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 3u)));
+            state->output = static_cast<wl_output*>(
+                wl_registry_bind(registry, name, &wl_output_interface, std::min(version, 3u)));
             wl_output_add_listener(state->output, &kOutputListener, state);
         }
     } else if (std::strcmp(interface, wl_seat_interface.name) == 0) {
-        state->seat =
-            static_cast<wl_seat*>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5u)));
+        state->seat = static_cast<wl_seat*>(
+            wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 5u)));
         wl_seat_add_listener(state->seat, &kSeatListener, state);
     } else if (std::strcmp(interface, wp_viewporter_interface.name) == 0) {
-        state->viewporter =
-            static_cast<wp_viewporter*>(wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
+        state->viewporter = static_cast<wp_viewporter*>(
+            wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
     } else if (std::strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         state->layer_shell = static_cast<zwlr_layer_shell_v1*>(
             wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1));
     } else if (std::strcmp(interface, zwp_linux_dmabuf_v1_interface.name) == 0) {
         state->dmabuf_version = std::min(version, 4u);
-        state->dmabuf = static_cast<zwp_linux_dmabuf_v1*>(
-            wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface, state->dmabuf_version));
+        state->dmabuf         = static_cast<zwp_linux_dmabuf_v1*>(wl_registry_bind(
+            registry, name, &zwp_linux_dmabuf_v1_interface, state->dmabuf_version));
+        zwp_linux_dmabuf_v1_add_listener(state->dmabuf, &kLegacyDmabufListener, state);
     } else if (std::strcmp(interface, wl_shm_interface.name) == 0) {
-        state->shm =
-            static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, std::min(version, 1u)));
+        state->shm = static_cast<wl_shm*>(
+            wl_registry_bind(registry, name, &wl_shm_interface, std::min(version, 1u)));
     } else if (std::strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
         state->fractional_scale_manager = static_cast<wp_fractional_scale_manager_v1*>(
             wl_registry_bind(registry, name, &wp_fractional_scale_manager_v1_interface, 1));
@@ -532,16 +637,14 @@ void onRegistryGlobal(void* data,
 void onRegistryRemove(void* /*data*/, wl_registry* /*registry*/, std::uint32_t /*name*/) {}
 
 constexpr wl_registry_listener kRegistryListener {
-    .global = onRegistryGlobal,
+    .global        = onRegistryGlobal,
     .global_remove = onRegistryRemove,
 };
 
-bool initWayland(WaylandState& state,
-                 std::uint32_t fallback_width,
-                 std::uint32_t fallback_height,
+bool initWayland(WaylandState& state, std::uint32_t fallback_width, std::uint32_t fallback_height,
                  std::uint32_t rotation_degrees) {
-    state.fallback_width = fallback_width;
-    state.fallback_height = fallback_height;
+    state.fallback_width   = fallback_width;
+    state.fallback_height  = fallback_height;
     state.rotation_degrees = rotation_degrees;
 
     state.display = wl_display_connect(nullptr);
@@ -563,7 +666,8 @@ bool initWayland(WaylandState& state,
     }
     if (! state.compositor || ! state.layer_shell || (! state.dmabuf && ! state.shm)) {
         std::fprintf(stderr,
-                     "sceneviewer-layer: missing required Wayland globals compositor=%p layer_shell=%p dmabuf=%p shm=%p\n",
+                     "sceneviewer-layer: missing required Wayland globals compositor=%p "
+                     "layer_shell=%p dmabuf=%p shm=%p\n",
                      static_cast<void*>(state.compositor),
                      static_cast<void*>(state.layer_shell),
                      static_cast<void*>(state.dmabuf),
@@ -571,9 +675,10 @@ bool initWayland(WaylandState& state,
         return false;
     }
     if (state.dmabuf && state.dmabuf_version < 2) {
-        std::fprintf(stderr,
-                     "sceneviewer-layer: zwp_linux_dmabuf_v1 version %u does not support create_immed\n",
-                     state.dmabuf_version);
+        std::fprintf(
+            stderr,
+            "sceneviewer-layer: zwp_linux_dmabuf_v1 version %u does not support create_immed\n",
+            state.dmabuf_version);
         return false;
     }
 
@@ -583,24 +688,33 @@ bool initWayland(WaylandState& state,
         return false;
     }
     wl_surface_set_buffer_scale(state.surface, 1);
-    wl_surface_set_buffer_transform(
-        state.surface, bufferTransformForClockwiseRotation(state.rotation_degrees));
+    wl_surface_set_buffer_transform(state.surface,
+                                    bufferTransformForClockwiseRotation(state.rotation_degrees));
 
     if (state.viewporter) {
         state.viewport = wp_viewporter_get_viewport(state.viewporter, state.surface);
     }
     if (state.fractional_scale_manager) {
-        state.fractional_scale =
-            wp_fractional_scale_manager_v1_get_fractional_scale(state.fractional_scale_manager, state.surface);
-        wp_fractional_scale_v1_add_listener(state.fractional_scale, &kFractionalScaleListener, &state);
+        state.fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(
+            state.fractional_scale_manager, state.surface);
+        wp_fractional_scale_v1_add_listener(
+            state.fractional_scale, &kFractionalScaleListener, &state);
+    }
+    if (state.dmabuf && state.dmabuf_version >= 4) {
+        state.surface_feedback.feedback =
+            zwp_linux_dmabuf_v1_get_surface_feedback(state.dmabuf, state.surface);
+        if (state.surface_feedback.feedback) {
+            zwp_linux_dmabuf_feedback_v1_add_listener(
+                state.surface_feedback.feedback, &kDmabufFeedbackListener, &state.surface_feedback);
+        }
     }
 
-    state.layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        state.layer_shell,
-        state.surface,
-        state.output,
-        ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
-        "wallpaper-engine-renderer");
+    state.layer_surface =
+        zwlr_layer_shell_v1_get_layer_surface(state.layer_shell,
+                                              state.surface,
+                                              state.output,
+                                              ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+                                              "wallpaper-engine-renderer");
     if (! state.layer_surface) {
         std::fprintf(stderr, "sceneviewer-layer: zwlr_layer_shell_v1_get_layer_surface failed\n");
         return false;
@@ -629,16 +743,19 @@ bool initWayland(WaylandState& state,
 
     if (state.output_count > 1) {
         std::fprintf(stderr,
-                     "sceneviewer-layer: compositor exposed %u outputs, using the first one for this test client\n",
+                     "sceneviewer-layer: compositor exposed %u outputs, using the first one for "
+                     "this test client\n",
                      state.output_count);
     }
     if (! state.viewporter) {
         std::fprintf(stderr,
-                     "sceneviewer-layer: wp_viewporter unavailable, fractional high-DPI buffers will not map correctly\n");
+                     "sceneviewer-layer: wp_viewporter unavailable, fractional high-DPI buffers "
+                     "will not map correctly\n");
     }
     if (! state.fractional_scale_manager) {
         std::fprintf(stderr,
-                     "sceneviewer-layer: fractional-scale-v1 unavailable, falling back to wl_output integer scale\n");
+                     "sceneviewer-layer: fractional-scale-v1 unavailable, falling back to "
+                     "wl_output integer scale\n");
     }
     return true;
 }
@@ -648,7 +765,8 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
         if (! state.shm || frame.planes[0].fd < 0 || frame.shm_stride == 0 || frame.shm_size == 0) {
             return nullptr;
         }
-        wl_shm_pool* pool = wl_shm_create_pool(state.shm, frame.planes[0].fd, static_cast<int>(frame.shm_size));
+        wl_shm_pool* pool =
+            wl_shm_create_pool(state.shm, frame.planes[0].fd, static_cast<int>(frame.shm_size));
         if (! pool) return nullptr;
         wl_buffer* buffer = wl_shm_pool_create_buffer(pool,
                                                       0,
@@ -658,20 +776,22 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
                                                       WL_SHM_FORMAT_XRGB8888);
         wl_shm_pool_destroy(pool);
         if (! buffer) return nullptr;
-        auto entry = std::make_unique<WaylandBuffer>();
+        auto entry    = std::make_unique<WaylandBuffer>();
         entry->buffer = buffer;
         wl_buffer_add_listener(entry->buffer, &kBufferListener, entry.get());
         return entry;
     }
 
-    if (frame.kind != WE_FRAME_KIND_DMABUF || frame.n_planes == 0 || frame.n_planes > 4) return nullptr;
+    if (frame.kind != WE_FRAME_KIND_DMABUF || frame.n_planes == 0 || frame.n_planes > 4)
+        return nullptr;
     auto params = zwp_linux_dmabuf_v1_create_params(state.dmabuf);
     if (! params) return nullptr;
 
     std::vector<int> send_fds;
     send_fds.reserve(frame.n_planes);
     const std::uint32_t modifier_hi = static_cast<std::uint32_t>(frame.drm_modifier >> 32U);
-    const std::uint32_t modifier_lo = static_cast<std::uint32_t>(frame.drm_modifier & 0xffffffffULL);
+    const std::uint32_t modifier_lo =
+        static_cast<std::uint32_t>(frame.drm_modifier & 0xffffffffULL);
     for (std::uint32_t i = 0; i < frame.n_planes; ++i) {
         const int dup_fd = ::dup(frame.planes[i].fd);
         if (dup_fd < 0) {
@@ -695,12 +815,12 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
                                        modifier_lo);
     }
 
-    wl_buffer* buffer = zwp_linux_buffer_params_v1_create_immed(
-        params,
-        static_cast<std::int32_t>(frame.width),
-        static_cast<std::int32_t>(frame.height),
-        toOpaqueDrmFourcc(frame.drm_fourcc),
-        0);
+    wl_buffer* buffer =
+        zwp_linux_buffer_params_v1_create_immed(params,
+                                                static_cast<std::int32_t>(frame.width),
+                                                static_cast<std::int32_t>(frame.height),
+                                                frame.drm_fourcc,
+                                                0);
     zwp_linux_buffer_params_v1_destroy(params);
 
     if (! buffer) {
@@ -711,8 +831,8 @@ std::unique_ptr<WaylandBuffer> createBufferForFrame(WaylandState& state, const w
         return nullptr;
     }
 
-    auto entry = std::make_unique<WaylandBuffer>();
-    entry->buffer = buffer;
+    auto entry              = std::make_unique<WaylandBuffer>();
+    entry->buffer           = buffer;
     entry->pending_send_fds = std::move(send_fds);
     wl_buffer_add_listener(entry->buffer, &kBufferListener, entry.get());
     return entry;
@@ -722,14 +842,15 @@ bool presentFrame(WaylandState& state, const we_frame_v1& frame) {
     auto entry = createBufferForFrame(state, frame);
     if (! entry) return false;
 
-    if (! state.extent_mismatch_reported
-        && (frame.width != state.render_width || frame.height != state.render_height)) {
-        std::fprintf(stderr,
-                     "sceneviewer-layer: frame extent %ux%u differs from configured render extent %ux%u\n",
-                     frame.width,
-                     frame.height,
-                     state.render_width,
-                     state.render_height);
+    if (! state.extent_mismatch_reported &&
+        (frame.width != state.render_width || frame.height != state.render_height)) {
+        std::fprintf(
+            stderr,
+            "sceneviewer-layer: frame extent %ux%u differs from configured render extent %ux%u\n",
+            frame.width,
+            frame.height,
+            state.render_width,
+            state.render_height);
         state.extent_mismatch_reported = true;
     }
 
@@ -779,6 +900,7 @@ void destroyWayland(WaylandState& state) {
         wl_surface_destroy(state.surface);
         state.surface = nullptr;
     }
+    destroyDmabufFeedback(state.surface_feedback);
     if (state.dmabuf) {
         zwp_linux_dmabuf_v1_destroy(state.dmabuf);
         state.dmabuf = nullptr;
@@ -812,7 +934,7 @@ void destroyWayland(WaylandState& state) {
 } // namespace
 
 int main(int argc, char** argv) {
-    Args args;
+    Args        args;
     std::string err;
     if (! parseArgs(argc, argv, args, err)) {
         printHelp(argv[0]);
@@ -830,8 +952,8 @@ int main(int argc, char** argv) {
     }
 
     we_session_t* session = args.cache_path.empty()
-        ? we_session_create()
-        : we_session_create_with_cache_path(args.cache_path.c_str());
+                                ? we_session_create()
+                                : we_session_create_with_cache_path(args.cache_path.c_str());
     if (! session) {
         std::cerr << "we_session_create failed\n";
         destroyWayland(wayland);
@@ -840,11 +962,11 @@ int main(int argc, char** argv) {
     wayland.session = session;
 
     we_source_v1 source {};
-    source.size = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
-    source.version = 1;
-    source.uri = args.uri.c_str();
+    source.size       = static_cast<std::uint32_t>(offsetof(we_source_v1, speed));
+    source.version    = 1;
+    source.uri        = args.uri.c_str();
     source.assets_uri = args.assets_uri.c_str();
-    source.fps = args.fps;
+    source.fps        = args.fps;
     if (const std::int32_t r = we_session_set_source(session, &source); r != 0) {
         std::cerr << "we_session_set_source failed: " << r << "\n";
         we_session_destroy(session);
@@ -852,12 +974,32 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (wayland.dmabuf && wayland.dmabuf_version >= 4) {
+        wayland.surface_feedback.session = session;
+        const std::int32_t result        = applyDmabufFeedback(wayland.surface_feedback);
+        if (result != 0) {
+            std::cerr << "we_session_set_dmabuf_formats failed: " << result << "\n";
+            we_session_destroy(session);
+            wayland.surface_feedback.session = nullptr;
+            destroyWayland(wayland);
+            return 1;
+        }
+    } else if (wayland.dmabuf && wayland.dmabuf_version >= 3) {
+        const std::int32_t result = applyDmabufFormats(session, wayland.legacy_dmabuf_formats);
+        if (result != 0) {
+            std::cerr << "we_session_set_dmabuf_formats failed: " << result << "\n";
+            we_session_destroy(session);
+            destroyWayland(wayland);
+            return 1;
+        }
+    }
+
     we_render_config_v1 config {};
-    config.size = sizeof(config);
-    config.version = 1;
-    config.width = wayland.render_width;
-    config.height = wayland.render_height;
-    config.fill_mode = static_cast<we_fill_mode_v1>(args.fill_mode);
+    config.size             = sizeof(config);
+    config.version          = 1;
+    config.width            = wayland.render_width;
+    config.height           = wayland.render_height;
+    config.fill_mode        = static_cast<we_fill_mode_v1>(args.fill_mode);
     config.rotation_degrees = args.rotation_degrees;
     // NVIDIA GPUs render using a hardware-specific pixel layout that AMD/Intel
     // GPUs do not understand.  vkGetMemoryFdKHR on NVIDIA produces dmabufs that
@@ -867,7 +1009,7 @@ int main(int argc, char** argv) {
     // This is acknowledged by NVIDIA as a known limitation:
     //   https://github.com/NVIDIA/egl-wayland/issues/72
     // When prime-render-offload is detected, always use SHM instead of dmabuf.
-    config.prefer_dmabuf = true;
+    config.prefer_dmabuf      = true;
     config.allow_shm_fallback = true;
     if (envVarEnabled("__NV_PRIME_RENDER_OFFLOAD") ||
         envVarEquals("__VK_LAYER_NV_optimus", "NVIDIA_only")) {
@@ -879,7 +1021,7 @@ int main(int argc, char** argv) {
         destroyWayland(wayland);
         return 1;
     }
-    wayland.bound_render_width = wayland.render_width;
+    wayland.bound_render_width  = wayland.render_width;
     wayland.bound_render_height = wayland.render_height;
 
     if (const std::int32_t r = we_session_play(session); r != 0) {
@@ -889,13 +1031,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::uint64_t acquired = 0;
-    std::uint64_t presented = 0;
+    std::uint64_t acquired             = 0;
+    std::uint64_t presented            = 0;
     std::uint64_t spurious_frame_wakes = 0;
-    std::int32_t last_acquire_status = 1;
-    auto last_log = std::chrono::steady_clock::now();
-    const int display_fd = wl_display_get_fd(wayland.display);
-    const int frame_ready_fd = we_session_get_frame_ready_fd(session);
+    std::int32_t  last_acquire_status  = 1;
+    auto          last_log             = std::chrono::steady_clock::now();
+    const int     display_fd           = wl_display_get_fd(wayland.display);
+    const int     frame_ready_fd       = we_session_get_frame_ready_fd(session);
     if (frame_ready_fd < 0) {
         std::fprintf(stderr, "sceneviewer-layer: failed to get frame-ready fd\n");
         we_session_stop(session);
@@ -905,7 +1047,8 @@ int main(int argc, char** argv) {
     }
     const int tick_fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
     if (tick_fd < 0) {
-        std::fprintf(stderr, "sceneviewer-layer: timerfd_create failed: %s\n", std::strerror(errno));
+        std::fprintf(
+            stderr, "sceneviewer-layer: timerfd_create failed: %s\n", std::strerror(errno));
         we_session_stop(session);
         we_session_destroy(session);
         destroyWayland(wayland);
@@ -914,11 +1057,12 @@ int main(int argc, char** argv) {
     const std::int64_t tick_interval_ns =
         1000000000LL / static_cast<std::int64_t>(std::max(args.fps, 1));
     itimerspec tick_timer {};
-    tick_timer.it_value.tv_sec = tick_interval_ns / 1000000000LL;
+    tick_timer.it_value.tv_sec  = tick_interval_ns / 1000000000LL;
     tick_timer.it_value.tv_nsec = tick_interval_ns % 1000000000LL;
-    tick_timer.it_interval = tick_timer.it_value;
+    tick_timer.it_interval      = tick_timer.it_value;
     if (::timerfd_settime(tick_fd, 0, &tick_timer, nullptr) != 0) {
-        std::fprintf(stderr, "sceneviewer-layer: timerfd_settime failed: %s\n", std::strerror(errno));
+        std::fprintf(
+            stderr, "sceneviewer-layer: timerfd_settime failed: %s\n", std::strerror(errno));
         ::close(tick_fd);
         we_session_stop(session);
         we_session_destroy(session);
@@ -932,7 +1076,8 @@ int main(int argc, char** argv) {
     }
 
     while (wayland.running) {
-        while (wl_display_dispatch_pending(wayland.display) > 0) {}
+        while (wl_display_dispatch_pending(wayland.display) > 0) {
+        }
         collectReleasedBuffers(wayland);
 
         bool flush_blocked = false;
@@ -940,7 +1085,9 @@ int main(int argc, char** argv) {
             if (errno == EAGAIN) {
                 flush_blocked = true;
             } else {
-                std::fprintf(stderr, "sceneviewer-layer: wl_display_flush failed: %s\n", std::strerror(errno));
+                std::fprintf(stderr,
+                             "sceneviewer-layer: wl_display_flush failed: %s\n",
+                             std::strerror(errno));
                 break;
             }
         } else {
@@ -950,12 +1097,15 @@ int main(int argc, char** argv) {
 
         const auto now = std::chrono::steady_clock::now();
         if (now - last_log >= std::chrono::seconds(5)) {
-            last_log = now;
+            last_log                        = now;
             const char* acquire_status_text = "ok";
-            if (last_acquire_status == 1) acquire_status_text = "no-frame";
-            else if (last_acquire_status != 0) acquire_status_text = "error";
+            if (last_acquire_status == 1)
+                acquire_status_text = "no-frame";
+            else if (last_acquire_status != 0)
+                acquire_status_text = "error";
             std::fprintf(stderr,
-                         "sceneviewer-layer: acquired=%lu presented=%lu spurious_frame_wakes=%lu last_acquire_status=%s(%d)\n",
+                         "sceneviewer-layer: acquired=%lu presented=%lu spurious_frame_wakes=%lu "
+                         "last_acquire_status=%s(%d)\n",
                          static_cast<unsigned long>(acquired),
                          static_cast<unsigned long>(presented),
                          static_cast<unsigned long>(spurious_frame_wakes),
@@ -964,12 +1114,12 @@ int main(int argc, char** argv) {
         }
 
         pollfd pfds[3] {};
-        pfds[0].fd = display_fd;
-        pfds[0].events = POLLIN | (flush_blocked ? POLLOUT : 0);
-        pfds[1].fd = frame_ready_fd;
-        pfds[1].events = POLLIN;
-        pfds[2].fd = tick_fd;
-        pfds[2].events = POLLIN;
+        pfds[0].fd            = display_fd;
+        pfds[0].events        = POLLIN | (flush_blocked ? POLLOUT : 0);
+        pfds[1].fd            = frame_ready_fd;
+        pfds[1].events        = POLLIN;
+        pfds[2].fd            = tick_fd;
+        pfds[2].events        = POLLIN;
         const int poll_result = ::poll(pfds, 3, -1);
         if (poll_result < 0) {
             if (errno == EINTR) continue;
@@ -1001,7 +1151,8 @@ int main(int argc, char** argv) {
         }
         if ((pfds[2].revents & POLLIN) != 0) {
             std::uint64_t expirations = 0;
-            while (::read(tick_fd, &expirations, sizeof(expirations)) < 0 && errno == EINTR) {}
+            while (::read(tick_fd, &expirations, sizeof(expirations)) < 0 && errno == EINTR) {
+            }
             if (we_session_tick(session) != 0) {
                 std::fprintf(stderr, "sceneviewer-layer: we_session_tick failed\n");
                 wayland.running = false;
@@ -1010,10 +1161,10 @@ int main(int argc, char** argv) {
         }
         if ((pfds[1].revents & POLLIN) != 0) {
             we_frame_v1 frame {};
-            frame.size = sizeof(frame);
-            frame.version = 1;
+            frame.size                        = sizeof(frame);
+            frame.version                     = 1;
             const std::int32_t acquire_result = we_session_acquire_frame(session, &frame);
-            last_acquire_status = acquire_result;
+            last_acquire_status               = acquire_result;
             if (acquire_result == 0) {
                 ++acquired;
                 if (presentFrame(wayland, frame)) ++presented;
@@ -1033,6 +1184,7 @@ int main(int argc, char** argv) {
     we_session_stop(session);
     we_session_destroy(session);
     destroyWayland(wayland);
-    std::cout << "sceneviewer-layer: presented " << presented << " frame(s) of " << acquired << " acquired\n";
+    std::cout << "sceneviewer-layer: presented " << presented << " frame(s) of " << acquired
+              << " acquired\n";
     return 0;
 }
