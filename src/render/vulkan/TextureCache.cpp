@@ -93,6 +93,58 @@ std::vector<uint64_t> FilterSupportedDrmModifiers(const vvk::PhysicalDevice& gpu
     return usable_modifiers;
 }
 
+bool IsDrmFourccCompatibleWithVkFormat(VkFormat format, std::uint32_t fourcc) {
+    switch (format) {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return fourcc == DRM_FORMAT_ABGR8888 || fourcc == DRM_FORMAT_XBGR8888;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        return fourcc == DRM_FORMAT_ARGB8888 || fourcc == DRM_FORMAT_XRGB8888;
+    default: return false;
+    }
+}
+
+struct SelectedDmabufFormat {
+    std::uint32_t              fourcc { 0 };
+    std::vector<std::uint64_t> modifiers;
+};
+
+std::optional<SelectedDmabufFormat>
+SelectDmabufFormat(const vvk::PhysicalDevice& gpu, VkFormat format, VkImageTiling tiling,
+                   bool modifier_extension_supported, bool consumer_formats_known,
+                   std::span<const DmabufFormatModifier> consumer_formats) {
+    if (! consumer_formats_known) {
+        return SelectedDmabufFormat { kDefaultDmabufFourcc, {} };
+    }
+
+    std::vector<std::uint32_t> visited_fourccs;
+    for (const auto& candidate : consumer_formats) {
+        if (! IsDrmFourccCompatibleWithVkFormat(format, candidate.fourcc)) continue;
+        if (std::find(visited_fourccs.begin(), visited_fourccs.end(), candidate.fourcc) !=
+            visited_fourccs.end()) {
+            continue;
+        }
+        visited_fourccs.push_back(candidate.fourcc);
+
+        auto requested_modifiers = CollectDmabufModifiers(consumer_formats, candidate.fourcc);
+        if (modifier_extension_supported) {
+            auto supported_modifiers =
+                FilterSupportedDrmModifiers(gpu, format, requested_modifiers);
+            if (! supported_modifiers.empty()) {
+                return SelectedDmabufFormat { candidate.fourcc, std::move(supported_modifiers) };
+            }
+        }
+
+        if (tiling == VK_IMAGE_TILING_LINEAR &&
+            std::find(requested_modifiers.begin(),
+                      requested_modifiers.end(),
+                      static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR)) !=
+                requested_modifiers.end()) {
+            return SelectedDmabufFormat { candidate.fourcc, {} };
+        }
+    }
+    return std::nullopt;
+}
+
 VkSamplerCreateInfo GenSamplerInfo(TextureKey key) {
     auto& sam = key.sample;
 
@@ -298,10 +350,9 @@ std::optional<ExImageParameters> CreateExImage(uint32_t width, uint32_t height, 
     do {
         const bool dmabuf_export = export_mode == ExternalFrameExportMode::DMA_BUF;
         const auto drm_fourcc = export_drm_fourcc != 0 ? export_drm_fourcc : kDefaultDmabufFourcc;
-        const auto usable_drm_modifiers =
-            dmabuf_export ? FilterSupportedDrmModifiers(gpu, format, export_drm_modifiers)
-                          : std::vector<uint64_t> {};
-        const bool use_modifier_tiling = !usable_drm_modifiers.empty();
+        const std::vector<std::uint64_t> usable_drm_modifiers(export_drm_modifiers.begin(),
+                                                              export_drm_modifiers.end());
+        const bool                       use_modifier_tiling = ! usable_drm_modifiers.empty();
 
         if (dmabuf_export && !use_modifier_tiling && tiling != VK_IMAGE_TILING_LINEAR) {
             LOG_ERROR("dma-buf export currently requires linear image tiling");
@@ -676,17 +727,33 @@ std::size_t TextureKey::HashValue(const TextureKey& k) {
     return seed;
 }
 
-std::optional<ExImageParameters> TextureCache::CreateExTex(uint32_t width, uint32_t height,
-                                                           VkFormat format,
-                                                           VkImageTiling tiling,
-                                                           ExternalFrameExportMode export_mode,
-                                                           uint32_t export_drm_fourcc,
-                                                           std::span<const uint64_t> export_drm_modifiers) {
+std::optional<ExImageParameters>
+TextureCache::CreateExTex(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+                          ExternalFrameExportMode export_mode, bool consumer_dmabuf_formats_known,
+                          std::span<const DmabufFormatModifier> consumer_dmabuf_formats) {
     if (export_mode == ExternalFrameExportMode::DMA_BUF &&
         ! m_device.supportExt(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME)) {
         LOG_ERROR("vulkan device missing %s for dma-buf export",
                   VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
         return std::nullopt;
+    }
+
+    std::uint32_t              selected_fourcc = kDefaultDmabufFourcc;
+    std::vector<std::uint64_t> selected_modifiers;
+    if (export_mode == ExternalFrameExportMode::DMA_BUF) {
+        const auto selection =
+            SelectDmabufFormat(m_device.gpu(),
+                               format,
+                               tiling,
+                               m_device.supportExt(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME),
+                               consumer_dmabuf_formats_known,
+                               consumer_dmabuf_formats);
+        if (! selection.has_value()) {
+            LOG_ERROR("no consumer-compatible dma-buf format/modifier for Vulkan output");
+            return std::nullopt;
+        }
+        selected_fourcc    = selection->fourcc;
+        selected_modifiers = selection->modifiers;
     }
 
     VkSamplerCreateInfo sampler_info {
@@ -718,10 +785,8 @@ std::optional<ExImageParameters> TextureCache::CreateExTex(uint32_t width, uint3
                              m_device.device(),
                              m_device.gpu(),
                              export_mode,
-                             export_drm_fourcc,
-                             m_device.supportExt(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME)
-                                 ? export_drm_modifiers
-                                 : std::span<const uint64_t> {});
+                             selected_fourcc,
+                             selected_modifiers);
     if (opt.has_value()) {
         const auto& eximg = opt.value();
 

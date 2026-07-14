@@ -164,6 +164,13 @@ WE_RENDERER_API void          we_session_destroy(we_session_t* session);
 WE_RENDERER_API int32_t we_session_set_source(we_session_t* session, const we_source_v1* source);
 WE_RENDERER_API int32_t we_session_set_render_config(we_session_t* session,
                                                      const we_render_config_v1* config);
+// Declares the DMA-BUF format/modifier pairs accepted by the current output consumer.
+// `fourccs[i]` and `modifiers[i]` form one pair. The library copies both arrays before
+// returning. Passing count=0 clears the list and declares that the consumer accepts no
+// DMA-BUF pairs. This may be called before render configuration or again after binding.
+WE_RENDERER_API int32_t we_session_set_dmabuf_formats(we_session_t*   session,
+                                                      const uint32_t* fourccs,
+                                                      const uint64_t* modifiers, uint32_t count);
 WE_RENDERER_API int32_t we_session_resize_output(we_session_t* session,
                                                uint32_t width,
                                                uint32_t height);

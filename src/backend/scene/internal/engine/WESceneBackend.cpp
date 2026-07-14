@@ -35,7 +35,10 @@ public:
 
         // Output initialization and later resize/rebind requests are serialized on the render
         // looper. The handler attaches the selected swapchain only after creation succeeds.
-        m_runtimeDriver.bindOutput(binding, binding->renderInitInfo());
+        if (! m_runtimeDriver.bindOutput(binding, binding->renderInitInfo())) {
+            return Result<void>::failure(ResultCode::NotSupported,
+                                         "failed to create a consumer-compatible scene output");
+        }
         return Result<void>::success();
     }
 
@@ -50,8 +53,8 @@ Result<void> unsupportedProperty(std::string_view name) {
 } // namespace
 
 WESceneOutputSource::WESceneOutputSource(WESceneRuntimeDriver& runtimeDriver)
-    : m_runtimeDriver(runtimeDriver)
-    , m_renderPlan(std::make_shared<LegacyWEScenePresentationPlan>(runtimeDriver)) {}
+    : m_runtimeDriver(runtimeDriver),
+      m_renderPlan(std::make_shared<LegacyWEScenePresentationPlan>(runtimeDriver)) {}
 
 Result<RenderPlanPtr> WESceneOutputSource::currentRenderPlan() const {
     return Result<RenderPlanPtr>::success(m_renderPlan);
@@ -69,8 +72,8 @@ BackendType WESceneBackend::type() const { return BackendType::WEScene; }
 
 BackendCapabilities WESceneBackend::capabilities() const {
     BackendCapabilities capabilities;
-    capabilities.supportsProperties    = true;
-    capabilities.supportsInput         = true;
+    capabilities.supportsProperties = true;
+    capabilities.supportsInput      = true;
     return capabilities;
 }
 
@@ -81,10 +84,10 @@ Result<void> WESceneBackend::load(const WallpaperSource& source) {
     m_sharedState->outputStateChanged.store(false);
     m_sharedState->frameRequested.store(false);
 
-    if (! m_context.cachePath.empty() && m_context.hostServices
-        && m_context.hostServices->fileSystem.createDirectories) {
-        const bool cacheReady =
-            m_context.hostServices->fileSystem.createDirectories(std::filesystem::path(m_context.cachePath));
+    if (! m_context.cachePath.empty() && m_context.hostServices &&
+        m_context.hostServices->fileSystem.createDirectories) {
+        const bool cacheReady = m_context.hostServices->fileSystem.createDirectories(
+            std::filesystem::path(m_context.cachePath));
         if (! cacheReady) {
             appendDiagnostic(DiagnosticSeverity::Warning,
                              "failed to prepare cache directory before loading scene");
@@ -96,7 +99,8 @@ Result<void> WESceneBackend::load(const WallpaperSource& source) {
     // early source messages can be dropped and the first frame never arrives.
     if (! m_runtimeDriver.inited()) {
         if (! m_runtimeDriver.init()) {
-            return Result<void>::failure(ResultCode::InternalError, "failed to initialize scene wallpaper");
+            return Result<void>::failure(ResultCode::InternalError,
+                                         "failed to initialize scene wallpaper");
         }
     }
 
@@ -170,9 +174,7 @@ Result<void> WESceneBackend::sendInput(const InputEvent& event) {
     return Result<void>::failure(ResultCode::NotSupported, "unknown input event type");
 }
 
-Result<void> WESceneBackend::update() {
-    return Result<void>::success();
-}
+Result<void> WESceneBackend::update() { return Result<void>::success(); }
 
 Result<bool> WESceneBackend::produceFrame() {
     const bool requested = m_sharedState->frameRequested.exchange(false);
@@ -187,7 +189,7 @@ Result<FrameLifecycle> WESceneBackend::tick() {
     FrameLifecycle lifecycle;
     lifecycle.contentStateChanged = m_sharedState->contentStateChanged.exchange(false);
     lifecycle.outputStateChanged  = m_sharedState->outputStateChanged.exchange(false);
-    auto frameResult = produceFrame();
+    auto frameResult              = produceFrame();
     if (! frameResult) {
         return Result<FrameLifecycle>(frameResult.error());
     }
@@ -238,8 +240,8 @@ Result<void> WESceneBackend::applyProperty(std::string_view name, const Property
         return Result<void>::success();
     }
 
-    if (name == WE_SCENE_PROPERTY_SOURCE || name == WE_SCENE_PROPERTY_ASSETS
-        || name == WE_SCENE_PROPERTY_CACHE_PATH) {
+    if (name == WE_SCENE_PROPERTY_SOURCE || name == WE_SCENE_PROPERTY_ASSETS ||
+        name == WE_SCENE_PROPERTY_CACHE_PATH) {
         return unsupportedProperty(name);
     }
 
@@ -251,8 +253,8 @@ void WESceneBackend::installFirstFrameCallback() {
     auto weakState = std::weak_ptr<SharedState>(m_sharedState);
     auto callback  = std::make_shared<FirstFrameCallback>([weakState]() {
         if (auto state = weakState.lock()) {
-            const auto nextState =
-                state->outputBound.load() ? BackendReadyState::OutputReady : BackendReadyState::Loaded;
+            const auto nextState = state->outputBound.load() ? BackendReadyState::OutputReady
+                                                             : BackendReadyState::Loaded;
             state->readyState.store(nextState);
             state->contentStateChanged.store(true);
             state->outputStateChanged.store(state->outputBound.load());

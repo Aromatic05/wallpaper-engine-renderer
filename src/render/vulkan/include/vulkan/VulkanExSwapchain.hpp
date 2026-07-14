@@ -2,6 +2,7 @@
 
 #include "output/swapchain/ExSwapchain.hpp"
 #include "Device.hpp"
+#include "wallpaper/DmabufFormat.hpp"
 #include <cstdio>
 #include <span>
 
@@ -79,23 +80,19 @@ private:
     VkExtent2D                    m_extent;
 };
 
-inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device,
-                                                            uint          w,
-                                                            uint          h,
-                                                            VkImageTiling tiling,
-                                                            ExternalFrameExportMode export_mode,
-                                                            uint32_t export_drm_fourcc = 0,
-                                                            std::span<const uint64_t> export_drm_modifiers = {}) {
+inline std::unique_ptr<VulkanExSwapchain>
+CreateExSwapchain(const Device& device, uint w, uint h, VkImageTiling tiling,
+                  ExternalFrameExportMode export_mode, bool consumer_dmabuf_formats_known = false,
+                  std::span<const DmabufFormatModifier> consumer_dmabuf_formats = {}) {
     std::array<VulkanExHandle, 3> handles;
     for (auto& handle : handles) {
-        if (auto rv = device.tex_cache().CreateExTex(
-                w,
-                h,
-                VK_FORMAT_R8G8B8A8_UNORM,
-                tiling,
-                export_mode,
-                export_drm_fourcc,
-                export_drm_modifiers);
+        if (auto rv = device.tex_cache().CreateExTex(w,
+                                                     h,
+                                                     VK_FORMAT_R8G8B8A8_UNORM,
+                                                     tiling,
+                                                     export_mode,
+                                                     consumer_dmabuf_formats_known,
+                                                     consumer_dmabuf_formats);
             rv.has_value())
             handle.image = std::move(rv.value());
         else

@@ -45,8 +45,8 @@
 
 using namespace wallpaper::vulkan;
 
-constexpr uint64_t vk_wait_time { 10u * 1000u * 1000000u };
-constexpr uint32_t vk_command_num { 1 };
+constexpr uint64_t    vk_wait_time { 10u * 1000u * 1000000u };
+constexpr uint32_t    vk_command_num { 1 };
 constexpr std::size_t kDeferredPrepareMaxPassesPerFrame { 96 };
 constexpr double      kDeferredPrepareFrameBudgetMs { 2.0 };
 
@@ -67,8 +67,9 @@ constexpr std::array base_device_exts {
 namespace
 {
 
-std::string MakeResidencyInstanceKey(
-    const VulkanPass& pass, std::unordered_map<std::string, std::size_t>& occurrence_counts) {
+std::string
+MakeResidencyInstanceKey(const VulkanPass&                             pass,
+                         std::unordered_map<std::string, std::size_t>& occurrence_counts) {
     const auto base_key = pass.residencyKey();
     if (base_key.empty()) return {};
 
@@ -78,22 +79,21 @@ std::string MakeResidencyInstanceKey(
 
 void DestroyPassOnce(VulkanPass* pass, const Device& device, RenderingResources& resources,
                      std::unordered_set<VulkanPass*>& destroyed) {
-    if (pass == nullptr || !destroyed.insert(pass).second) return;
+    if (pass == nullptr || ! destroyed.insert(pass).second) return;
     pass->destory(device, resources);
 }
 
-bool CreateReadbackBuffer(VmaAllocator allocator, std::size_t size,
-                          VmaBufferParameters& buffer) {
+bool CreateReadbackBuffer(VmaAllocator allocator, std::size_t size, VmaBufferParameters& buffer) {
     VkBufferCreateInfo ci {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .pNext = nullptr,
-        .size = size,
+        .size  = size,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     };
     buffer.req_size = ci.size;
 
     VmaAllocationCreateInfo vma_info = {};
-    vma_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+    vma_info.usage                   = VMA_MEMORY_USAGE_CPU_ONLY;
     VVK_CHECK_BOOL_RE(vvk::CreateBuffer(allocator, ci, vma_info, buffer.handle));
     return true;
 }
@@ -106,7 +106,7 @@ uint32_t Crc32(const uint8_t* data, std::size_t size) {
         crc ^= data[i];
         for (int bit = 0; bit < 8; ++bit) {
             const uint32_t mask = -(crc & 1u);
-            crc = (crc >> 1u) ^ (0xedb88320u & mask);
+            crc                 = (crc >> 1u) ^ (0xedb88320u & mask);
         }
     }
     return ~crc;
@@ -130,8 +130,8 @@ void AppendChunk(std::vector<uint8_t>& out, const char type[4], std::span<const 
 
 uint32_t Adler32(std::span<const uint8_t> data) {
     constexpr uint32_t mod = 65521u;
-    uint32_t a = 1u;
-    uint32_t b = 0u;
+    uint32_t           a   = 1u;
+    uint32_t           b   = 0u;
     for (uint8_t byte : data) {
         a = (a + byte) % mod;
         b = (b + a) % mod;
@@ -167,13 +167,14 @@ bool WriteRgbaPng(const std::string& path, uint32_t width, uint32_t height,
     ihdr.push_back(0); // interlace
     AppendChunk(png, "IHDR", ihdr);
 
-    const std::size_t stride = static_cast<std::size_t>(width) * 4u;
+    const std::size_t    stride = static_cast<std::size_t>(width) * 4u;
     std::vector<uint8_t> filtered;
     filtered.reserve((stride + 1u) * height);
     for (uint32_t row = 0; row < height; ++row) {
         filtered.push_back(0); // no filter
         const auto row_offset = static_cast<std::size_t>(row) * stride;
-        filtered.insert(filtered.end(), rgba.begin() + static_cast<std::ptrdiff_t>(row_offset),
+        filtered.insert(filtered.end(),
+                        rgba.begin() + static_cast<std::ptrdiff_t>(row_offset),
                         rgba.begin() + static_cast<std::ptrdiff_t>(row_offset + stride));
     }
 
@@ -183,16 +184,16 @@ bool WriteRgbaPng(const std::string& path, uint32_t width, uint32_t height,
     std::size_t offset = 0;
     while (offset < filtered.size()) {
         const std::size_t remaining = filtered.size() - offset;
-        const uint16_t block_size =
-            static_cast<uint16_t>(std::min<std::size_t>(remaining, 65535u));
-        const bool final_block = (offset + block_size) == filtered.size();
+        const uint16_t block_size = static_cast<uint16_t>(std::min<std::size_t>(remaining, 65535u));
+        const bool     final_block = (offset + block_size) == filtered.size();
         zlib.push_back(final_block ? 0x01 : 0x00);
         zlib.push_back(static_cast<uint8_t>(block_size & 0xffu));
         zlib.push_back(static_cast<uint8_t>((block_size >> 8) & 0xffu));
         const uint16_t nlen = static_cast<uint16_t>(~block_size);
         zlib.push_back(static_cast<uint8_t>(nlen & 0xffu));
         zlib.push_back(static_cast<uint8_t>((nlen >> 8) & 0xffu));
-        zlib.insert(zlib.end(), filtered.begin() + static_cast<std::ptrdiff_t>(offset),
+        zlib.insert(zlib.end(),
+                    filtered.begin() + static_cast<std::ptrdiff_t>(offset),
                     filtered.begin() + static_cast<std::ptrdiff_t>(offset + block_size));
         offset += block_size;
     }
@@ -201,12 +202,13 @@ bool WriteRgbaPng(const std::string& path, uint32_t width, uint32_t height,
     AppendChunk(png, "IEND", {});
 
     std::ofstream output(path, std::ios::binary);
-    if (!output) {
+    if (! output) {
         if (error_message) *error_message = "failed to open png output path";
         return false;
     }
-    output.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
-    if (!output.good()) {
+    output.write(reinterpret_cast<const char*>(png.data()),
+                 static_cast<std::streamsize>(png.size()));
+    if (! output.good()) {
         if (error_message) *error_message = "failed while writing png output";
         return false;
     }
@@ -221,6 +223,7 @@ struct VulkanRender::Impl {
 
     bool init(RenderInitInfo);
     bool resizeOutput(std::uint16_t width, std::uint16_t height);
+    bool reconfigureOutput(RenderInitInfo info);
     void destroy();
 
     void drawFrame(Scene&);
@@ -244,10 +247,8 @@ struct VulkanRender::Impl {
     void drawFrameOffscreen();
     bool captureOffscreenFrameToPng(const ImageParameters& image, std::string_view output_path,
                                     std::string* error_message);
-    bool readbackOffscreenFrameBgra(const ImageParameters& image,
-                                    std::vector<std::uint8_t>* bgra,
-                                    std::uint32_t*             stride_bytes,
-                                    std::string*               error_message);
+    bool readbackOffscreenFrameBgra(const ImageParameters& image, std::vector<std::uint8_t>* bgra,
+                                    std::uint32_t* stride_bytes, std::string* error_message);
     void processDeferredGraphPreparation(Scene&);
     void setRenderTargetSize(Scene&, rg::RenderGraph&);
     bool isDeviceFaultResult(VkResult) const;
@@ -262,7 +263,7 @@ struct VulkanRender::Impl {
 
     std::unique_ptr<FinPass> m_testpass { nullptr };
     ReDrawCB                 m_redraw_cb;
-    RenderInitInfo            m_render_init_info;
+    RenderInitInfo           m_render_init_info;
 
     std::unique_ptr<StagingBuffer> m_vertex_buf { nullptr };
     std::unique_ptr<StagingBuffer> m_dyn_buf { nullptr };
@@ -270,33 +271,32 @@ struct VulkanRender::Impl {
     vvk::CommandBuffers m_cmds;
     vvk::CommandBuffer  m_render_cmd;
 
-    bool m_with_surface { false };
-    bool m_inited { false };
-    bool m_pass_loaded { false };
-    bool m_device_faulted { false };
-    bool m_device_fault_log_emitted { false };
-    VkSampleCountFlagBits m_final_output_sample_count { VK_SAMPLE_COUNT_1_BIT };
-    std::deque<std::size_t> m_deferred_prepare_indices;
+    bool                            m_with_surface { false };
+    bool                            m_inited { false };
+    bool                            m_pass_loaded { false };
+    bool                            m_device_faulted { false };
+    bool                            m_device_fault_log_emitted { false };
+    VkSampleCountFlagBits           m_final_output_sample_count { VK_SAMPLE_COUNT_1_BIT };
+    std::deque<std::size_t>         m_deferred_prepare_indices;
     std::unordered_set<std::size_t> m_deferred_waiting_indices_logged;
 
     std::unique_ptr<VulkanExSwapchain> m_ex_swapchain;
     std::unique_ptr<ShmFrameSwapchain> m_shm_swapchain;
     RenderingResources                 m_rendering_resources;
 
-    std::vector<VulkanPass*> m_passes;
+    std::vector<VulkanPass*>               m_passes;
     std::vector<std::shared_ptr<rg::Pass>> m_compiled_pass_refs;
 
     struct PendingFrameCapture {
         std::string path;
         std::string last_error;
-        int32_t target_frame { 1 };
-        bool requested { false };
-        bool completed { false };
-        bool succeeded { false };
+        int32_t     target_frame { 1 };
+        bool        requested { false };
+        bool        completed { false };
+        bool        succeeded { false };
     };
     std::optional<PendingFrameCapture> m_pending_frame_capture;
     int32_t                            m_offscreen_frame_index { 0 };
-
 };
 
 VulkanRender::VulkanRender(): pImpl(std::make_unique<Impl>()) {}
@@ -308,6 +308,9 @@ bool VulkanRender::init(RenderInitInfo info) { return pImpl->init(info); }
 bool VulkanRender::resizeOutput(std::uint16_t width, std::uint16_t height) {
     return pImpl->resizeOutput(width, height);
 }
+bool VulkanRender::reconfigureOutput(RenderInitInfo info) {
+    return pImpl->reconfigureOutput(std::move(info));
+}
 void VulkanRender::destroy() { pImpl->destroy(); }
 void VulkanRender::drawFrame(Scene& scene) { pImpl->drawFrame(scene); };
 void VulkanRender::setPaused(bool paused) { pImpl->setPaused(paused); };
@@ -315,15 +318,14 @@ void VulkanRender::clearLastRenderGraph(bool clear_scene_caches) {
     pImpl->clearLastRenderGraph(clear_scene_caches);
 };
 void VulkanRender::clearRenderGraphResources() { pImpl->clearRenderGraphResources(); };
-void VulkanRender::compileRenderGraph(Scene& scene, rg::RenderGraph& rg, bool refresh_resources_only) {
+void VulkanRender::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
+                                      bool refresh_resources_only) {
     pImpl->compileRenderGraph(scene, rg, refresh_resources_only);
 };
 void VulkanRender::warmupRenderGraphPipelines(Scene& scene, rg::RenderGraph& rg) {
     pImpl->warmupRenderGraphPipelines(scene, rg);
 };
-void VulkanRender::refreshImportedTextures(Scene& scene) {
-    pImpl->refreshImportedTextures(scene);
-};
+void VulkanRender::refreshImportedTextures(Scene& scene) { pImpl->refreshImportedTextures(scene); };
 void VulkanRender::UpdateCameraFillMode(Scene& scene, wallpaper::FillMode fill) {
     pImpl->UpdateCameraFillMode(scene, fill);
 };
@@ -340,7 +342,7 @@ wallpaper::ExSwapchain* VulkanRender::exSwapchain() const {
 bool VulkanRender::Impl::init(RenderInitInfo info) {
     if (m_inited) return true;
 
-    m_redraw_cb = info.redraw_callback;
+    m_redraw_cb        = info.redraw_callback;
     m_render_init_info = info;
     VkExtent2D extent { info.width, info.height };
     if (extent.width * extent.height < 500 * 500) {
@@ -401,12 +403,12 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     {
         m_device = std::make_unique<Device>();
         const VideoTexturePipelineSettings video_texture_settings {
-            .gpu_pipeline =
-                info.gpu_pipeline_preference == wallpaper::GpuPipelinePreference::Va
-                    ? VideoTextureGpuPipeline::Va
-                    : (info.gpu_pipeline_preference == wallpaper::GpuPipelinePreference::NvidiaStateless
-                           ? VideoTextureGpuPipeline::NvidiaStateless
-                           : VideoTextureGpuPipeline::Nvidia),
+            .gpu_pipeline = info.gpu_pipeline_preference == wallpaper::GpuPipelinePreference::Va
+                                ? VideoTextureGpuPipeline::Va
+                                : (info.gpu_pipeline_preference ==
+                                           wallpaper::GpuPipelinePreference::NvidiaStateless
+                                       ? VideoTextureGpuPipeline::NvidiaStateless
+                                       : VideoTextureGpuPipeline::Nvidia),
         };
         if (! Device::Create(m_instance,
                              device_exts,
@@ -419,7 +421,6 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
         }
     }
 
-
     if (info.offscreen) {
         const auto createShmReadbackSwapchains = [&]() {
             m_ex_swapchain = CreateExSwapchain(*m_device,
@@ -427,8 +428,8 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
                                                extent.height,
                                                VK_IMAGE_TILING_OPTIMAL,
                                                ExternalFrameExportMode::OPAQUE_FD,
-                                               info.export_drm_fourcc,
-                                               info.export_drm_modifiers);
+                                               info.consumer_dmabuf_formats_known,
+                                               info.consumer_dmabuf_formats);
             if (! m_ex_swapchain) return false;
             m_shm_swapchain = std::make_unique<ShmFrameSwapchain>(extent.width, extent.height);
             return static_cast<bool>(m_shm_swapchain);
@@ -447,10 +448,10 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
                                                     ? VK_IMAGE_TILING_OPTIMAL
                                                     : VK_IMAGE_TILING_LINEAR),
                                                info.export_mode,
-                                               info.export_drm_fourcc,
-                                               info.export_drm_modifiers);
-            if (! m_ex_swapchain && info.export_mode == ExternalFrameExportMode::DMA_BUF
-                && info.allow_shm_fallback) {
+                                               info.consumer_dmabuf_formats_known,
+                                               info.consumer_dmabuf_formats);
+            if (! m_ex_swapchain && info.export_mode == ExternalFrameExportMode::DMA_BUF &&
+                info.allow_shm_fallback) {
                 LOG_INFO("dma-buf offscreen export unavailable, falling back to shm readback");
                 if (! createShmReadbackSwapchains()) {
                     LOG_ERROR("create offscreen shm fallback swapchains failed");
@@ -468,14 +469,14 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     const VkFormat final_output_format =
         m_with_surface ? m_device->swapchain().format() : m_ex_swapchain->format();
     VkImageFormatProperties final_output_format_properties {};
-    VkSampleCountFlags format_sample_counts = VK_SAMPLE_COUNT_1_BIT;
-    const VkResult format_result = m_device->gpu().GetImageFormatProperties(
-        final_output_format,
-        VK_IMAGE_TYPE_2D,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        0,
-        final_output_format_properties);
+    VkSampleCountFlags      format_sample_counts = VK_SAMPLE_COUNT_1_BIT;
+    const VkResult          format_result =
+        m_device->gpu().GetImageFormatProperties(final_output_format,
+                                                 VK_IMAGE_TYPE_2D,
+                                                 VK_IMAGE_TILING_OPTIMAL,
+                                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                 0,
+                                                 final_output_format_properties);
     if (format_result == VK_SUCCESS) {
         format_sample_counts = final_output_format_properties.sampleCounts;
     } else {
@@ -487,9 +488,7 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     const VkSampleCountFlags supported_sample_counts =
         m_device->limits().framebufferColorSampleCounts & format_sample_counts;
     m_final_output_sample_count = ResolveFinalOutputSampleCount(
-        info.msaa_samples,
-        supported_sample_counts,
-        m_device->sampleRateShadingEnabled());
+        info.msaa_samples, supported_sample_counts, m_device->sampleRateShadingEnabled());
     if (info.msaa_samples > 1) {
         LOG_INFO("FinalOutputMSAA: requested=%u resolved=%u device-mask=0x%x "
                  "format-mask=0x%x sample-rate-shading=%s",
@@ -507,59 +506,73 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
     return m_inited;
 }
 
-
 bool VulkanRender::Impl::resizeOutput(std::uint16_t width, std::uint16_t height) {
-    if (! m_inited || ! m_device || m_with_surface || width == 0 || height == 0) return false;
-    const VkExtent2D next_extent { width, height };
-    if (m_device->out_extent().width == next_extent.width
-        && m_device->out_extent().height == next_extent.height) {
-        return true;
+    RenderInitInfo next_info = m_render_init_info;
+    next_info.width          = width;
+    next_info.height         = height;
+    return reconfigureOutput(std::move(next_info));
+}
+
+bool VulkanRender::Impl::reconfigureOutput(RenderInitInfo next_info) {
+    if (! m_inited || ! m_device || m_with_surface || next_info.width == 0 ||
+        next_info.height == 0) {
+        return false;
     }
+    const VkExtent2D next_extent { next_info.width, next_info.height };
+    const bool       output_config_unchanged =
+        m_device->out_extent().width == next_extent.width &&
+        m_device->out_extent().height == next_extent.height &&
+        m_render_init_info.export_mode == next_info.export_mode &&
+        m_render_init_info.offscreen_tiling == next_info.offscreen_tiling &&
+        m_render_init_info.allow_shm_fallback == next_info.allow_shm_fallback &&
+        m_render_init_info.consumer_dmabuf_formats_known ==
+            next_info.consumer_dmabuf_formats_known &&
+        m_render_init_info.consumer_dmabuf_formats == next_info.consumer_dmabuf_formats;
+    if (output_config_unchanged) return true;
 
     std::unique_ptr<VulkanExSwapchain> next_ex_swapchain;
     std::unique_ptr<ShmFrameSwapchain> next_shm_swapchain;
-    const auto create_shm_readback_swapchains = [&]() {
+    const auto                         create_shm_readback_swapchains = [&]() {
         next_ex_swapchain = CreateExSwapchain(*m_device,
                                               next_extent.width,
                                               next_extent.height,
                                               VK_IMAGE_TILING_OPTIMAL,
                                               ExternalFrameExportMode::OPAQUE_FD,
-                                              m_render_init_info.export_drm_fourcc,
-                                              m_render_init_info.export_drm_modifiers);
+                                              next_info.consumer_dmabuf_formats_known,
+                                              next_info.consumer_dmabuf_formats);
         if (! next_ex_swapchain) return false;
         next_shm_swapchain =
             std::make_unique<ShmFrameSwapchain>(next_extent.width, next_extent.height);
         return static_cast<bool>(next_shm_swapchain);
     };
 
-    if (m_render_init_info.export_mode == ExternalFrameExportMode::SHM) {
+    if (next_info.export_mode == ExternalFrameExportMode::SHM) {
         if (! create_shm_readback_swapchains()) return false;
     } else {
-        next_ex_swapchain = CreateExSwapchain(
-            *m_device,
-            next_extent.width,
-            next_extent.height,
-            m_render_init_info.offscreen_tiling == TexTiling::OPTIMAL ? VK_IMAGE_TILING_OPTIMAL
-                                                                      : VK_IMAGE_TILING_LINEAR,
-            m_render_init_info.export_mode,
-            m_render_init_info.export_drm_fourcc,
-            m_render_init_info.export_drm_modifiers);
-        if (! next_ex_swapchain
-            && m_render_init_info.export_mode == ExternalFrameExportMode::DMA_BUF
-            && m_render_init_info.allow_shm_fallback) {
+        next_ex_swapchain = CreateExSwapchain(*m_device,
+                                              next_extent.width,
+                                              next_extent.height,
+                                              next_info.offscreen_tiling == TexTiling::OPTIMAL
+                                                  ? VK_IMAGE_TILING_OPTIMAL
+                                                  : VK_IMAGE_TILING_LINEAR,
+                                              next_info.export_mode,
+                                              next_info.consumer_dmabuf_formats_known,
+                                              next_info.consumer_dmabuf_formats);
+        if (! next_ex_swapchain && next_info.export_mode == ExternalFrameExportMode::DMA_BUF &&
+            next_info.allow_shm_fallback) {
             if (! create_shm_readback_swapchains()) return false;
         }
     }
     if (! next_ex_swapchain) return false;
-    if (! checkVkResult(m_device->handle().WaitIdle(), "wait device idle before output resize")) {
+    if (! checkVkResult(m_device->handle().WaitIdle(),
+                        "wait device idle before output reconfiguration")) {
         return false;
     }
 
-    m_ex_swapchain = std::move(next_ex_swapchain);
-    m_shm_swapchain = std::move(next_shm_swapchain);
+    m_ex_swapchain     = std::move(next_ex_swapchain);
+    m_shm_swapchain    = std::move(next_shm_swapchain);
+    m_render_init_info = std::move(next_info);
     m_device->set_out_extent(next_extent);
-    m_render_init_info.width = width;
-    m_render_init_info.height = height;
     if (m_finpass) {
         m_finpass->setPresentFormat(m_ex_swapchain->format());
         m_finpass->setPresentLayout(VK_IMAGE_LAYOUT_GENERAL);
@@ -578,8 +591,8 @@ bool VulkanRender::Impl::checkVkResult(VkResult result, const char* operation) {
     const char* operation_name = operation ? operation : "unknown operation";
     if (isDeviceFaultResult(result)) {
         m_device_faulted = true;
-        m_pass_loaded = false;
-        if (!m_device_fault_log_emitted) {
+        m_pass_loaded    = false;
+        if (! m_device_fault_log_emitted) {
             // Device loss is terminal for this VulkanRender instance.  Continuing to submit frames
             // only repeats VK_ERROR_DEVICE_LOST, and destroying every pipeline after an NVIDIA Xid
             // can enter driver teardown paths that have appeared in the Arsenal crash stacks.
@@ -622,10 +635,10 @@ bool VulkanRender::Impl::initRes() {
                                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     m_dyn_buf    = std::make_unique<StagingBuffer>(*m_device,
-                                                2 * 1024 * 1024,
-                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                                                   2 * 1024 * 1024,
+                                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     if (! m_vertex_buf->allocate()) return false;
     if (! m_dyn_buf->allocate()) return false;
     {
@@ -664,7 +677,7 @@ void VulkanRender::Impl::abandonDeviceOwnedResourcesAfterFault() {
         m_device->tex_cache().CancelDeferredGraphActivation();
     }
     m_rendering_resources.vertex_buf = nullptr;
-    m_rendering_resources.dyn_buf = nullptr;
+    m_rendering_resources.dyn_buf    = nullptr;
     m_deferred_prepare_indices.clear();
     m_deferred_waiting_indices_logged.clear();
 
@@ -679,18 +692,18 @@ void VulkanRender::Impl::abandonDeviceOwnedResourcesAfterFault() {
     (void)m_ex_swapchain.release();
     (void)m_device.release();
     m_instance.Abandon();
-    m_inited = false;
+    m_inited      = false;
     m_pass_loaded = false;
 }
 
 void VulkanRender::Impl::destroy() {
-    if (! m_inited && !m_device_faulted) return;
+    if (! m_inited && ! m_device_faulted) return;
     if (m_device_faulted) {
         abandonDeviceOwnedResourcesAfterFault();
         return;
     }
     if (m_device && m_device->handle()) {
-        if (!checkVkResult(m_device->handle().WaitIdle(), "device wait idle before destroy")) {
+        if (! checkVkResult(m_device->handle().WaitIdle(), "device wait idle before destroy")) {
             abandonDeviceOwnedResourcesAfterFault();
             return;
         }
@@ -734,8 +747,8 @@ bool VulkanRender::Impl::CreateRenderingResource(RenderingResources& rr) {
         VVK_CHECK_BOOL_RE(m_device->handle().CreateSemaphore(ci, rr.sem_swap_wait_image));
     }
 
-    rr.vertex_buf = m_vertex_buf.get();
-    rr.dyn_buf    = m_dyn_buf.get();
+    rr.vertex_buf     = m_vertex_buf.get();
+    rr.dyn_buf        = m_dyn_buf.get();
     rr.pipeline_cache = std::make_shared<GraphicsPipelineStateCache>();
     return true;
 }
@@ -759,7 +772,7 @@ void VulkanRender::Impl::drawFrame(Scene& scene) {
     m_device->video_tex_cache().Poll();
     processDeferredGraphPreparation(scene);
 
-        // LOG_INFO("used ram: %fm", (m_device->GetUsage()/1024.0f)/1024.0f);
+    // LOG_INFO("used ram: %fm", (m_device->GetUsage()/1024.0f)/1024.0f);
 
 #if ENABLE_RENDERDOC_API
     if (rdoc_api)
@@ -788,12 +801,12 @@ void VulkanRender::Impl::setPaused(bool paused) {
 }
 
 void VulkanRender::Impl::refreshImportedTextures(Scene& scene) {
-    if (!m_device) return;
+    if (! m_device) return;
 
     for (const auto& key : scene.dirtyImportedTextureKeys) {
         scene.DropParsedImageCache(key);
         auto image = scene.ParseImageBlockingCached(key);
-        if (!image) continue;
+        if (! image) continue;
         m_device->tex_cache().CreateTex(*image);
         scene.DropParsedImageCache(key);
     }
@@ -802,13 +815,13 @@ void VulkanRender::Impl::refreshImportedTextures(Scene& scene) {
 
 void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
     if (m_deferred_prepare_indices.empty()) return;
-    if (m_device_faulted || !m_device) return;
+    if (m_device_faulted || ! m_device) return;
 
-    const auto batch_started_at = std::chrono::steady_clock::now();
-    std::size_t attempted = 0;
-    std::size_t prepared = 0;
+    const auto  batch_started_at = std::chrono::steady_clock::now();
+    std::size_t attempted        = 0;
+    std::size_t prepared         = 0;
 
-    while (attempted < kDeferredPrepareMaxPassesPerFrame && !m_deferred_prepare_indices.empty()) {
+    while (attempted < kDeferredPrepareMaxPassesPerFrame && ! m_deferred_prepare_indices.empty()) {
         if (attempted != 0) {
             const auto batch_elapsed_ms =
                 static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -834,7 +847,7 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
             continue;
         }
 
-        const auto key = pass->residencyKey();
+        const auto key             = pass->residencyKey();
         const auto resources_state = pass->requestDeferredPrepareResources(scene, *m_device);
         if (resources_state == DeferredPrepareResourcesState::Waiting) {
             if (m_deferred_waiting_indices_logged.insert(pass_index).second) {
@@ -866,7 +879,7 @@ void VulkanRender::Impl::processDeferredGraphPreparation(Scene& scene) {
                     m_deferred_prepare_indices.size(),
                     static_cast<double>(pass_elapsed_us) / 1000.0,
                     key.c_str());
-        if (!pass->prepared()) {
+        if (! pass->prepared()) {
             break;
         }
         const auto batch_elapsed_ms =
@@ -905,12 +918,12 @@ void VulkanRender::Impl::drawFrameSwapchain() {
     resource_index         = (resource_index + 1) % 3;
     uint32_t image_index   = 0;
     {
-        if (!checkVkResult(m_device->handle().AcquireNextImageKHR(*m_device->swapchain().handle(),
-                                                                  vk_wait_time,
-                                                                  *rr.sem_swap_wait_image,
-                                                                  {},
-                                                                  &image_index),
-                           "acquire swapchain image"))
+        if (! checkVkResult(m_device->handle().AcquireNextImageKHR(*m_device->swapchain().handle(),
+                                                                   vk_wait_time,
+                                                                   *rr.sem_swap_wait_image,
+                                                                   {},
+                                                                   &image_index),
+                            "acquire swapchain image"))
             return;
     }
     const auto& image = m_device->swapchain().images()[image_index];
@@ -926,11 +939,12 @@ void VulkanRender::Impl::drawFrameSwapchain() {
         }
     }
 
-    if (!checkVkResult(rr.command.Begin(VkCommandBufferBeginInfo {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = nullptr,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    }), "begin swapchain frame command buffer"))
+    if (! checkVkResult(rr.command.Begin(VkCommandBufferBeginInfo {
+                            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                            .pNext = nullptr,
+                            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                        }),
+                        "begin swapchain frame command buffer"))
         return;
     // Deferred pass preparation can allocate and write static vertex/index subranges between
     // frames. Recording the static upload here keeps those newly resident passes drawable without
@@ -945,24 +959,23 @@ void VulkanRender::Impl::drawFrameSwapchain() {
             p->execute(*m_device, rr);
         }
     }
-    if (!checkVkResult(rr.command.End(), "end swapchain frame command buffer"))
-        return;
+    if (! checkVkResult(rr.command.End(), "end swapchain frame command buffer")) return;
 
     VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo         sub_info {
-                .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .pNext                = nullptr,
-                .waitSemaphoreCount   = 1,
-                .pWaitSemaphores      = rr.sem_swap_wait_image.address(),
-                .pWaitDstStageMask    = &wait_dst_stage,
-                .commandBufferCount   = 1,
-                .pCommandBuffers      = rr.command.address(),
-                .signalSemaphoreCount = 1,
-                .pSignalSemaphores    = rr.sem_swap_finish.address(),
+        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext                = nullptr,
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = rr.sem_swap_wait_image.address(),
+        .pWaitDstStageMask    = &wait_dst_stage,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = rr.command.address(),
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = rr.sem_swap_finish.address(),
     };
 
-    if (!checkVkResult(m_device->present_queue().handle.Submit(sub_info, *rr.fence_frame),
-                       "submit swapchain frame"))
+    if (! checkVkResult(m_device->present_queue().handle.Submit(sub_info, *rr.fence_frame),
+                        "submit swapchain frame"))
         return;
     VkPresentInfoKHR present_info {
         .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -973,15 +986,13 @@ void VulkanRender::Impl::drawFrameSwapchain() {
         .pSwapchains        = m_device->swapchain().handle().address(),
         .pImageIndices      = &image_index,
     };
-    if (!checkVkResult(m_device->present_queue().handle.Present(present_info),
-                       "present swapchain frame"))
+    if (! checkVkResult(m_device->present_queue().handle.Present(present_info),
+                        "present swapchain frame"))
         return;
 
-    if (!checkVkResult(rr.fence_frame.Wait(vk_wait_time), "wait swapchain frame fence"))
-        return;
+    if (! checkVkResult(rr.fence_frame.Wait(vk_wait_time), "wait swapchain frame fence")) return;
     m_device->tex_cache().RetireCompletedUploads();
-    if (!checkVkResult(rr.fence_frame.Reset(), "reset swapchain frame fence"))
-        return;
+    if (! checkVkResult(rr.fence_frame.Reset(), "reset swapchain frame fence")) return;
 }
 void VulkanRender::Impl::drawFrameOffscreen() {
     ++m_offscreen_frame_index;
@@ -999,11 +1010,12 @@ void VulkanRender::Impl::drawFrameOffscreen() {
         }
     }
 
-    if (!checkVkResult(rr.command.Begin(VkCommandBufferBeginInfo {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = nullptr,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    }), "begin offscreen frame command buffer"))
+    if (! checkVkResult(rr.command.Begin(VkCommandBufferBeginInfo {
+                            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                            .pNext = nullptr,
+                            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                        }),
+                        "begin offscreen frame command buffer"))
         return;
     m_vertex_buf->recordUpload(rr.command);
     m_dyn_buf->recordUpload(rr.command);
@@ -1016,8 +1028,7 @@ void VulkanRender::Impl::drawFrameOffscreen() {
         }
     }
 
-    if (!checkVkResult(rr.command.End(), "end offscreen frame command buffer"))
-        return;
+    if (! checkVkResult(rr.command.End(), "end offscreen frame command buffer")) return;
 
     VkSubmitInfo sub_info {
         .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -1025,22 +1036,18 @@ void VulkanRender::Impl::drawFrameOffscreen() {
         .commandBufferCount = 1,
         .pCommandBuffers    = rr.command.address(),
     };
-    if (!checkVkResult(m_device->graphics_queue().handle.Submit(sub_info, *rr.fence_frame),
-                       "submit offscreen frame"))
+    if (! checkVkResult(m_device->graphics_queue().handle.Submit(sub_info, *rr.fence_frame),
+                        "submit offscreen frame"))
         return;
 
-    if (!checkVkResult(rr.fence_frame.Wait(vk_wait_time), "wait offscreen frame fence"))
-        return;
+    if (! checkVkResult(rr.fence_frame.Wait(vk_wait_time), "wait offscreen frame fence")) return;
     m_device->tex_cache().RetireCompletedUploads();
-    if (!checkVkResult(rr.fence_frame.Reset(), "reset offscreen frame fence"))
-        return;
+    if (! checkVkResult(rr.fence_frame.Reset(), "reset offscreen frame fence")) return;
     if (m_pending_frame_capture && m_pending_frame_capture->requested &&
         m_pending_frame_capture->target_frame == m_offscreen_frame_index &&
-        !m_pending_frame_capture->completed) {
-        m_pending_frame_capture->succeeded =
-            captureOffscreenFrameToPng(image,
-                                       m_pending_frame_capture->path,
-                                       &m_pending_frame_capture->last_error);
+        ! m_pending_frame_capture->completed) {
+        m_pending_frame_capture->succeeded = captureOffscreenFrameToPng(
+            image, m_pending_frame_capture->path, &m_pending_frame_capture->last_error);
         m_pending_frame_capture->completed = true;
     }
     if (m_shm_swapchain) {
@@ -1051,11 +1058,8 @@ void VulkanRender::Impl::drawFrameOffscreen() {
             LOG_ERROR("offscreen shm readback failed: %s", error_message.c_str());
             return;
         }
-        if (! m_shm_swapchain->publishFrame(bgra.data(),
-                                            image.extent.width,
-                                            image.extent.height,
-                                            stride_bytes,
-                                            false)) {
+        if (! m_shm_swapchain->publishFrame(
+                bgra.data(), image.extent.width, image.extent.height, stride_bytes, false)) {
             LOG_ERROR("offscreen shm publish failed");
             return;
         }
@@ -1063,8 +1067,7 @@ void VulkanRender::Impl::drawFrameOffscreen() {
     m_ex_swapchain->renderFrame();
 }
 
-bool VulkanRender::Impl::requestOffscreenFrameDump(std::string output_path,
-                                                   int32_t frame_number,
+bool VulkanRender::Impl::requestOffscreenFrameDump(std::string output_path, int32_t frame_number,
                                                    std::string* error_message) {
     if (output_path.empty()) {
         if (error_message) *error_message = "capture path is empty";
@@ -1075,12 +1078,12 @@ bool VulkanRender::Impl::requestOffscreenFrameDump(std::string output_path,
         return false;
     }
     m_pending_frame_capture = PendingFrameCapture {
-        .path = std::move(output_path),
-        .last_error = {},
+        .path         = std::move(output_path),
+        .last_error   = {},
         .target_frame = frame_number,
-        .requested = true,
-        .completed = false,
-        .succeeded = false,
+        .requested    = true,
+        .completed    = false,
+        .succeeded    = false,
     };
     return true;
 }
@@ -1093,176 +1096,13 @@ bool VulkanRender::Impl::captureOffscreenFrameToPng(const ImageParameters& image
         return false;
     }
 
-    if (!m_device) {
+    if (! m_device) {
         if (error_message) *error_message = "renderer device is not initialized";
         return false;
     }
 
-    const uint32_t width = image.extent.width;
-    const uint32_t height = image.extent.height;
-    const std::size_t pixel_bytes = static_cast<std::size_t>(width) * height * 4u;
-    if (pixel_bytes == 0) {
-        if (error_message) *error_message = "offscreen frame has zero size";
-        return false;
-    }
-
-    VmaBufferParameters readback_buffer;
-    if (!CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
-        if (error_message) *error_message = "failed to allocate readback buffer";
-        return false;
-    }
-
-    vvk::CommandBuffers command_buffers;
-    VVK_CHECK_BOOL_RE(m_device->cmd_pool().Allocate(1, VK_COMMAND_BUFFER_LEVEL_PRIMARY, command_buffers));
-    vvk::CommandBuffer command(command_buffers[0], m_device->handle().Dispatch());
-
-    if (!checkVkResult(command.Begin(VkCommandBufferBeginInfo {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = nullptr,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        }),
-        "begin frame capture command buffer")) {
-        return false;
-    }
-
-    VkImageMemoryBarrier image_to_transfer {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.handle,
-        .subresourceRange = VkImageSubresourceRange {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-    };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            0,
-                            image_to_transfer);
-
-    VkBufferImageCopy copy_region {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = VkImageSubresourceLayers {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = { 0, 0, 0 },
-        .imageExtent = image.extent,
-    };
-    command.CopyImageToBuffer(image.handle,
-                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                              *readback_buffer.handle,
-                              spanone { copy_region });
-
-    VkBufferMemoryBarrier buffer_ready {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = *readback_buffer.handle,
-        .offset = 0,
-        .size = VK_WHOLE_SIZE,
-    };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_PIPELINE_STAGE_HOST_BIT,
-                            0,
-                            buffer_ready);
-
-    VkImageMemoryBarrier image_restore {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.handle,
-        .subresourceRange = image_to_transfer.subresourceRange,
-    };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                            0,
-                            image_restore);
-
-    if (!checkVkResult(command.End(), "end frame capture command buffer")) {
-        return false;
-    }
-
-    vvk::Fence fence;
-    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(VkFenceCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-    }, fence));
-    VkSubmitInfo submit {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .commandBufferCount = 1,
-        .pCommandBuffers = command.address(),
-    };
-    if (!checkVkResult(m_device->graphics_queue().handle.Submit(submit, *fence),
-                       "submit frame capture")) {
-        return false;
-    }
-    if (!checkVkResult(fence.Wait(vk_wait_time), "wait frame capture")) {
-        return false;
-    }
-
-    void* mapped = nullptr;
-    if (readback_buffer.handle.MapMemory(&mapped) != VK_SUCCESS) {
-        if (error_message) *error_message = "failed to map readback buffer";
-        return false;
-    }
-    std::vector<uint8_t> rgba(pixel_bytes);
-    std::memcpy(rgba.data(), mapped, pixel_bytes);
-    readback_buffer.handle.UnMapMemory();
-
-    // Vulkan images are bottom-up relative to the fullscreen quad we present from; flip to match
-    // what the viewer window shows.
-    const std::size_t row_bytes = static_cast<std::size_t>(width) * 4u;
-    std::vector<uint8_t> flipped(pixel_bytes);
-    for (uint32_t row = 0; row < height; ++row) {
-        const std::size_t src_offset = static_cast<std::size_t>(height - 1 - row) * row_bytes;
-        const std::size_t dst_offset = static_cast<std::size_t>(row) * row_bytes;
-        std::memcpy(flipped.data() + dst_offset, rgba.data() + src_offset, row_bytes);
-    }
-
-    // The offscreen export is a debugging surface dump. Some scenes leave the swap image alpha at
-    // zero even when RGB contains valid content, which makes the PNG appear blank in normal image
-    // viewers. Force opaque alpha so the exported frame is directly inspectable.
-    for (std::size_t pixel = 0; pixel < pixel_bytes; pixel += 4u) {
-        flipped[pixel + 3u] = 0xffu;
-    }
-
-    return WriteRgbaPng(std::string(output_path), width, height, flipped, error_message);
-}
-
-bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image,
-                                                    std::vector<std::uint8_t>* bgra,
-                                                    std::uint32_t*             stride_bytes,
-                                                    std::string*               error_message) {
-    if (! bgra || ! stride_bytes) {
-        if (error_message) *error_message = "invalid readback output pointers";
-        return false;
-    }
-
-    const uint32_t width = image.extent.width;
-    const uint32_t height = image.extent.height;
+    const uint32_t    width       = image.extent.width;
+    const uint32_t    height      = image.extent.height;
     const std::size_t pixel_bytes = static_cast<std::size_t>(width) * height * 4u;
     if (pixel_bytes == 0) {
         if (error_message) *error_message = "offscreen frame has zero size";
@@ -1281,31 +1121,32 @@ bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image
     vvk::CommandBuffer command(command_buffers[0], m_device->handle().Dispatch());
 
     if (! checkVkResult(command.Begin(VkCommandBufferBeginInfo {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = nullptr,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        }),
-        "begin offscreen shm readback command buffer")) {
+                            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                            .pNext = nullptr,
+                            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                        }),
+                        "begin frame capture command buffer")) {
         return false;
     }
 
     VkImageMemoryBarrier image_to_transfer {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.handle,
-        .subresourceRange = VkImageSubresourceRange {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+        .image               = image.handle,
+        .subresourceRange =
+            VkImageSubresourceRange {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
     };
     command.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                             VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1313,15 +1154,16 @@ bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image
                             image_to_transfer);
 
     VkBufferImageCopy copy_region {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
+        .bufferOffset      = 0,
+        .bufferRowLength   = 0,
         .bufferImageHeight = 0,
-        .imageSubresource = VkImageSubresourceLayers {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
+        .imageSubresource =
+            VkImageSubresourceLayers {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel       = 0,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
         .imageOffset = { 0, 0, 0 },
         .imageExtent = image.extent,
     };
@@ -1331,53 +1173,215 @@ bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters& image
                               spanone { copy_region });
 
     VkBufferMemoryBarrier buffer_ready {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask       = VK_ACCESS_HOST_READ_BIT,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = *readback_buffer.handle,
-        .offset = 0,
-        .size = VK_WHOLE_SIZE,
+        .buffer              = *readback_buffer.handle,
+        .offset              = 0,
+        .size                = VK_WHOLE_SIZE,
     };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_PIPELINE_STAGE_HOST_BIT,
-                            0,
-                            buffer_ready);
+    command.PipelineBarrier(
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, buffer_ready);
 
     VkImageMemoryBarrier image_restore {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask       = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .oldLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout           = VK_IMAGE_LAYOUT_GENERAL,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.handle,
-        .subresourceRange = image_to_transfer.subresourceRange,
+        .image               = image.handle,
+        .subresourceRange    = image_to_transfer.subresourceRange,
     };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    command.PipelineBarrier(
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, image_restore);
+
+    if (! checkVkResult(command.End(), "end frame capture command buffer")) {
+        return false;
+    }
+
+    vvk::Fence fence;
+    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(
+        VkFenceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+        },
+        fence));
+    VkSubmitInfo submit {
+        .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext              = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers    = command.address(),
+    };
+    if (! checkVkResult(m_device->graphics_queue().handle.Submit(submit, *fence),
+                        "submit frame capture")) {
+        return false;
+    }
+    if (! checkVkResult(fence.Wait(vk_wait_time), "wait frame capture")) {
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (readback_buffer.handle.MapMemory(&mapped) != VK_SUCCESS) {
+        if (error_message) *error_message = "failed to map readback buffer";
+        return false;
+    }
+    std::vector<uint8_t> rgba(pixel_bytes);
+    std::memcpy(rgba.data(), mapped, pixel_bytes);
+    readback_buffer.handle.UnMapMemory();
+
+    // Vulkan images are bottom-up relative to the fullscreen quad we present from; flip to match
+    // what the viewer window shows.
+    const std::size_t    row_bytes = static_cast<std::size_t>(width) * 4u;
+    std::vector<uint8_t> flipped(pixel_bytes);
+    for (uint32_t row = 0; row < height; ++row) {
+        const std::size_t src_offset = static_cast<std::size_t>(height - 1 - row) * row_bytes;
+        const std::size_t dst_offset = static_cast<std::size_t>(row) * row_bytes;
+        std::memcpy(flipped.data() + dst_offset, rgba.data() + src_offset, row_bytes);
+    }
+
+    // The offscreen export is a debugging surface dump. Some scenes leave the swap image alpha at
+    // zero even when RGB contains valid content, which makes the PNG appear blank in normal image
+    // viewers. Force opaque alpha so the exported frame is directly inspectable.
+    for (std::size_t pixel = 0; pixel < pixel_bytes; pixel += 4u) {
+        flipped[pixel + 3u] = 0xffu;
+    }
+
+    return WriteRgbaPng(std::string(output_path), width, height, flipped, error_message);
+}
+
+bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters&     image,
+                                                    std::vector<std::uint8_t>* bgra,
+                                                    std::uint32_t*             stride_bytes,
+                                                    std::string*               error_message) {
+    if (! bgra || ! stride_bytes) {
+        if (error_message) *error_message = "invalid readback output pointers";
+        return false;
+    }
+
+    const uint32_t    width       = image.extent.width;
+    const uint32_t    height      = image.extent.height;
+    const std::size_t pixel_bytes = static_cast<std::size_t>(width) * height * 4u;
+    if (pixel_bytes == 0) {
+        if (error_message) *error_message = "offscreen frame has zero size";
+        return false;
+    }
+
+    VmaBufferParameters readback_buffer;
+    if (! CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
+        if (error_message) *error_message = "failed to allocate readback buffer";
+        return false;
+    }
+
+    vvk::CommandBuffers command_buffers;
+    VVK_CHECK_BOOL_RE(
+        m_device->cmd_pool().Allocate(1, VK_COMMAND_BUFFER_LEVEL_PRIMARY, command_buffers));
+    vvk::CommandBuffer command(command_buffers[0], m_device->handle().Dispatch());
+
+    if (! checkVkResult(command.Begin(VkCommandBufferBeginInfo {
+                            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                            .pNext = nullptr,
+                            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                        }),
+                        "begin offscreen shm readback command buffer")) {
+        return false;
+    }
+
+    VkImageMemoryBarrier image_to_transfer {
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = image.handle,
+        .subresourceRange =
+            VkImageSubresourceRange {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+    };
+    command.PipelineBarrier(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
                             0,
-                            image_restore);
+                            image_to_transfer);
+
+    VkBufferImageCopy copy_region {
+        .bufferOffset      = 0,
+        .bufferRowLength   = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource =
+            VkImageSubresourceLayers {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel       = 0,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = image.extent,
+    };
+    command.CopyImageToBuffer(image.handle,
+                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              *readback_buffer.handle,
+                              spanone { copy_region });
+
+    VkBufferMemoryBarrier buffer_ready {
+        .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask       = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer              = *readback_buffer.handle,
+        .offset              = 0,
+        .size                = VK_WHOLE_SIZE,
+    };
+    command.PipelineBarrier(
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, buffer_ready);
+
+    VkImageMemoryBarrier image_restore {
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext               = nullptr,
+        .srcAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask       = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        .oldLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout           = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = image.handle,
+        .subresourceRange    = image_to_transfer.subresourceRange,
+    };
+    command.PipelineBarrier(
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, image_restore);
 
     if (! checkVkResult(command.End(), "end offscreen shm readback command buffer")) {
         return false;
     }
 
     vvk::Fence fence;
-    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(VkFenceCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-    }, fence));
+    VVK_CHECK_BOOL_RE(m_device->handle().CreateFence(
+        VkFenceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+        },
+        fence));
     VkSubmitInfo submit {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
+        .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext              = nullptr,
         .commandBufferCount = 1,
-        .pCommandBuffers = command.address(),
+        .pCommandBuffers    = command.address(),
     };
     if (! checkVkResult(m_device->graphics_queue().handle.Submit(submit, *fence),
                         "submit offscreen shm readback")) {
@@ -1419,7 +1423,7 @@ void VulkanRender::Impl::setRenderTargetSize(Scene& scene, rg::RenderGraph& rg) 
             rt.height = (i32)(rt.bind.scale * ext.height);
             // Screen-sized render targets expose the full framebuffer as both their physical and
             // logical extent. Only text-owned runtime targets intentionally diverge these values.
-            rt.mapWidth = rt.width;
+            rt.mapWidth  = rt.width;
             rt.mapHeight = rt.height;
         }
     }
@@ -1437,7 +1441,7 @@ void VulkanRender::Impl::setRenderTargetSize(Scene& scene, rg::RenderGraph& rg) 
         // shader uniforms continue to describe the authored image area rather than the raw backing
         // allocation. This keeps generic effect chains consistent whenever the source target uses
         // a logical content rectangle that differs from its physical allocation.
-        rt.mapWidth = (i32)(rt.bind.scale * bind_rt->second.ContentWidth());
+        rt.mapWidth  = (i32)(rt.bind.scale * bind_rt->second.ContentWidth());
         rt.mapHeight = (i32)(rt.bind.scale * bind_rt->second.ContentHeight());
     }
     for (auto& item : scene.renderTargets) {
@@ -1471,7 +1475,7 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
     // side remains the single source of truth for framebuffer-relative width/height while authored
     // zoom still narrows that already aspect-correct view.
     double active_global_zoom = scene.defaultGlobalCameraZoom;
-    if (!std::isfinite(active_global_zoom) || active_global_zoom <= 0.0001) {
+    if (! std::isfinite(active_global_zoom) || active_global_zoom <= 0.0001) {
         active_global_zoom = 1.0;
     }
 
@@ -1479,7 +1483,7 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
     // layer explicitly targets the shared perspective camera; otherwise derive FOV from the
     // orthographic framing so perspective particles continue to match the visible crop/fit window.
     bool  use_active_global_perspective_fov = false;
-    float active_global_perspective_fov = 50.0f;
+    float active_global_perspective_fov     = 50.0f;
     if (scene.activeCameraLayerId != 0) {
         auto active_layer_it = scene.cameraLayers.find(scene.activeCameraLayerId);
         if (active_layer_it != scene.cameraLayers.end()) {
@@ -1493,28 +1497,28 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
             } else if (active_layer.camera_name == "global_perspective" &&
                        std::isfinite(active_layer.fov) && active_layer.fov > 0.0001f) {
                 use_active_global_perspective_fov = true;
-                active_global_perspective_fov = active_layer.fov;
+                active_global_perspective_fov     = active_layer.fov;
             }
         }
     }
 
-    double framed_width = sw;
-    double framed_height = sh;
+    double framed_width       = sw;
+    double framed_height      = sh;
     double perspective_aspect = sAspect;
 
     switch (fillmode) {
     case FillMode::STRETCH:
-        framed_width = sw;
-        framed_height = sh;
+        framed_width       = sw;
+        framed_height      = sh;
         perspective_aspect = sAspect;
         break;
     case FillMode::ASPECTFIT:
         if (fboAspect < sAspect) {
             // Preserve the full scene width and add vertical space when the output is taller.
-            framed_width = sw;
+            framed_width  = sw;
             framed_height = sw / fboAspect;
         } else {
-            framed_width = sh * fboAspect;
+            framed_width  = sh * fboAspect;
             framed_height = sh;
         }
         perspective_aspect = fboAspect;
@@ -1523,10 +1527,10 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
     default:
         if (fboAspect > sAspect) {
             // Preserve the full scene width and crop vertically when the output is wider.
-            framed_width = sw;
+            framed_width  = sw;
             framed_height = sw / fboAspect;
         } else {
-            framed_width = sh * fboAspect;
+            framed_width  = sh * fboAspect;
             framed_height = sh;
         }
         perspective_aspect = fboAspect;
@@ -1535,8 +1539,8 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
         // Scene coordinates are authored in pixels. Match one scene unit to
         // one output pixel and keep the global camera centered, allowing
         // smaller outputs to crop and larger outputs to retain empty space.
-        framed_width = width;
-        framed_height = height;
+        framed_width       = width;
+        framed_height      = height;
         perspective_aspect = fboAspect;
         break;
     }
@@ -1551,16 +1555,17 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
     gPerCam.Update();
     scene.UpdateLinkedCamera("global");
 
-    if (!scene.modelPerspectiveCameraName.empty()) {
+    if (! scene.modelPerspectiveCameraName.empty()) {
         auto model_camera_it = scene.cameras.find(scene.modelPerspectiveCameraName);
         if (model_camera_it != scene.cameras.end() && model_camera_it->second) {
             // 3D model chunks render through a camera that is intentionally isolated from the
             // legacy `global_perspective` camera, but its projection still has to follow the same
-            // fill-mode-adjusted framebuffer aspect. Without this, a 16:9-authored model scene keeps
-            // its native projection while Vulkan draws into a 16:10 or other non-native viewport,
-            // which changes the apparent object proportions even though the model transform itself
-            // is uniform. Only the aspect is synchronized here: the authored 3D FOV and the
-            // camera-path eye/center/up basis remain owned by the scene data and path playback.
+            // fill-mode-adjusted framebuffer aspect. Without this, a 16:9-authored model scene
+            // keeps its native projection while Vulkan draws into a 16:10 or other non-native
+            // viewport, which changes the apparent object proportions even though the model
+            // transform itself is uniform. Only the aspect is synchronized here: the authored 3D
+            // FOV and the camera-path eye/center/up basis remain owned by the scene data and path
+            // playback.
             model_camera_it->second->SetAspect(perspective_aspect);
             model_camera_it->second->Update();
             scene.UpdateLinkedCamera(scene.modelPerspectiveCameraName);
@@ -1586,8 +1591,8 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
 void VulkanRender::Impl::clearLastRenderGraph(bool clear_scene_caches) {
     if (m_device_faulted) {
         // After device loss, pass destruction can call vkDestroyPipeline and friends on a driver
-        // context that already timed out.  Leave the bounded stale graph abandoned with the renderer
-        // instead of turning a recoverable backend replacement into a process crash.
+        // context that already timed out.  Leave the bounded stale graph abandoned with the
+        // renderer instead of turning a recoverable backend replacement into a process crash.
         return;
     }
 
@@ -1626,7 +1631,7 @@ void VulkanRender::Impl::clearLastRenderGraph(bool clear_scene_caches) {
 }
 
 void VulkanRender::Impl::releasePendingSceneResources(Scene& scene) {
-    if (m_device_faulted || !m_device) return;
+    if (m_device_faulted || ! m_device) return;
     if (scene.pendingStaticTextureReleaseKeys.empty() &&
         scene.pendingVideoTextureReleaseKeys.empty() &&
         scene.pendingRenderTargetReleaseKeys.empty()) {
@@ -1638,9 +1643,9 @@ void VulkanRender::Impl::releasePendingSceneResources(Scene& scene) {
     const auto before_video_bytes   = m_device->video_tex_cache().GetTrackedBytes();
     const auto before_video_count   = m_device->video_tex_cache().GetTrackedEntryCount();
 
-    std::size_t released_static = 0;
+    std::size_t released_static         = 0;
     std::size_t released_render_targets = 0;
-    std::size_t released_videos = 0;
+    std::size_t released_videos         = 0;
 
     for (const auto& key : scene.pendingStaticTextureReleaseKeys) {
         if (m_device->tex_cache().ReleaseTexture(key)) released_static++;
@@ -1689,32 +1694,33 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
                                             bool refresh_resources_only) {
     if (m_device_faulted) return;
     if (! m_inited) return;
-    m_pass_loaded = false;
-    const bool had_resident_graph = !m_compiled_pass_refs.empty();
+    m_pass_loaded                 = false;
+    const bool had_resident_graph = ! m_compiled_pass_refs.empty();
 
-    if (refresh_resources_only && !m_passes.empty()) {
+    if (refresh_resources_only && ! m_passes.empty()) {
         setRenderTargetSize(scene, rg);
 
         const auto dirty_render_targets = scene.dirtyRenderTargetKeys;
-        const auto dirty_text_layers = scene.dirtyTextLayerIds;
+        const auto dirty_text_layers    = scene.dirtyTextLayerIds;
         // A resource refresh can now be targeted either by render-target key or by text layer id.
         // Treating an empty render-target set as "refresh everything" was correct before direct
-        // text had its own dirty set, but it would turn every Clock tick back into a full pass walk.
+        // text had its own dirty set, but it would turn every Clock tick back into a full pass
+        // walk.
         const bool has_targeted_dirty_resources =
-            !dirty_render_targets.empty() || !dirty_text_layers.empty();
+            ! dirty_render_targets.empty() || ! dirty_text_layers.empty();
         const bool refresh_all =
-            scene.renderGraphAllResourcesDirty || !has_targeted_dirty_resources;
+            scene.renderGraphAllResourcesDirty || ! has_targeted_dirty_resources;
         std::size_t refreshed_passes = 0;
-        std::size_t prepared_passes = 0;
+        std::size_t prepared_passes  = 0;
 
         for (size_t pass_index = 0; pass_index < m_passes.size(); ++pass_index) {
             auto* p = m_passes[pass_index];
             if (p == nullptr) continue;
 
-            const bool affected =
-                refresh_all || p->referencesAnyRenderTarget(dirty_render_targets) ||
-                p->referencesAnyTextLayer(dirty_text_layers);
-            if (!affected) continue;
+            const bool affected = refresh_all ||
+                                  p->referencesAnyRenderTarget(dirty_render_targets) ||
+                                  p->referencesAnyTextLayer(dirty_text_layers);
+            if (! affected) continue;
 
             if (p->prepared()) {
                 // Text bridge updates are now target-scoped like particle resources: refresh only
@@ -1723,7 +1729,7 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
                 p->refreshResources(scene, *m_device, m_rendering_resources);
                 refreshed_passes++;
             }
-            if (!p->prepared()) {
+            if (! p->prepared()) {
                 p->prepare(scene, *m_device, m_rendering_resources);
                 prepared_passes++;
             }
@@ -1753,30 +1759,30 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
     m_passes.resize(nodes.size());
 
     std::unordered_map<std::string, std::shared_ptr<rg::Pass>> reusable_passes;
-    std::unordered_map<std::string, std::size_t> old_key_counts;
+    std::unordered_map<std::string, std::size_t>               old_key_counts;
     for (const auto& old_pass_ref : m_compiled_pass_refs) {
         auto old_pass = std::dynamic_pointer_cast<VulkanPass>(old_pass_ref);
-        if (!old_pass) continue;
+        if (! old_pass) continue;
         const auto key = MakeResidencyInstanceKey(*old_pass, old_key_counts);
-        if (!key.empty()) reusable_passes.emplace(key, old_pass_ref);
+        if (! key.empty()) reusable_passes.emplace(key, old_pass_ref);
     }
 
     std::unordered_map<std::string, std::size_t> new_key_counts;
-    std::unordered_set<VulkanPass*> reused_passes;
-    std::vector<std::shared_ptr<rg::Pass>> next_compiled_pass_refs;
+    std::unordered_set<VulkanPass*>              reused_passes;
+    std::vector<std::shared_ptr<rg::Pass>>       next_compiled_pass_refs;
     next_compiled_pass_refs.reserve(nodes.size());
     std::size_t reused_count = 0;
-    std::size_t new_count = 0;
+    std::size_t new_count    = 0;
 
     for (std::size_t index = 0; index < nodes.size(); ++index) {
-        const auto node_id = nodes[index];
+        const auto node_id  = nodes[index];
         auto       pass_ref = rg.getPassShared(node_id);
         assert(pass_ref != nullptr);
-        auto*      vpass = dynamic_cast<VulkanPass*>(pass_ref.get());
+        auto* vpass = dynamic_cast<VulkanPass*>(pass_ref.get());
         assert(vpass != nullptr);
 
         const auto key = MakeResidencyInstanceKey(*vpass, new_key_counts);
-        if (!key.empty()) {
+        if (! key.empty()) {
             if (auto reusable_it = reusable_passes.find(key);
                 reusable_it != reusable_passes.end()) {
                 auto reusable_vpass = std::dynamic_pointer_cast<VulkanPass>(reusable_it->second);
@@ -1789,7 +1795,7 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
                     // rebuild.
                     reusable_vpass->absorbResidencyGraphState(*vpass);
                     pass_ref = reusable_it->second;
-                    vpass = reusable_vpass.get();
+                    vpass    = reusable_vpass.get();
                     rg.replacePass(node_id, pass_ref);
                     reused_passes.insert(vpass);
                     reused_count++;
@@ -1813,10 +1819,10 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
     }
 
     std::unordered_set<VulkanPass*> destroyed_passes;
-    std::size_t retired_count = 0;
+    std::size_t                     retired_count = 0;
     for (const auto& [_, stale_pass_ref] : reusable_passes) {
         auto stale_pass = std::dynamic_pointer_cast<VulkanPass>(stale_pass_ref);
-        if (!stale_pass) continue;
+        if (! stale_pass) continue;
         const auto before_destroy_count = destroyed_passes.size();
         DestroyPassOnce(stale_pass.get(), *m_device, m_rendering_resources, destroyed_passes);
         if (destroyed_passes.size() != before_destroy_count) retired_count++;
@@ -1835,13 +1841,13 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
 
     setRenderTargetSize(scene, rg);
 
-    std::size_t reused_refreshed_count = 0;
-    std::size_t refreshed_count = 0;
-    std::size_t prepared_count = 0;
+    std::size_t reused_refreshed_count    = 0;
+    std::size_t refreshed_count           = 0;
+    std::size_t prepared_count            = 0;
     std::size_t dependency_prepared_count = 0;
-    std::size_t deferred_count = 0;
-    std::size_t deferred_waiting_count = 0;
-    std::size_t already_prepared_count = 0;
+    std::size_t deferred_count            = 0;
+    std::size_t deferred_waiting_count    = 0;
+    std::size_t already_prepared_count    = 0;
     // CopyPass is a lightweight graph-residency pass, not a heavy shader pass: it registers
     // dynamic copy render targets such as `_rt_default_*_copy` in Scene::renderTargets and binds
     // their TextureCache images. Reused shader passes can legitimately sample those copy targets
@@ -1865,11 +1871,11 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
             p->refreshResources(scene, *m_device, m_rendering_resources);
             refreshed_count++;
         }
-        if (p != nullptr && !p->prepared()) {
-            const bool is_copy_dependency = dynamic_cast<CopyPass*>(p) != nullptr;
-            const bool can_defer_runtime_prepare =
-                had_resident_graph && !refresh_resources_only && p != m_prepass.get() &&
-                p != m_finpass.get() && !is_copy_dependency;
+        if (p != nullptr && ! p->prepared()) {
+            const bool is_copy_dependency        = dynamic_cast<CopyPass*>(p) != nullptr;
+            const bool can_defer_runtime_prepare = had_resident_graph && ! refresh_resources_only &&
+                                                   p != m_prepass.get() && p != m_finpass.get() &&
+                                                   ! is_copy_dependency;
             if (can_defer_runtime_prepare) {
                 // Runtime visibility changes should not monopolize the render thread by making
                 // every newly-visible layer allocate textures, framebuffers, and staging uploads in
@@ -1918,7 +1924,7 @@ void VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg,
 
 void VulkanRender::Impl::warmupRenderGraphPipelines(Scene& scene, rg::RenderGraph& rg) {
     if (m_device_faulted) return;
-    if (!m_inited || !m_device || !m_rendering_resources.pipeline_cache) return;
+    if (! m_inited || ! m_device || ! m_rendering_resources.pipeline_cache) return;
 
     const auto started_at = std::chrono::steady_clock::now();
     auto       nodes      = rg.topologicalOrder();
@@ -1930,8 +1936,8 @@ void VulkanRender::Impl::warmupRenderGraphPipelines(Scene& scene, rg::RenderGrap
 
     for (const auto node_id : nodes) {
         auto pass_ref = rg.getPassShared(node_id);
-        auto vpass = std::dynamic_pointer_cast<VulkanPass>(pass_ref);
-        if (!vpass) continue;
+        auto vpass    = std::dynamic_pointer_cast<VulkanPass>(pass_ref);
+        if (! vpass) continue;
         pipeline_passes++;
         if (vpass->warmupPipeline(scene, *m_device, m_rendering_resources)) {
             warmed_passes++;

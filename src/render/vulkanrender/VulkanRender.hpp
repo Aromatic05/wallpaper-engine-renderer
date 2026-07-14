@@ -26,6 +26,7 @@ public:
 
     bool init(RenderInitInfo);
     bool resizeOutput(std::uint16_t width, std::uint16_t height);
+    bool reconfigureOutput(RenderInitInfo info);
 
     void destroy();
 
@@ -42,7 +43,7 @@ public:
                                    std::string* error_message = nullptr);
 
     ExSwapchain* exSwapchain() const;
-    bool inited() const;
+    bool         inited() const;
 
 private:
     struct Impl;

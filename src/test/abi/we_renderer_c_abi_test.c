@@ -38,19 +38,48 @@ int main(void) {
     we_session_t* session = we_session_create();
     if (session == NULL) return 1;
 
-    uint32_t diagnostics_size = 0;
-    if (we_session_get_diagnostics_json(session, NULL, &diagnostics_size) != 0) {
+    if (we_session_set_dmabuf_formats(NULL, NULL, NULL, 0) != -1) {
         we_session_destroy(session);
         return 2;
     }
-    if (diagnostics_size <= 1) {
+    if (we_session_set_dmabuf_formats(session, NULL, NULL, 1) != -1) {
         we_session_destroy(session);
         return 3;
+    }
+    if (we_session_set_dmabuf_formats(session, NULL, NULL, 0) != 0) {
+        we_session_destroy(session);
+        return 4;
+    }
+
+    const uint32_t fourccs[]   = { 0x34324241u, 0x34324241u };
+    const uint64_t modifiers[] = { 0, 0 };
+    if (we_session_set_dmabuf_formats(session, fourccs, modifiers, 2) != 0) {
+        we_session_destroy(session);
+        return 5;
+    }
+    const uint32_t invalid_fourcc = 0;
+    if (we_session_set_dmabuf_formats(session, &invalid_fourcc, modifiers, 1) != -1) {
+        we_session_destroy(session);
+        return 6;
+    }
+    if (we_session_set_dmabuf_formats(session, fourccs, modifiers, 65537) != -1) {
+        we_session_destroy(session);
+        return 7;
+    }
+
+    uint32_t diagnostics_size = 0;
+    if (we_session_get_diagnostics_json(session, NULL, &diagnostics_size) != 0) {
+        we_session_destroy(session);
+        return 8;
+    }
+    if (diagnostics_size <= 1) {
+        we_session_destroy(session);
+        return 9;
     }
     const int frame_ready_fd = we_session_get_frame_ready_fd(session);
     if (frame_ready_fd < 0 || (fcntl(frame_ready_fd, F_GETFL) & O_NONBLOCK) == 0) {
         we_session_destroy(session);
-        return 4;
+        return 10;
     }
 
     we_session_destroy(session);

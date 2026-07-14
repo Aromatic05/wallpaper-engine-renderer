@@ -4,6 +4,7 @@
 #include "Type.hpp"
 #include "core/NoCopyMove.hpp"
 #include "core/MapSet.hpp"
+#include "wallpaper/DmabufFormat.hpp"
 #include <deque>
 #include <memory>
 #include <optional>
@@ -72,10 +73,10 @@ public:
     bool ReleaseTexture(std::string_view key);
     bool ReleaseRenderTarget(std::string_view key);
 
-    std::optional<ExImageParameters> CreateExTex(uint32_t witdh, uint32_t height, VkFormat,
-                                                 VkImageTiling, ExternalFrameExportMode,
-                                                 uint32_t export_drm_fourcc = 0,
-                                                 std::span<const uint64_t> export_drm_modifiers = {});
+    std::optional<ExImageParameters>
+    CreateExTex(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+                ExternalFrameExportMode export_mode, bool consumer_dmabuf_formats_known = false,
+                std::span<const DmabufFormatModifier> consumer_dmabuf_formats = {});
     ImageSlotsRef                    CreateTex(Image&);
     std::optional<ImageSlotsRef>     FindTex(std::string_view key) const;
     // Continue an already-started streaming upload using the TextureCache-owned parsed image. This

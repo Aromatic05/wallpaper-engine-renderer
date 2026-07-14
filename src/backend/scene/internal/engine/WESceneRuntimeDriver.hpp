@@ -18,26 +18,27 @@ namespace wallpaper
 {
 class WESceneOutputBinding;
 
-constexpr std::string_view PROPERTY_SOURCE                    = WE_SCENE_PROPERTY_SOURCE;
-constexpr std::string_view PROPERTY_ASSETS                    = WE_SCENE_PROPERTY_ASSETS;
-constexpr std::string_view PROPERTY_FPS                       = WE_SCENE_PROPERTY_FPS;
-constexpr std::string_view PROPERTY_FILLMODE                  = WE_SCENE_PROPERTY_FILLMODE;
-constexpr std::string_view PROPERTY_SPEED                     = WE_SCENE_PROPERTY_SPEED;
-constexpr std::string_view PROPERTY_GRAPHVIZ                  = WE_SCENE_PROPERTY_GRAPHVIZ;
-constexpr std::string_view PROPERTY_GRAPHVIZ_PATH             = WE_SCENE_PROPERTY_GRAPHVIZ_PATH;
-constexpr std::string_view PROPERTY_GRAPHIVZ                  = WE_SCENE_PROPERTY_GRAPHIVZ;
-constexpr std::string_view PROPERTY_VOLUME                    = WE_SCENE_PROPERTY_VOLUME;
-constexpr std::string_view PROPERTY_MUTED                     = WE_SCENE_PROPERTY_MUTED;
-constexpr std::string_view PROPERTY_CACHE_PATH                = WE_SCENE_PROPERTY_CACHE_PATH;
-constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK      = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
-constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES      = WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES;
-constexpr std::string_view PROPERTY_USER_PROPERTIES           = WE_SCENE_PROPERTY_USER_PROPERTIES;
-constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES_JSON = WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES_JSON;
-constexpr std::string_view PROPERTY_USER_PROPERTIES_JSON      = WE_SCENE_PROPERTY_USER_PROPERTIES_JSON;
-constexpr std::string_view PROPERTY_AUDIO_SAMPLES             = WE_SCENE_PROPERTY_AUDIO_SAMPLES;
-constexpr std::string_view PROPERTY_MEDIA_STATE               = WE_SCENE_PROPERTY_MEDIA_STATE;
-constexpr std::string_view PROPERTY_CAPTURE_FRAME             = WE_SCENE_PROPERTY_CAPTURE_FRAME;
-constexpr std::string_view PROPERTY_CAPTURE_FRAME_NUMBER      = WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER;
+constexpr std::string_view PROPERTY_SOURCE               = WE_SCENE_PROPERTY_SOURCE;
+constexpr std::string_view PROPERTY_ASSETS               = WE_SCENE_PROPERTY_ASSETS;
+constexpr std::string_view PROPERTY_FPS                  = WE_SCENE_PROPERTY_FPS;
+constexpr std::string_view PROPERTY_FILLMODE             = WE_SCENE_PROPERTY_FILLMODE;
+constexpr std::string_view PROPERTY_SPEED                = WE_SCENE_PROPERTY_SPEED;
+constexpr std::string_view PROPERTY_GRAPHVIZ             = WE_SCENE_PROPERTY_GRAPHVIZ;
+constexpr std::string_view PROPERTY_GRAPHVIZ_PATH        = WE_SCENE_PROPERTY_GRAPHVIZ_PATH;
+constexpr std::string_view PROPERTY_GRAPHIVZ             = WE_SCENE_PROPERTY_GRAPHIVZ;
+constexpr std::string_view PROPERTY_VOLUME               = WE_SCENE_PROPERTY_VOLUME;
+constexpr std::string_view PROPERTY_MUTED                = WE_SCENE_PROPERTY_MUTED;
+constexpr std::string_view PROPERTY_CACHE_PATH           = WE_SCENE_PROPERTY_CACHE_PATH;
+constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
+constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES = WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES;
+constexpr std::string_view PROPERTY_USER_PROPERTIES      = WE_SCENE_PROPERTY_USER_PROPERTIES;
+constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES_JSON =
+    WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES_JSON;
+constexpr std::string_view PROPERTY_USER_PROPERTIES_JSON = WE_SCENE_PROPERTY_USER_PROPERTIES_JSON;
+constexpr std::string_view PROPERTY_AUDIO_SAMPLES        = WE_SCENE_PROPERTY_AUDIO_SAMPLES;
+constexpr std::string_view PROPERTY_MEDIA_STATE          = WE_SCENE_PROPERTY_MEDIA_STATE;
+constexpr std::string_view PROPERTY_CAPTURE_FRAME        = WE_SCENE_PROPERTY_CAPTURE_FRAME;
+constexpr std::string_view PROPERTY_CAPTURE_FRAME_NUMBER = WE_SCENE_PROPERTY_CAPTURE_FRAME_NUMBER;
 
 #include "core/NoCopyMove.hpp"
 class MainHandler;
@@ -52,8 +53,8 @@ public:
     bool init();
     bool inited() const;
 
-    void bindOutput(const std::shared_ptr<WESceneOutputBinding>& binding,
-                    const RenderInitInfo& renderInitInfo);
+    bool bindOutput(const std::shared_ptr<WESceneOutputBinding>& binding,
+                    const RenderInitInfo&                        renderInitInfo);
 
     void play();
     void pause();
@@ -74,9 +75,9 @@ private:
 private:
     friend class MainHandler;
 
-    bool                                  m_offscreen { false };
-    std::shared_ptr<HostServices>         m_hostServices;
+    bool                                   m_offscreen { false };
+    std::shared_ptr<HostServices>          m_hostServices;
     std::shared_ptr<WESceneEngineServices> m_engineServices;
-    std::shared_ptr<MainHandler>          m_main_handler;
+    std::shared_ptr<MainHandler>           m_main_handler;
 };
 } // namespace wallpaper

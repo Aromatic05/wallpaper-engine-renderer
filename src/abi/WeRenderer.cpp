@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <string>
 #include <utility>
+#include <vector>
 #include <cstring>
 
 #include <nlohmann/json.hpp>
@@ -316,6 +317,15 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
     if (! parsed_config.has_value()) return -1;
     if (! state->sourceSet) return -1;
 
+    if (parsed_config->prefer_dmabuf && state->renderInitInfo.consumer_dmabuf_formats_known &&
+        state->renderInitInfo.consumer_dmabuf_formats.empty() &&
+        ! parsed_config->allow_shm_fallback) {
+        const auto unsupported = wallpaper::Result<void>::failure(
+            wallpaper::ResultCode::NotSupported,
+            "DMA-BUF was requested but the consumer reported no supported formats");
+        return to_error_with_diagnostic(state, "abi.render-config.dmabuf", unsupported);
+    }
+
     if (parsed_config->msaa_samples > 1 &&
         state->sourceType != wallpaper::BackendType::WEScene) {
         const auto unsupported = wallpaper::Result<void>::failure(
@@ -350,6 +360,69 @@ int32_t we_session_set_render_config(we_session_t* session, const we_render_conf
         return to_error_with_diagnostic(state, "abi.render-config.output", bindingResult);
     }
     state->binding = std::move(bindingResult.value());
+    return 0;
+}
+
+int32_t we_session_set_dmabuf_formats(we_session_t* session, const uint32_t* fourccs,
+                                      const uint64_t* modifiers, uint32_t count) {
+    auto* state = as_state(session);
+    if (! state || ! state->session) return -1;
+    if (count > 0 && (! fourccs || ! modifiers)) return -1;
+    if (count > 65536) return -1;
+
+    std::vector<wallpaper::DmabufFormatModifier> formats;
+    try {
+        formats.reserve(count);
+        for (std::uint32_t index = 0; index < count; ++index) {
+            if (fourccs[index] == 0) return -1;
+            const wallpaper::DmabufFormatModifier format { fourccs[index], modifiers[index] };
+            if (std::find(formats.begin(), formats.end(), format) == formats.end()) {
+                formats.push_back(format);
+            }
+        }
+    } catch (...) {
+        return -1;
+    }
+
+    if (state->renderInitInfo.consumer_dmabuf_formats_known &&
+        state->renderInitInfo.consumer_dmabuf_formats == formats) {
+        return 0;
+    }
+
+    if (state->renderInitInfo.export_mode == wallpaper::ExternalFrameExportMode::DMA_BUF &&
+        formats.empty() && ! state->renderInitInfo.allow_shm_fallback) {
+        const auto unsupported = wallpaper::Result<void>::failure(
+            wallpaper::ResultCode::NotSupported,
+            "DMA-BUF consumer format list is empty and SHM fallback is disabled");
+        return to_error_with_diagnostic(state, "abi.dmabuf-formats", unsupported);
+    }
+
+    const bool old_known   = state->renderInitInfo.consumer_dmabuf_formats_known;
+    auto       old_formats = std::move(state->renderInitInfo.consumer_dmabuf_formats);
+    state->renderInitInfo.consumer_dmabuf_formats_known = true;
+    state->renderInitInfo.consumer_dmabuf_formats       = std::move(formats);
+
+    if (! state->binding ||
+        state->renderInitInfo.export_mode != wallpaper::ExternalFrameExportMode::DMA_BUF) {
+        return 0;
+    }
+
+    auto binding_result = bind_current_output(state);
+    if (! binding_result) {
+        const wallpaper::Error bind_error                   = binding_result.error();
+        state->renderInitInfo.consumer_dmabuf_formats_known = old_known;
+        state->renderInitInfo.consumer_dmabuf_formats       = std::move(old_formats);
+
+        auto rollback_result = bind_current_output(state);
+        if (rollback_result) {
+            state->binding = std::move(rollback_result.value());
+        } else {
+            append_abi_error(state, "abi.dmabuf-formats.rollback", rollback_result.error());
+        }
+        const auto failure = wallpaper::Result<void>::failure(bind_error.code, bind_error.message);
+        return to_error_with_diagnostic(state, "abi.dmabuf-formats.output", failure);
+    }
+    state->binding = std::move(binding_result.value());
     return 0;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "swapchain/ExSwapchain.hpp"
+#include "DmabufFormat.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -40,8 +41,8 @@ struct RenderInitInfo {
     VulkanDevicePreference        device_preference { VulkanDevicePreference::Default };
     GpuPipelinePreference         gpu_pipeline_preference { GpuPipelinePreference::Nvidia };
     TexTiling                     offscreen_tiling { TexTiling::OPTIMAL };
-    std::uint32_t                 export_drm_fourcc { 0 };
-    std::vector<std::uint64_t>    export_drm_modifiers;
+    bool                              consumer_dmabuf_formats_known { false };
+    std::vector<DmabufFormatModifier> consumer_dmabuf_formats;
     VulkanSurfaceInfo             surface_info;
 
     std::uint16_t width { 1920 };

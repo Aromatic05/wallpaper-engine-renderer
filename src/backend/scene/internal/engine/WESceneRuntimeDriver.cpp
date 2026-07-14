@@ -20,6 +20,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
+#include <future>
 
 #include "fs/VFS.h"
 #include "fs/PhysicalFs.h"
@@ -42,10 +43,8 @@
 
 using namespace wallpaper;
 
-#define CASE_CMD(cmd)      \
-    case CMD::CMD_##cmd:   \
-        handle_##cmd(msg); \
-        break;
+#define CASE_CMD(cmd) \
+    case CMD::CMD_##cmd: handle_##cmd(msg); break;
 #define MHANDLER_CMD(cmd) void handle_##cmd(const std::shared_ptr<looper::Message>& msg)
 #define MHANDLER_CMD_IMPL(cl, cmd) \
     void impl_##cl::handle_##cmd(const std::shared_ptr<looper::Message>& msg)
@@ -98,8 +97,7 @@ UserPropertyMap LoadProjectUserPropertyDefaults(const std::filesystem::path& pro
     std::ifstream pf(project_json_path, std::ios::binary);
     if (! pf) return defaults;
 
-    std::string project_src((std::istreambuf_iterator<char>(pf)),
-                            std::istreambuf_iterator<char>());
+    std::string project_src((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
     nlohmann::json project_json;
     if (! PARSE_JSON(project_src, project_json)) return defaults;
 
@@ -114,7 +112,6 @@ UserPropertyMap LoadProjectUserPropertyDefaults(const std::filesystem::path& pro
     }
     return defaults;
 }
-
 
 template<typename T>
 void AddMsgCmd(looper::Message& msg, T cmd) {
@@ -147,8 +144,7 @@ std::optional<std::array<float, 3>> ParseColorString(std::string_view value) {
 
         const std::string_view token = value.substr(start, end - start);
         float                  channel { 0.0f };
-        const auto [ptr, ec] =
-            std::from_chars(token.data(), token.data() + token.size(), channel);
+        const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), channel);
         if (ec != std::errc() || ptr != token.data() + token.size()) return std::nullopt;
 
         color[index] = channel;
@@ -157,8 +153,8 @@ std::optional<std::array<float, 3>> ParseColorString(std::string_view value) {
     return color;
 }
 
-std::optional<std::array<float, 3>> ReadColorPropertyValue(
-    const std::shared_ptr<looper::Message>& msg) {
+std::optional<std::array<float, 3>>
+ReadColorPropertyValue(const std::shared_ptr<looper::Message>& msg) {
     std::shared_ptr<std::array<float, 3>> object_value;
     if (msg->findObject("value", &object_value) && object_value) return *object_value;
 
@@ -246,26 +242,26 @@ bool ApplyParticleRuntimeProperty(Scene& scene, std::string_view property,
 
 WPSceneScriptMediaState ToScriptMediaState(const MediaState& source) {
     WPSceneScriptMediaState result;
-    result.has_thumbnail = source.hasThumbnail;
-    result.playback_state = source.playbackState;
-    result.primary_color = source.primaryColor;
-    result.secondary_color = source.secondaryColor;
-    result.tertiary_color = source.tertiaryColor;
-    result.text_color = source.textColor;
-    result.high_contrast_color = source.highContrastColor;
-    result.title = source.title;
-    result.artist = source.artist;
-    result.album_title = source.albumTitle;
-    result.album_artist = source.albumArtist;
-    result.sub_title = source.subTitle;
-    result.genres = source.genres;
-    result.content_type = source.contentType;
-    result.thumbnail_width = static_cast<int32_t>(source.thumbnailWidth);
-    result.thumbnail_height = static_cast<int32_t>(source.thumbnailHeight);
-    result.thumbnail_rgba = source.thumbnailRgba;
-    result.previous_thumbnail_width = static_cast<int32_t>(source.previousThumbnailWidth);
+    result.has_thumbnail             = source.hasThumbnail;
+    result.playback_state            = source.playbackState;
+    result.primary_color             = source.primaryColor;
+    result.secondary_color           = source.secondaryColor;
+    result.tertiary_color            = source.tertiaryColor;
+    result.text_color                = source.textColor;
+    result.high_contrast_color       = source.highContrastColor;
+    result.title                     = source.title;
+    result.artist                    = source.artist;
+    result.album_title               = source.albumTitle;
+    result.album_artist              = source.albumArtist;
+    result.sub_title                 = source.subTitle;
+    result.genres                    = source.genres;
+    result.content_type              = source.contentType;
+    result.thumbnail_width           = static_cast<int32_t>(source.thumbnailWidth);
+    result.thumbnail_height          = static_cast<int32_t>(source.thumbnailHeight);
+    result.thumbnail_rgba            = source.thumbnailRgba;
+    result.previous_thumbnail_width  = static_cast<int32_t>(source.previousThumbnailWidth);
     result.previous_thumbnail_height = static_cast<int32_t>(source.previousThumbnailHeight);
-    result.previous_thumbnail_rgba = source.previousThumbnailRgba;
+    result.previous_thumbnail_rgba   = source.previousThumbnailRgba;
     return result;
 }
 } // namespace
@@ -309,9 +305,9 @@ public:
         }
     }
 
-    void sendCmdLoadScene();
-    void sendFirstFrameOk();
-    bool isGenGraphviz() const { return m_gen_graphviz; }
+    void             sendCmdLoadScene();
+    void             sendFirstFrameOk();
+    bool             isGenGraphviz() const { return m_gen_graphviz; }
     std::string_view graphvizPath() const {
         return m_graphviz_path.empty() ? std::string_view("graph.dot")
                                        : std::string_view(m_graphviz_path);
@@ -329,7 +325,7 @@ private:
     MHANDLER_CMD(CAPTURE_FRAME);
 
 private:
-    bool m_inited { false };
+    bool                                   m_inited { false };
     std::shared_ptr<HostServices>          m_hostServices;
     std::shared_ptr<WESceneEngineServices> m_engineServices;
     std::shared_ptr<Scene>                 m_scene;
@@ -340,14 +336,14 @@ private:
     bool        m_gen_graphviz { false };
     std::string m_graphviz_path;
 
-    WPSceneParser                        m_scene_parser;
-    std::unique_ptr<audio::SoundManager> m_sound_manager;
-    FirstFrameCallback                   m_first_frame_callback;
-    UserPropertyMap                      m_default_user_properties;
-    UserPropertyMap                      m_user_properties;
-    std::shared_ptr<std::vector<float>>  m_audio_samples;
+    WPSceneParser                         m_scene_parser;
+    std::unique_ptr<audio::SoundManager>  m_sound_manager;
+    FirstFrameCallback                    m_first_frame_callback;
+    UserPropertyMap                       m_default_user_properties;
+    UserPropertyMap                       m_user_properties;
+    std::shared_ptr<std::vector<float>>   m_audio_samples;
     std::shared_ptr<MediaState>           m_media_state;
-    int32_t                              m_capture_frame_number { 1 };
+    int32_t                               m_capture_frame_number { 1 };
     std::chrono::steady_clock::time_point m_load_started_at {};
 
 private:
@@ -378,11 +374,11 @@ public:
     };
     MainHandler& main_handler;
     RenderHandler(MainHandler& m, std::shared_ptr<WESceneEngineServices> engineServices)
-        : main_handler(m)
-        , m_frameTimer(engineServices && engineServices->createFrameTimer
+        : main_handler(m),
+          m_frameTimer(engineServices && engineServices->createFrameTimer
                            ? engineServices->createFrameTimer()
-                           : std::make_unique<FrameTimer>())
-        , m_render(std::make_unique<vulkan::VulkanRender>()) {}
+                           : std::make_unique<FrameTimer>()),
+          m_render(std::make_unique<vulkan::VulkanRender>()) {}
     virtual ~RenderHandler() {
         m_frameTimer->Stop();
         m_render->destroy();
@@ -534,8 +530,8 @@ private:
                 m_scene->scriptHost->ApplyAudioSamples(*main_handler.audioSamples());
             }
             if (main_handler.mediaState()) {
-                m_scene->scriptHost->ApplyMediaState(
-                    ToScriptMediaState(*main_handler.mediaState()), false);
+                m_scene->scriptHost->ApplyMediaState(ToScriptMediaState(*main_handler.mediaState()),
+                                                     false);
             }
 #endif
             if (m_rg) m_render->clearLastRenderGraph();
@@ -562,20 +558,20 @@ private:
     }
     MHANDLER_CMD(APPLY_MEDIA_STATE) {
         std::shared_ptr<MediaState> media_state;
-        if (! msg->findObject("value", &media_state) || ! m_scene || ! m_scene->scriptHost
-            || ! media_state) {
+        if (! msg->findObject("value", &media_state) || ! m_scene || ! m_scene->scriptHost ||
+            ! media_state) {
             return;
         }
         m_scene->scriptHost->ApplyMediaState(ToScriptMediaState(*media_state), false);
     }
     MHANDLER_CMD(CAPTURE_FRAME) {
         std::string path;
-        if (!msg->findString("value", &path) || path.empty()) return;
+        if (! msg->findString("value", &path) || path.empty()) return;
         int32_t frame_number { 1 };
         msg->findInt32("frame_number", &frame_number);
 
         std::string error_message;
-        if (!m_render->captureNextOffscreenFrame(path, frame_number, &error_message)) {
+        if (! m_render->captureNextOffscreenFrame(path, frame_number, &error_message)) {
             LOG_ERROR("frame capture request rejected: path=%s frame=%d error=%s",
                       path.c_str(),
                       frame_number,
@@ -606,35 +602,42 @@ private:
         m_scene->userProperties = *user_properties;
     }
     MHANDLER_CMD(BIND_OUTPUT) {
-        std::shared_ptr<RenderInitInfo> info;
+        std::shared_ptr<RenderInitInfo>       info;
         std::shared_ptr<WESceneOutputBinding> binding;
-        if (! msg->findObject("info", &info) || ! info
-            || ! msg->findObject("binding", &binding) || ! binding) {
+        std::shared_ptr<std::promise<bool>>   completion;
+        (void)msg->findObject("completion", &completion);
+        const auto complete = [&completion](bool result) {
+            if (completion) completion->set_value(result);
+        };
+        if (! msg->findObject("info", &info) || ! info || ! msg->findObject("binding", &binding) ||
+            ! binding) {
+            complete(false);
             return;
         }
 
-        m_render_scale = std::max(1.0, info->render_scale);
-        const bool first_bind = ! m_render->inited();
-        bool output_ready = false;
+        m_render_scale          = std::max(1.0, info->render_scale);
+        const bool first_bind   = ! m_render->inited();
+        bool       output_ready = false;
         if (first_bind) {
             output_ready = m_render->init(*info);
         } else {
-            if (auto previous = m_output_binding.lock()) previous->attachSwapchain(nullptr);
-            output_ready = m_render->resizeOutput(info->width, info->height);
+            output_ready = m_render->reconfigureOutput(*info);
+            if (output_ready) {
+                if (auto previous = m_output_binding.lock()) previous->attachSwapchain(nullptr);
+            }
         }
 
         if (! output_ready || m_render->exSwapchain() == nullptr) {
-            binding->attachSwapchain(m_render->exSwapchain());
-            m_output_binding = binding;
             LOG_ERROR("failed to bind scene output extent=%ux%u",
                       static_cast<unsigned>(info->width),
                       static_cast<unsigned>(info->height));
+            complete(false);
             return;
         }
 
         m_output_binding = binding;
         binding->attachSwapchain(m_render->exSwapchain());
-        m_render_width = static_cast<int32_t>(info->width);
+        m_render_width  = static_cast<int32_t>(info->width);
         m_render_height = static_cast<int32_t>(info->height);
 
         if (! first_bind && m_scene) {
@@ -650,6 +653,7 @@ private:
             m_render->UpdateCameraFillMode(*m_scene, m_fillmode);
         }
         if (first_bind) main_handler.sendCmdLoadScene();
+        complete(true);
     }
 
 public:
@@ -658,16 +662,16 @@ public:
 
 private:
     std::unique_ptr<FrameTimer> m_frameTimer;
-    std::shared_ptr<Scene> m_scene { nullptr };
-    float                  m_speed { 1.0f };
-    double                 m_render_scale { 1.0 };
-    int32_t                m_render_width { 0 };
-    int32_t                m_render_height { 0 };
+    std::shared_ptr<Scene>      m_scene { nullptr };
+    float                       m_speed { 1.0f };
+    double                      m_render_scale { 1.0 };
+    int32_t                     m_render_width { 0 };
+    int32_t                     m_render_height { 0 };
 
     std::unique_ptr<vulkan::VulkanRender> m_render;
     std::unique_ptr<rg::RenderGraph>      m_rg { nullptr };
 
-    std::weak_ptr<WESceneOutputBinding>    m_output_binding;
+    std::weak_ptr<WESceneOutputBinding> m_output_binding;
 
     FillMode m_fillmode { FillMode::ASPECTCROP };
 
@@ -700,14 +704,19 @@ bool WESceneRuntimeDriver::inited() const { return m_main_handler->inited(); }
 
 bool WESceneRuntimeDriver::init() { return m_main_handler->init(); }
 
-void WESceneRuntimeDriver::bindOutput(
-    const std::shared_ptr<WESceneOutputBinding>& binding,
-    const RenderInitInfo& renderInitInfo) {
-    m_offscreen = renderInitInfo.offscreen;
-    auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_BIND_OUTPUT);
+bool WESceneRuntimeDriver::bindOutput(const std::shared_ptr<WESceneOutputBinding>& binding,
+                                      const RenderInitInfo&                        renderInitInfo) {
+    m_offscreen     = renderInitInfo.offscreen;
+    auto completion = std::make_shared<std::promise<bool>>();
+    auto result     = completion->get_future();
+    auto msg =
+        CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_BIND_OUTPUT);
     msg->setObject("info", std::make_shared<RenderInitInfo>(renderInitInfo));
     msg->setObject("binding", binding);
-    msg->post();
+    msg->setObject("completion", completion);
+    if (msg->post() != looper::status_t::OK) return false;
+    if (result.wait_for(std::chrono::seconds(30)) != std::future_status::ready) return false;
+    return result.get();
 }
 
 void WESceneRuntimeDriver::play() {
@@ -722,25 +731,26 @@ void WESceneRuntimeDriver::pause() {
 }
 
 void WESceneRuntimeDriver::mouseInput(double x, double y) {
-    auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_MOUSE_INPUT);
+    auto msg =
+        CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_MOUSE_INPUT);
     msg->setFloat("x", static_cast<float>(x));
     msg->setFloat("y", static_cast<float>(y));
     msg->post();
 }
 
 void WESceneRuntimeDriver::mouseButton(bool down) {
-    auto msg =
-        CreateMsgWithCmd(m_main_handler->renderHandler(), RenderHandler::CMD::CMD_MOUSE_LEFT_BUTTON);
+    auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(),
+                                RenderHandler::CMD::CMD_MOUSE_LEFT_BUTTON);
     msg->setBool("down", down);
     msg->post();
 }
 
-#define BASIC_TYPE(NAME, TYPENAME)                                                       \
+#define BASIC_TYPE(NAME, TYPENAME)                                                        \
     void WESceneRuntimeDriver::setProperty##NAME(std::string_view name, TYPENAME value) { \
-        auto msg = CreateMsgWithCmd(m_main_handler, MainHandler::CMD::CMD_SET_PROPERTY); \
-        msg->setString("property", std::string(name));                                   \
-        msg->set##NAME("value", value);                                                  \
-        msg->post();                                                                     \
+        auto msg = CreateMsgWithCmd(m_main_handler, MainHandler::CMD::CMD_SET_PROPERTY);  \
+        msg->setString("property", std::string(name));                                    \
+        msg->set##NAME("value", value);                                                   \
+        msg->post();                                                                      \
     }
 
 BASIC_TYPE(Bool, bool);
@@ -764,9 +774,7 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
     if (msg->findString("property", &property)) {
         if (property == PROPERTY_SOURCE) {
             msg->findString("value", &m_source);
-            LOG_INFO("source: %s user-properties=%zu",
-                     m_source.c_str(),
-                     m_user_properties.size());
+            LOG_INFO("source: %s user-properties=%zu", m_source.c_str(), m_user_properties.size());
             CALL_MHANDLER_CMD(LOAD_SCENE, msg);
         } else if (property == PROPERTY_ASSETS) {
             msg->findString("value", &m_assets);
@@ -838,10 +846,9 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
                     m_user_properties =
                         MergeUserPropertiesWithDefaults(m_default_user_properties, parsed.value());
                     LOG_INFO("live user-properties JSON count=%zu", m_user_properties.size());
-                    auto nmsg = CreateMsgWithCmd(
-                        m_render_handler, RenderHandler::CMD::CMD_APPLY_USER_PROPERTIES);
-                    nmsg->setObject("value",
-                                    std::make_shared<UserPropertyMap>(m_user_properties));
+                    auto nmsg = CreateMsgWithCmd(m_render_handler,
+                                                 RenderHandler::CMD::CMD_APPLY_USER_PROPERTIES);
+                    nmsg->setObject("value", std::make_shared<UserPropertyMap>(m_user_properties));
                     nmsg->post();
                 }
             }
@@ -873,7 +880,7 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             }
         } else if (property == PROPERTY_CAPTURE_FRAME) {
             std::string path;
-            if (msg->findString("value", &path) && !path.empty()) {
+            if (msg->findString("value", &path) && ! path.empty()) {
                 auto nmsg =
                     CreateMsgWithCmd(m_render_handler, RenderHandler::CMD::CMD_CAPTURE_FRAME);
                 nmsg->setString("value", path);
@@ -929,9 +936,7 @@ void MainHandler::loadScene() {
     if (m_source.empty() || m_assets.empty()) return;
 
     m_load_started_at = std::chrono::steady_clock::now();
-    LOG_INFO("loading scene: %s user-properties=%zu",
-             m_source.c_str(),
-             m_user_properties.size());
+    LOG_INFO("loading scene: %s user-properties=%zu", m_source.c_str(), m_user_properties.size());
 
     if (! m_sound_manager->IsInited()) {
         m_sound_manager->Init();
@@ -943,7 +948,8 @@ void MainHandler::loadScene() {
     std::shared_ptr<Scene> scene { nullptr };
 
     // mount assets dir
-    if (! m_engineServices || ! m_engineServices->createVfs || ! m_engineServices->createPhysicalFs) {
+    if (! m_engineServices || ! m_engineServices->createVfs ||
+        ! m_engineServices->createPhysicalFs) {
         LOG_ERROR("scene engine services are incomplete");
         return;
     }
@@ -952,7 +958,7 @@ void MainHandler::loadScene() {
     auto&                    vfs  = *pVfs;
     if (! vfs.IsMounted("assets")) {
         auto assetsFs = m_engineServices->createPhysicalFs(m_assets, false);
-        bool sus = vfs.Mount("/assets", std::move(assetsFs), "assets");
+        bool sus      = vfs.Mount("/assets", std::move(assetsFs), "assets");
         if (! sus) {
             LOG_ERROR("Mount assets dir failed");
             return;
@@ -964,14 +970,15 @@ void MainHandler::loadScene() {
     std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").native();
     std::string pkgDir   = pkgPath_fs.parent_path().native();
     std::string scene_id = pkgPath_fs.parent_path().filename().native();
-    LOG_DEBUG_MODULE("input-data",
-                     "input-data source='%s' assets='%s' pkg='%s' pkg_entry='%s' scene_id='%s' cache='%s'",
-                     m_source.c_str(),
-                     m_assets.c_str(),
-                     pkgPath.c_str(),
-                     pkgEntry.c_str(),
-                     scene_id.c_str(),
-                     m_cache_path.c_str());
+    LOG_DEBUG_MODULE(
+        "input-data",
+        "input-data source='%s' assets='%s' pkg='%s' pkg_entry='%s' scene_id='%s' cache='%s'",
+        m_source.c_str(),
+        m_assets.c_str(),
+        pkgPath.c_str(),
+        pkgEntry.c_str(),
+        scene_id.c_str(),
+        m_cache_path.c_str());
 
     // Wallpaper Engine keeps a default user-property snapshot from project.json and overlays the
     // current runtime/user-selected values on top of it. Do the same here so partial property
@@ -1034,12 +1041,12 @@ void MainHandler::loadScene() {
             LOG_ERROR("Not supported scene type");
             return;
         }
-        scene = m_scene_parser.Parse(scene_id,
-                                     scene_src,
-                                     vfs,
-                                     *m_sound_manager,
-                                     &m_user_properties,
-                                     m_render_handler->textRenderScale());
+        scene   = m_scene_parser.Parse(scene_id,
+                                       scene_src,
+                                       vfs,
+                                       *m_sound_manager,
+                                       &m_user_properties,
+                                       m_render_handler->textRenderScale());
         m_scene = scene;
         scene->vfs.swap(pVfs);
     }
