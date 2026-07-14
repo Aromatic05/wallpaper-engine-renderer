@@ -4,6 +4,7 @@
 #include "render/vulkan/include/vulkan/Instance.hpp"
 #include "render/vulkan/include/vulkan/VideoTextureCache.hpp"
 #include "video_fixture.hpp"
+#include <gst/gst.h>
 
 #include <array>
 #include <chrono>
@@ -29,6 +30,34 @@ void RequireImpl(bool condition, const char* expression, int line) {
 
 #define Require(condition) RequireImpl((condition), #condition, __LINE__)
 
+std::optional<guint> FactoryRank(const char* name) {
+    GstElementFactory* factory = gst_element_factory_find(name);
+    if (factory == nullptr) return std::nullopt;
+    const guint rank = gst_plugin_feature_get_rank(GST_PLUGIN_FEATURE(factory));
+    gst_object_unref(factory);
+    return rank;
+}
+
+struct DecoderRanks {
+    std::optional<guint> va;
+    std::optional<guint> nvidia;
+    std::optional<guint> nvidia_stateless;
+};
+
+DecoderRanks ReadDecoderRanks() {
+    return DecoderRanks {
+        .va               = FactoryRank("vah264dec"),
+        .nvidia           = FactoryRank("nvh264dec"),
+        .nvidia_stateless = FactoryRank("nvh264sldec"),
+    };
+}
+
+void RequireDecoderRanksUnchanged(const DecoderRanks& expected) {
+    const auto actual = ReadDecoderRanks();
+    Require(actual.va == expected.va);
+    Require(actual.nvidia == expected.nvidia);
+    Require(actual.nvidia_stateless == expected.nvidia_stateless);
+}
 
 struct VulkanFixture {
     wallpaper::vulkan::Instance instance;
@@ -136,6 +165,8 @@ std::unique_ptr<wallpaper::Image> MakeEmbeddedVideoImage() {
 } // namespace
 
 int main() {
+    if (! gst_is_initialized()) gst_init(nullptr, nullptr);
+    const auto       decoder_ranks = ReadDecoderRanks();
     wallpaper::Scene scene;
     scene.textures["movie"] = wallpaper::SceneTexture {
         .url = "movie",
@@ -157,6 +188,7 @@ int main() {
 
     Require(scene.textures.at("movie").isVideo);
     VulkanFixture fixture(true, wallpaper::vulkan::VideoTextureGpuPipeline::Va);
+    RequireDecoderRanksUnchanged(decoder_ranks);
     auto& cache = fixture.device.video_tex_cache();
     Require(cache.GetTrackedEntryCount() == 0);
 
@@ -240,6 +272,7 @@ int main() {
     Require(!cache.GetStatus("movie").has_value());
 
     VulkanFixture cpu_fixture(false, wallpaper::vulkan::VideoTextureGpuPipeline::Nvidia);
+    RequireDecoderRanksUnchanged(decoder_ranks);
     auto& cpu_cache = cpu_fixture.device.video_tex_cache();
     const auto cpu_image_ref =
         cpu_cache.Acquire("movie-cpu", scene.textures.at("movie"), *image);

@@ -30,10 +30,11 @@ Result<void> unsupportedInput() {
                                  "video backend does not support input events");
 }
 
-Result<void> unsupportedVaH264Dmabuf(std::string_view reason) {
+Result<void> unsupportedDmabuf(std::string_view reason) {
     return Result<void>::failure(ResultCode::NotSupported,
-                                 "DMA-BUF mode currently requires MP4/H.264/vah264dec: "
-                                     + std::string(reason));
+                                 "DMA-BUF video output requires GStreamer VA post-processing with "
+                                 "a compatible RGB format: " +
+                                     std::string(reason));
 }
 
 std::string EscapeGstPropertyString(std::string_view value) {
@@ -72,24 +73,22 @@ std::vector<std::string> CollectDrmFormatStrings(const GValue* drm_value) {
     return drm_formats;
 }
 
-struct DecoderDmabufCapsInfo {
+struct DmabufCapsInfo {
     std::vector<std::string> drm_formats;
-    std::string              caps_string;
 };
 
-bool IsTextureOutputCompatibleDrmFormat(std::string_view drm_format) {
-    const auto base_format = drm_format.substr(0, drm_format.find(':'));
-    return base_format == "AB24" || base_format == "XB24" || base_format == "AR24"
-        || base_format == "XR24";
+bool IsTextureOutputCompatibleDrmFourcc(guint32 drm_fourcc) {
+    return drm_fourcc == DRM_FORMAT_ABGR8888 || drm_fourcc == DRM_FORMAT_XBGR8888 ||
+           drm_fourcc == DRM_FORMAT_ARGB8888 || drm_fourcc == DRM_FORMAT_XRGB8888;
 }
 
-std::optional<DecoderDmabufCapsInfo> QueryVaDmabufDecoderCaps() {
-    GstElementFactory* factory = gst_element_factory_find("vah264dec");
+std::optional<DmabufCapsInfo> QueryVaDmabufPostprocCaps() {
+    GstElementFactory* factory = gst_element_factory_find("vapostproc");
     if (factory == nullptr) return std::nullopt;
 
     GstCaps* caps = nullptr;
     for (const GList* it = gst_element_factory_get_static_pad_templates(factory); it != nullptr;
-         it = it->next) {
+         it              = it->next) {
         auto* templ = static_cast<GstStaticPadTemplate*>(it->data);
         if (templ == nullptr || templ->direction != GST_PAD_SRC) continue;
         caps = gst_static_pad_template_get_caps(templ);
@@ -98,13 +97,7 @@ std::optional<DecoderDmabufCapsInfo> QueryVaDmabufDecoderCaps() {
     gst_object_unref(factory);
     if (caps == nullptr) return std::nullopt;
 
-    DecoderDmabufCapsInfo info;
-    gchar* caps_text = gst_caps_to_string(caps);
-    if (caps_text != nullptr) {
-        info.caps_string = caps_text;
-        g_free(caps_text);
-    }
-
+    DmabufCapsInfo info;
     for (guint i = 0; i < gst_caps_get_size(caps); ++i) {
         const GstCapsFeatures* features = gst_caps_get_features(caps, i);
         if (features == nullptr ||
@@ -114,13 +107,28 @@ std::optional<DecoderDmabufCapsInfo> QueryVaDmabufDecoderCaps() {
 
         const GstStructure* structure = gst_caps_get_structure(caps, i);
         if (structure == nullptr) continue;
-        const GValue* drm_value = gst_structure_get_value(structure, "drm-format");
-        auto drm_formats = CollectDrmFormatStrings(drm_value);
+        auto drm_formats =
+            CollectDrmFormatStrings(gst_structure_get_value(structure, "drm-format"));
         info.drm_formats.insert(info.drm_formats.end(), drm_formats.begin(), drm_formats.end());
     }
 
     gst_caps_unref(caps);
     return info;
+}
+
+std::optional<std::string>
+SelectDmabufDrmFormat(const DmabufCapsInfo& caps, bool consumer_formats_known,
+                      std::span<const DmabufFormatModifier> consumer_formats) {
+    for (const auto& drm_format : caps.drm_formats) {
+        guint64       modifier = DRM_FORMAT_MOD_INVALID;
+        const guint32 fourcc = gst_video_dma_drm_fourcc_from_string(drm_format.c_str(), &modifier);
+        if (! IsTextureOutputCompatibleDrmFourcc(fourcc)) continue;
+        if (consumer_formats_known && ! SupportsDmabufFormat(consumer_formats, fourcc, modifier)) {
+            continue;
+        }
+        return drm_format;
+    }
+    return std::nullopt;
 }
 
 std::optional<std::string> SelectedLinearDrmFormatFromCaps(GstCaps* caps, guint32 drm_fourcc) {
@@ -131,13 +139,13 @@ std::optional<std::string> SelectedLinearDrmFormatFromCaps(GstCaps* caps, guint3
 
     const std::string linear_format = linear_text;
     g_free(linear_text);
-    const std::string base_linear_format =
-        linear_format.substr(0, linear_format.find(':'));
+    const std::string base_linear_format = linear_format.substr(0, linear_format.find(':'));
 
     for (guint i = 0; i < gst_caps_get_size(caps); ++i) {
         const GstStructure* structure = gst_caps_get_structure(caps, i);
         if (structure == nullptr) continue;
-        auto drm_formats = CollectDrmFormatStrings(gst_structure_get_value(structure, "drm-format"));
+        auto drm_formats =
+            CollectDrmFormatStrings(gst_structure_get_value(structure, "drm-format"));
         for (const auto& drm_format : drm_formats) {
             if (drm_format == linear_format || drm_format == base_linear_format) {
                 return drm_format;
@@ -148,9 +156,7 @@ std::optional<std::string> SelectedLinearDrmFormatFromCaps(GstCaps* caps, guint3
     return std::nullopt;
 }
 
-bool ResolveDmabufModifier(GstCaps* caps,
-                           guint32 drm_fourcc,
-                           guint64 drm_modifier,
+bool ResolveDmabufModifier(GstCaps* caps, guint32 drm_fourcc, guint64 drm_modifier,
                            std::uint64_t& resolved_modifier) {
     if (drm_modifier != DRM_FORMAT_MOD_INVALID) {
         resolved_modifier = drm_modifier;
@@ -164,11 +170,8 @@ bool ResolveDmabufModifier(GstCaps* caps,
     return true;
 }
 
-bool GetPlaneLayout(const GstVideoInfoDmaDrm& drm_info,
-                    GstVideoMeta* meta,
-                    guint plane_index,
-                    gsize& plane_offset,
-                    gint& plane_stride) {
+bool GetPlaneLayout(const GstVideoInfoDmaDrm& drm_info, GstVideoMeta* meta, guint plane_index,
+                    gsize& plane_offset, gint& plane_stride) {
     if (meta != nullptr && plane_index < meta->n_planes) {
         plane_offset = static_cast<gsize>(meta->offset[plane_index]);
         plane_stride = meta->stride[plane_index];
@@ -180,12 +183,10 @@ bool GetPlaneLayout(const GstVideoInfoDmaDrm& drm_info,
     return plane_stride > 0;
 }
 
-std::string BuildDmabufSampleLogSignature(GstCaps* caps,
-                                          const GstVideoInfoDmaDrm& drm_info,
-                                          guint plane_count,
-                                          guint memory_count,
+std::string BuildDmabufSampleLogSignature(GstCaps* caps, const GstVideoInfoDmaDrm& drm_info,
+                                          guint plane_count, guint memory_count,
                                           const VideoDmabufFrame& frame) {
-    gchar* caps_text = caps != nullptr ? gst_caps_to_string(caps) : nullptr;
+    gchar*      caps_text = caps != nullptr ? gst_caps_to_string(caps) : nullptr;
     std::string signature = caps_text != nullptr ? caps_text : "<null>";
     if (caps_text != nullptr) g_free(caps_text);
 
@@ -201,10 +202,8 @@ std::string BuildDmabufSampleLogSignature(GstCaps* caps,
     return signature;
 }
 
-void LogDmabufSampleDiagnostics(GstCaps* caps,
-                                const GstVideoInfoDmaDrm& drm_info,
-                                guint plane_count,
-                                guint memory_count,
+void LogDmabufSampleDiagnostics(GstCaps* caps, const GstVideoInfoDmaDrm& drm_info,
+                                guint plane_count, guint memory_count,
                                 const VideoDmabufFrame* frame) {
     gchar* caps_text = caps != nullptr ? gst_caps_to_string(caps) : nullptr;
     std::fprintf(stderr,
@@ -212,7 +211,8 @@ void LogDmabufSampleDiagnostics(GstCaps* caps,
                  "modifier=0x%016" PRIx64 " n-planes=%u memory-count=%u\n",
                  caps_text != nullptr ? caps_text : "<null>",
                  drm_info.drm_fourcc,
-                 frame != nullptr ? frame->modifier : static_cast<std::uint64_t>(drm_info.drm_modifier),
+                 frame != nullptr ? frame->modifier
+                                  : static_cast<std::uint64_t>(drm_info.drm_modifier),
                  plane_count,
                  memory_count);
     if (caps_text != nullptr) g_free(caps_text);
@@ -228,12 +228,11 @@ void LogDmabufSampleDiagnostics(GstCaps* caps,
     }
 }
 
-bool ParseDmabufSample(GstSample* sample,
-                       VideoDmabufFrame& frame,
+bool ParseDmabufSample(GstSample* sample, VideoDmabufFrame& frame,
                        std::optional<std::string>& last_logged_signature) {
     if (sample == nullptr) return false;
 
-    GstCaps* caps = gst_sample_get_caps(sample);
+    GstCaps*   caps   = gst_sample_get_caps(sample);
     GstBuffer* buffer = gst_sample_get_buffer(sample);
     if (caps == nullptr || buffer == nullptr || ! gst_video_is_dma_drm_caps(caps)) {
         std::fprintf(stderr, "video-backend: sample is not DMA_DRM caps\n");
@@ -247,32 +246,34 @@ bool ParseDmabufSample(GstSample* sample,
         return false;
     }
 
-    const gint width = GST_VIDEO_INFO_WIDTH(&drm_info.vinfo);
-    const gint height = GST_VIDEO_INFO_HEIGHT(&drm_info.vinfo);
-    GstVideoMeta* meta = gst_buffer_get_video_meta(buffer);
-    const GstVideoFormat drm_format = gst_video_dma_drm_fourcc_to_format(drm_info.drm_fourcc);
+    const gint                width      = GST_VIDEO_INFO_WIDTH(&drm_info.vinfo);
+    const gint                height     = GST_VIDEO_INFO_HEIGHT(&drm_info.vinfo);
+    GstVideoMeta*             meta       = gst_buffer_get_video_meta(buffer);
+    const GstVideoFormat      drm_format = gst_video_dma_drm_fourcc_to_format(drm_info.drm_fourcc);
     const GstVideoFormatInfo* drm_format_info =
         drm_format != GST_VIDEO_FORMAT_UNKNOWN ? gst_video_format_get_info(drm_format) : nullptr;
-    const guint plane_count = meta != nullptr && meta->n_planes > 0
-        ? meta->n_planes
-        : (drm_format_info != nullptr ? GST_VIDEO_FORMAT_INFO_N_PLANES(drm_format_info)
-                                      : GST_VIDEO_INFO_N_PLANES(&drm_info.vinfo));
+    const guint plane_count =
+        meta != nullptr && meta->n_planes > 0
+            ? meta->n_planes
+            : (drm_format_info != nullptr ? GST_VIDEO_FORMAT_INFO_N_PLANES(drm_format_info)
+                                          : GST_VIDEO_INFO_N_PLANES(&drm_info.vinfo));
     const guint memory_count = gst_buffer_n_memory(buffer);
     if (width <= 0 || height <= 0 || plane_count == 0 || plane_count > 4 || memory_count == 0) {
-        std::fprintf(stderr,
-                     "video-backend: invalid dimensions/planes width=%d height=%d planes=%u memories=%u\n",
-                     width,
-                     height,
-                     plane_count,
-                     memory_count);
+        std::fprintf(
+            stderr,
+            "video-backend: invalid dimensions/planes width=%d height=%d planes=%u memories=%u\n",
+            width,
+            height,
+            plane_count,
+            memory_count);
         return false;
     }
 
-    frame = {};
-    frame.width = static_cast<std::uint32_t>(width);
-    frame.height = static_cast<std::uint32_t>(height);
+    frame             = {};
+    frame.width       = static_cast<std::uint32_t>(width);
+    frame.height      = static_cast<std::uint32_t>(height);
     frame.plane_count = plane_count;
-    frame.drm_fourcc = drm_info.drm_fourcc;
+    frame.drm_fourcc  = drm_info.drm_fourcc;
     if (! ResolveDmabufModifier(caps, drm_info.drm_fourcc, drm_info.drm_modifier, frame.modifier)) {
         std::fprintf(stderr,
                      "video-backend: DRM_FORMAT_MOD_INVALID without explicit linear caps for "
@@ -283,16 +284,17 @@ bool ParseDmabufSample(GstSample* sample,
 
     for (guint i = 0; i < plane_count; ++i) {
         gsize plane_offset = 0;
-        gint plane_stride = 0;
+        gint  plane_stride = 0;
         if (! GetPlaneLayout(drm_info, meta, i, plane_offset, plane_stride)) {
             std::fprintf(stderr, "video-backend: plane %u missing valid layout metadata\n", i);
             return false;
         }
 
         guint memory_index = 0;
-        guint memory_span = 0;
-        gsize memory_skip = 0;
-        if (! gst_buffer_find_memory(buffer, plane_offset, 1, &memory_index, &memory_span, &memory_skip) ||
+        guint memory_span  = 0;
+        gsize memory_skip  = 0;
+        if (! gst_buffer_find_memory(
+                buffer, plane_offset, 1, &memory_index, &memory_span, &memory_skip) ||
             memory_span == 0 || memory_index >= memory_count) {
             std::fprintf(stderr,
                          "video-backend: plane %u offset=%zu could not map into buffer memory\n",
@@ -313,14 +315,13 @@ bool ParseDmabufSample(GstSample* sample,
         }
 
         gsize memory_offset = 0;
-        gsize memory_size = 0;
+        gsize memory_size   = 0;
         (void)gst_memory_get_sizes(memory, &memory_offset, &memory_size);
         (void)memory_size;
 
-        frame.planes[i].fd = gst_dmabuf_memory_get_fd(memory);
+        frame.planes[i].fd     = gst_dmabuf_memory_get_fd(memory);
         frame.planes[i].stride = static_cast<std::uint32_t>(plane_stride);
-        frame.planes[i].offset =
-            static_cast<std::uint32_t>(memory_offset + memory_skip);
+        frame.planes[i].offset = static_cast<std::uint32_t>(memory_offset + memory_skip);
         if (frame.planes[i].fd < 0 || frame.planes[i].stride == 0) {
             std::fprintf(stderr,
                          "video-backend: plane %u invalid fd=%d stride=%u offset=%u\n",
@@ -344,8 +345,8 @@ bool ParseDmabufSample(GstSample* sample,
 bool PublishShmSample(VideoFrameSwapchain& swapchain, GstSample* sample) {
     if (sample == nullptr) return false;
 
-    GstCaps* caps = gst_sample_get_caps(sample);
-    GstBuffer* buffer = gst_sample_get_buffer(sample);
+    GstCaps*     caps   = gst_sample_get_caps(sample);
+    GstBuffer*   buffer = gst_sample_get_buffer(sample);
     GstVideoInfo info;
     if (caps == nullptr || buffer == nullptr || ! gst_video_info_from_caps(&info, caps)) {
         return false;
@@ -355,10 +356,11 @@ bool PublishShmSample(VideoFrameSwapchain& swapchain, GstSample* sample) {
     GstVideoFrame frame;
     if (! gst_video_frame_map(&frame, &info, buffer, GST_MAP_READ)) return false;
 
-    const bool published = swapchain.publishFrame(frame.data[0],
-                                                  static_cast<std::uint32_t>(GST_VIDEO_INFO_WIDTH(&info)),
-                                                  static_cast<std::uint32_t>(GST_VIDEO_INFO_HEIGHT(&info)),
-                                                  static_cast<std::uint32_t>(frame.info.stride[0]));
+    const bool published =
+        swapchain.publishFrame(frame.data[0],
+                               static_cast<std::uint32_t>(GST_VIDEO_INFO_WIDTH(&info)),
+                               static_cast<std::uint32_t>(GST_VIDEO_INFO_HEIGHT(&info)),
+                               static_cast<std::uint32_t>(frame.info.stride[0]));
     gst_video_frame_unmap(&frame);
     return published;
 }
@@ -369,45 +371,61 @@ gboolean OnAppSinkProposeAllocation(GstAppSink*, GstQuery* query, gpointer) {
     return TRUE;
 }
 
-gboolean OnAppSinkProposeAllocationSignal(GstElement*, GstQuery* query, gpointer user_data) {
-    return OnAppSinkProposeAllocation(nullptr, query, user_data);
-}
 } // namespace
 
 VideoBackend::VideoBackend(const BackendContext& context)
-    : m_context(context)
-    , m_sharedState(std::make_shared<SharedState>()) {
+    : m_context(context), m_sharedState(std::make_shared<SharedState>()) {
     if (! gst_is_initialized()) gst_init(nullptr, nullptr);
 
     auto weakSharedState = std::weak_ptr<SharedState>(m_sharedState);
-    auto plan = std::make_shared<VideoRenderPlan>([this, weakSharedState](const OutputTarget& target) {
-        auto shared = weakSharedState.lock();
-        if (! shared) {
-            return Result<void>::failure(ResultCode::InvalidState,
-                                         "video backend was destroyed before bind");
-        }
-        auto binding = std::dynamic_pointer_cast<VideoOutputBinding>(target.binding);
-        if (! binding) {
-            return Result<void>::failure(ResultCode::InvalidArgument,
-                                         "video render plan requires a VideoOutputBinding");
-        }
-        if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
-        m_frameSwapchain.reset();
-        m_renderBinding = std::move(binding);
-        const auto& renderInfo = m_renderBinding->renderInitInfo();
-        m_preferredPipelineMode = renderInfo.export_mode == ExternalFrameExportMode::SHM
-            ? PipelineMode::Shm
-            : PipelineMode::Dmabuf;
-        m_frameSwapchain = std::make_unique<VideoFrameSwapchain>(renderInfo.width, renderInfo.height);
-        m_renderBinding->attachSwapchain(m_frameSwapchain.get());
-        shared->outputBound.store(true);
-        shared->outputStateChanged.store(true);
-        if (shared->readyState.load() == BackendReadyState::Loaded) {
-            shared->readyState.store(BackendReadyState::OutputReady);
-            shared->contentStateChanged.store(true);
-        }
-        return Result<void>::success();
-    });
+    auto plan =
+        std::make_shared<VideoRenderPlan>([this, weakSharedState](const OutputTarget& target) {
+            auto shared = weakSharedState.lock();
+            if (! shared) {
+                return Result<void>::failure(ResultCode::InvalidState,
+                                             "video backend was destroyed before bind");
+            }
+            auto binding = std::dynamic_pointer_cast<VideoOutputBinding>(target.binding);
+            if (! binding) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "video render plan requires a VideoOutputBinding");
+            }
+            const auto&        renderInfo = binding->renderInitInfo();
+            const PipelineMode requestedMode =
+                renderInfo.export_mode == ExternalFrameExportMode::SHM ? PipelineMode::Shm
+                                                                       : PipelineMode::Dmabuf;
+            const bool pipelineConfigChanged =
+                requestedMode != m_preferredPipelineMode ||
+                renderInfo.allow_shm_fallback != m_allowShmFallback ||
+                renderInfo.consumer_dmabuf_formats_known != m_consumerDmabufFormatsKnown ||
+                renderInfo.consumer_dmabuf_formats != m_consumerDmabufFormats;
+
+            if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
+            m_frameSwapchain.reset();
+            m_renderBinding              = std::move(binding);
+            m_preferredPipelineMode      = requestedMode;
+            m_allowShmFallback           = renderInfo.allow_shm_fallback;
+            m_consumerDmabufFormatsKnown = renderInfo.consumer_dmabuf_formats_known;
+            m_consumerDmabufFormats      = renderInfo.consumer_dmabuf_formats;
+            m_frameSwapchain =
+                std::make_unique<VideoFrameSwapchain>(renderInfo.width, renderInfo.height);
+            m_renderBinding->attachSwapchain(m_frameSwapchain.get());
+
+            if (m_pipeline != nullptr && pipelineConfigChanged) destroyPipeline();
+            if (m_started && m_pipeline == nullptr) {
+                auto rebuildResult = ensurePipeline();
+                if (! rebuildResult) return rebuildResult;
+                auto stateResult = applyPlaybackState();
+                if (! stateResult) return stateResult;
+            }
+            shared->outputBound.store(true);
+            shared->outputStateChanged.store(true);
+            if (shared->readyState.load() == BackendReadyState::Loaded) {
+                shared->readyState.store(BackendReadyState::OutputReady);
+                shared->contentStateChanged.store(true);
+            }
+            return Result<void>::success();
+        });
     m_outputSource = std::make_unique<VideoOutputSource>(plan);
 }
 
@@ -434,12 +452,12 @@ Result<void> VideoBackend::load(const WallpaperSource& source) {
     m_selectedDmabufDrmFormat.reset();
     m_lastLoggedDmabufSampleSignature.reset();
     m_preferredPipelineMode = PipelineMode::Dmabuf;
-    m_paused = false;
-    m_started = false;
-    m_eos = false;
-    m_volume = 1.0f;
-    m_muted = false;
-    m_speed = 1.0f;
+    m_paused                = false;
+    m_started               = false;
+    m_eos                   = false;
+    m_volume                = 1.0f;
+    m_muted                 = false;
+    m_speed                 = 1.0f;
 
     std::error_code ec;
     if (m_sourcePath.empty() || ! std::filesystem::exists(m_sourcePath, ec) || ec) {
@@ -464,8 +482,8 @@ Result<void> VideoBackend::start() {
     auto pipelineResult = ensurePipeline();
     if (! pipelineResult) return pipelineResult;
 
-    m_paused = false;
-    m_started = true;
+    m_paused         = false;
+    m_started        = true;
     auto stateResult = applyPlaybackState();
     if (! stateResult) return stateResult;
 
@@ -487,43 +505,51 @@ Result<void> VideoBackend::resume() {
 
 Result<void> VideoBackend::stop() {
     destroyPipeline();
-    if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
-    m_frameSwapchain.reset();
-    m_sharedState->readyState.store(BackendReadyState::Idle);
-    m_sharedState->outputBound.store(false);
+    const bool outputBound = m_frameSwapchain != nullptr;
+    m_sharedState->readyState.store(outputBound ? BackendReadyState::OutputReady
+                                                : BackendReadyState::Loaded);
+    m_sharedState->outputBound.store(outputBound);
     m_sharedState->frameRequested.store(false);
-    m_paused = false;
+    m_paused  = false;
     m_started = false;
-    m_eos = false;
+    m_eos     = false;
     return Result<void>::success();
 }
 
 Result<void> VideoBackend::setProperty(std::string_view name, PropertyValue value) {
     if (name == WE_SCENE_PROPERTY_VOLUME) {
         if (const auto* volume = std::get_if<float>(&value)) {
-            m_volume = *volume;
+            m_volume = std::clamp(*volume, 0.0f, 10.0f);
+            applyPlaybackProperties();
             return Result<void>::success();
         }
         if (const auto* volume = std::get_if<double>(&value)) {
-            m_volume = static_cast<float>(*volume);
+            m_volume = std::clamp(static_cast<float>(*volume), 0.0f, 10.0f);
+            applyPlaybackProperties();
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_MUTED) {
         if (const auto* muted = std::get_if<bool>(&value)) {
             m_muted = *muted;
+            applyPlaybackProperties();
             return Result<void>::success();
         }
     } else if (name == WE_SCENE_PROPERTY_SPEED) {
         if (const auto* speed = std::get_if<float>(&value)) {
+            if (*speed <= 0.0f) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "video playback speed must be positive");
+            }
             m_speed = *speed;
             if (m_speed != 1.0f) {
-                appendDiagnostic(DiagnosticSeverity::Warning,
-                                 "video backend accepted speed property but currently plays at normal rate");
+                appendDiagnostic(
+                    DiagnosticSeverity::Warning,
+                    "video backend accepted speed property but currently plays at normal rate");
             }
             return Result<void>::success();
         }
-    } else if (name == WE_SCENE_PROPERTY_FPS || name == WE_SCENE_PROPERTY_ASSETS
-               || name == WE_SCENE_PROPERTY_SOURCE) {
+    } else if (name == WE_SCENE_PROPERTY_FPS || name == WE_SCENE_PROPERTY_ASSETS ||
+               name == WE_SCENE_PROPERTY_SOURCE) {
         return Result<void>::success();
     }
 
@@ -558,8 +584,8 @@ Result<FrameLifecycle> VideoBackend::tick() {
 
     FrameLifecycle lifecycle;
     lifecycle.contentStateChanged = m_sharedState->contentStateChanged.exchange(false);
-    lifecycle.outputStateChanged = m_sharedState->outputStateChanged.exchange(false);
-    lifecycle.frameRequested = m_sharedState->frameRequested.exchange(false);
+    lifecycle.outputStateChanged  = m_sharedState->outputStateChanged.exchange(false);
+    lifecycle.frameRequested      = m_sharedState->frameRequested.exchange(false);
     return Result<FrameLifecycle>::success(lifecycle);
 }
 
@@ -593,167 +619,222 @@ void VideoBackend::destroyPipeline() {
     if (m_appsink != nullptr) gst_object_unref(m_appsink);
     if (m_pipeline != nullptr) gst_object_unref(m_pipeline);
     m_pipeline = nullptr;
-    m_appsink = nullptr;
-    m_bus = nullptr;
+    m_appsink  = nullptr;
+    m_bus      = nullptr;
 }
 
-Result<void> VideoBackend::buildPipeline(PipelineMode mode) {
+Result<void> VideoBackend::buildPipeline(PipelineMode requestedMode) {
     destroyPipeline();
-
     m_selectedDmabufDrmFormat.reset();
     m_lastLoggedDmabufSampleSignature.reset();
     m_eos = false;
+
+    PipelineMode mode = requestedMode;
     if (mode == PipelineMode::Dmabuf) {
-        const auto decoder_caps = QueryVaDmabufDecoderCaps();
-        if (! decoder_caps.has_value()) {
+        const auto postprocCaps = QueryVaDmabufPostprocCaps();
+        if (postprocCaps.has_value()) {
+            m_selectedDmabufDrmFormat = SelectDmabufDrmFormat(
+                *postprocCaps, m_consumerDmabufFormatsKnown, m_consumerDmabufFormats);
+        }
+
+        if (! m_selectedDmabufDrmFormat.has_value()) {
+            const std::string reason =
+                postprocCaps.has_value()
+                    ? "vapostproc exposes no RGB DMA-BUF format accepted by the output"
+                    : "vapostproc is unavailable";
+            if (! m_allowShmFallback) return unsupportedDmabuf(reason);
             appendDiagnostic(DiagnosticSeverity::Warning,
-                             "video backend DMA-BUF decoder capabilities are unavailable; using SHM");
+                             "video backend DMA-BUF output is unavailable (" + reason +
+                                 "); using SHM");
             mode = PipelineMode::Shm;
-        } else {
-            const auto compatible_format = std::find_if(
-                decoder_caps->drm_formats.begin(),
-                decoder_caps->drm_formats.end(),
-                IsTextureOutputCompatibleDrmFormat);
-            if (compatible_format == decoder_caps->drm_formats.end()) {
-                appendDiagnostic(
-                    DiagnosticSeverity::Warning,
-                    "video backend found no DMA-BUF format compatible with texture output; using SHM");
-                mode = PipelineMode::Shm;
-            } else {
-                m_selectedDmabufDrmFormat = *compatible_format;
-            }
         }
     }
+
+    auto result = createPipeline(mode);
+    if (result || mode != PipelineMode::Dmabuf || ! m_allowShmFallback) return result;
+
+    appendDiagnostic(DiagnosticSeverity::Warning,
+                     "video backend DMA-BUF pipeline failed (" + result.error().message +
+                         "); using SHM");
+    destroyPipeline();
+    m_selectedDmabufDrmFormat.reset();
+    m_lastLoggedDmabufSampleSignature.reset();
+    return createPipeline(PipelineMode::Shm);
+}
+
+Result<void> VideoBackend::createPipeline(PipelineMode mode) {
+    destroyPipeline();
     m_pipelineMode = mode;
 
-    if (mode == PipelineMode::Dmabuf) {
-        GstElementFactory* factory = gst_element_factory_find("vah264dec");
-        if (factory == nullptr) return unsupportedVaH264Dmabuf("missing vah264dec decoder");
-        gst_object_unref(factory);
+    const char* playbinFactory = "playbin3";
+    m_pipeline                 = gst_element_factory_make(playbinFactory, "video-player");
+    if (m_pipeline == nullptr) {
+        playbinFactory = "playbin";
+        m_pipeline     = gst_element_factory_make(playbinFactory, "video-player");
+    }
+    if (m_pipeline == nullptr) {
+        return Result<void>::failure(ResultCode::NotSupported,
+                                     "video backend requires GStreamer playbin3 or playbin");
+    }
+    gst_object_ref_sink(m_pipeline);
+
+    GError* uriError = nullptr;
+    gchar*  uri      = gst_filename_to_uri(m_sourcePath.string().c_str(), &uriError);
+    if (uri == nullptr) {
+        const std::string message =
+            uriError != nullptr ? uriError->message : "could not convert source path to URI";
+        if (uriError != nullptr) g_error_free(uriError);
+        destroyPipeline();
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "video backend source URI creation failed: " + message);
     }
 
-    const std::string escapedPath = EscapeGstPropertyString(m_sourcePath.string());
-    std::string pipelineDescription;
+    std::string sinkDescription;
     if (mode == PipelineMode::Dmabuf) {
         if (! m_selectedDmabufDrmFormat.has_value()) {
-            return Result<void>::failure(ResultCode::InternalError,
-                                         "DMA-BUF pipeline selected without a compatible DRM format");
+            g_free(uri);
+            destroyPipeline();
+            return Result<void>::failure(
+                ResultCode::InternalError,
+                "DMA-BUF pipeline selected without a negotiated DRM format");
         }
+        sinkDescription =
+            "vapostproc "
+            "! capsfilter "
+            "caps=\"video/x-raw(memory:DMABuf),format=(string)DMA_DRM,drm-format=(string)" +
+            EscapeGstPropertyString(*m_selectedDmabufDrmFormat) +
+            "\" "
+            "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false "
+            "enable-last-sample=false";
         std::fprintf(stderr,
-                     "video-backend[debug]: pipeline-mode=dmabuf selected-drm-format=%s\n",
+                     "video-backend[debug]: source=playbin pipeline-mode=dmabuf "
+                     "selected-drm-format=%s\n",
                      m_selectedDmabufDrmFormat->c_str());
-        pipelineDescription =
-            "filesrc location=\"" + escapedPath + "\" "
-            "! qtdemux name=demux "
-            "demux.video_0 ! queue "
-            "! h264parse "
-            "! vah264dec "
-            "! capsfilter caps=\"video/x-raw(memory:DMABuf),format=(string)DMA_DRM,drm-format=(string)"
-            + EscapeGstPropertyString(*m_selectedDmabufDrmFormat)
-            + "\" "
-            "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false";
     } else {
-        std::fprintf(stderr, "video-backend[debug]: pipeline-mode=shm\n");
-        // The compositor negotiates a fixed presentation buffer size (m_renderBinding's
-        // width/height) and assumes every published SHM frame matches it exactly (see
-        // we-layerd's update_viewport_destination(), which always sets the wp_viewport
-        // source rectangle to render_width x render_height). Without an explicit
-        // videoscale here, decodebin/videoconvert emit frames at the source video's
-        // native resolution, which triggers a wp_viewport protocol error whenever the
-        // video isn't already exactly render_width x render_height (e.g. a 1080p video
-        // wallpaper on a 4K output). Force-scale to the negotiated render size so the
-        // published SHM buffer always matches what the compositor expects.
-        std::uint32_t targetWidth = 0;
+        std::uint32_t targetWidth  = 0;
         std::uint32_t targetHeight = 0;
         if (m_renderBinding) {
             const auto& renderInfo = m_renderBinding->renderInitInfo();
-            targetWidth = renderInfo.width;
-            targetHeight = renderInfo.height;
+            targetWidth            = renderInfo.width;
+            targetHeight           = renderInfo.height;
         }
-        std::string scaleCaps;
+
+        sinkDescription = "videoconvert ! videoscale ";
         if (targetWidth > 0 && targetHeight > 0) {
-            scaleCaps = "! videoscale ! video/x-raw,width=(int)" + std::to_string(targetWidth)
-                       + ",height=(int)" + std::to_string(targetHeight) + " ";
+            sinkDescription += "! video/x-raw,format=(string)BGRA,width=(int)" +
+                               std::to_string(targetWidth) + ",height=(int)" +
+                               std::to_string(targetHeight) + " ";
+        } else {
+            sinkDescription += "! video/x-raw,format=(string)BGRA ";
         }
-        pipelineDescription =
-            "filesrc location=\"" + escapedPath + "\" "
-            "! qtdemux name=demux "
-            "demux.video_0 ! queue "
-            "! decodebin "
-            + scaleCaps
-            + "! videoconvert "
-            "! video/x-raw,format=(string)BGRA "
-            "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false";
+        sinkDescription +=
+            "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false "
+            "enable-last-sample=false";
+        std::fprintf(stderr,
+                     "video-backend[debug]: source=playbin pipeline-mode=shm target=%ux%u\n",
+                     static_cast<unsigned>(targetWidth),
+                     static_cast<unsigned>(targetHeight));
     }
 
-    GError* error = nullptr;
-    m_pipeline = gst_parse_launch(pipelineDescription.c_str(), &error);
-    if (m_pipeline != nullptr) gst_object_ref_sink(m_pipeline);
-    if (m_pipeline == nullptr || error != nullptr) {
-        const std::string message = error != nullptr ? error->message : "unknown parse error";
-        if (error != nullptr) g_error_free(error);
+    GError*     sinkError = nullptr;
+    GstElement* videoSink =
+        gst_parse_bin_from_description(sinkDescription.c_str(), TRUE, &sinkError);
+    if (videoSink != nullptr) gst_object_ref_sink(videoSink);
+    if (videoSink == nullptr || sinkError != nullptr) {
+        const std::string message =
+            sinkError != nullptr ? sinkError->message : "unknown sink parse error";
+        if (sinkError != nullptr) g_error_free(sinkError);
+        if (videoSink != nullptr) gst_object_unref(videoSink);
+        g_free(uri);
         destroyPipeline();
-        if (mode == PipelineMode::Dmabuf) {
-            return unsupportedVaH264Dmabuf("could not create pipeline: " + message);
-        }
         return Result<void>::failure(ResultCode::InternalError,
-                                     "video backend could not create pipeline: " + message);
+                                     "video backend could not create video sink: " + message);
     }
 
-    m_appsink = gst_bin_get_by_name(GST_BIN(m_pipeline), "sink");
+    m_appsink = gst_bin_get_by_name(GST_BIN(videoSink), "sink");
     if (m_appsink == nullptr) {
+        gst_object_unref(videoSink);
+        g_free(uri);
         destroyPipeline();
         return Result<void>::failure(ResultCode::InternalError,
-                                     "video backend pipeline is missing appsink");
+                                     "video backend video sink is missing appsink");
     }
-    g_object_set(m_appsink, "emit-signals", TRUE, nullptr);
+
     GstAppSinkCallbacks callbacks {};
     callbacks.propose_allocation = OnAppSinkProposeAllocation;
     gst_app_sink_set_callbacks(GST_APP_SINK(m_appsink), &callbacks, nullptr, nullptr);
-    g_signal_connect(m_appsink,
-                     "propose-allocation",
-                     G_CALLBACK(OnAppSinkProposeAllocationSignal),
-                     nullptr);
+    g_object_set(m_appsink, "emit-signals", FALSE, nullptr);
+
+    g_object_set(m_pipeline,
+                 "uri",
+                 uri,
+                 "video-sink",
+                 videoSink,
+                 "volume",
+                 static_cast<gdouble>(m_volume),
+                 "mute",
+                 static_cast<gboolean>(m_muted),
+                 nullptr);
+    gst_object_unref(videoSink);
+    g_free(uri);
 
     m_bus = gst_element_get_bus(m_pipeline);
     if (m_bus == nullptr) {
-        appendDiagnostic(DiagnosticSeverity::Error,
-                         "video backend could not create GStreamer bus");
         destroyPipeline();
         return Result<void>::failure(ResultCode::InternalError,
                                      "video backend could not create GStreamer bus");
     }
 
+    const auto failureMessage = [this](std::string_view fallback) {
+        GstMessage* message = gst_bus_pop_filtered(
+            m_bus, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
+        if (message == nullptr) return std::string(fallback);
+
+        std::string result(fallback);
+        if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
+            GError* error = nullptr;
+            gchar*  debug = nullptr;
+            gst_message_parse_error(message, &error, &debug);
+            if (error != nullptr) result = error->message;
+            if (debug != nullptr && *debug != '\0') result += " [" + std::string(debug) + "]";
+            if (error != nullptr) g_error_free(error);
+            if (debug != nullptr) g_free(debug);
+        } else {
+            result = "video stream reached EOS before producing a frame";
+        }
+        gst_message_unref(message);
+        return result;
+    };
+
     if (gst_element_set_state(m_pipeline, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
+        const auto message = failureMessage("failed to enter PAUSED state");
         destroyPipeline();
-        if (mode == PipelineMode::Dmabuf) {
-            return unsupportedVaH264Dmabuf("failed to preroll MP4/H.264/vah264dec pipeline");
-        }
         return Result<void>::failure(ResultCode::InternalError,
-                                     std::string("video backend failed to preroll ")
-                                         + (mode == PipelineMode::Dmabuf ? "DMA-BUF" : "SHM")
-                                         + " pipeline");
+                                     "video backend preroll failed: " + message);
     }
 
-    GstStateChangeReturn stateResult =
-        gst_element_get_state(m_pipeline, nullptr, nullptr, GST_SECOND);
+    const GstStateChangeReturn stateResult =
+        gst_element_get_state(m_pipeline, nullptr, nullptr, 5 * GST_SECOND);
     if (stateResult == GST_STATE_CHANGE_FAILURE) {
+        const auto message = failureMessage("GStreamer state change failed during preroll");
         destroyPipeline();
-        if (mode == PipelineMode::Dmabuf) {
-            return unsupportedVaH264Dmabuf("preroll did not complete for MP4/H.264/vah264dec pipeline");
-        }
         return Result<void>::failure(ResultCode::InternalError,
-                                     "video backend preroll did not complete");
+                                     "video backend preroll failed: " + message);
     }
 
-    GstSample* preroll = gst_app_sink_try_pull_preroll(GST_APP_SINK(m_appsink), GST_SECOND);
-    if (preroll != nullptr) {
-        auto publishResult = publishSample(preroll);
-        gst_sample_unref(preroll);
-        if (! publishResult) {
-            destroyPipeline();
-            return publishResult;
-        }
+    GstSample* preroll = gst_app_sink_try_pull_preroll(GST_APP_SINK(m_appsink), 5 * GST_SECOND);
+    if (preroll == nullptr) {
+        const auto message = failureMessage("timed out waiting for the first decoded video frame");
+        destroyPipeline();
+        return Result<void>::failure(ResultCode::InternalError,
+                                     "video backend preroll failed: " + message);
+    }
+
+    auto publishResult = publishSample(preroll);
+    gst_sample_unref(preroll);
+    if (! publishResult) {
+        destroyPipeline();
+        return publishResult;
     }
 
     return Result<void>::success();
@@ -768,6 +849,16 @@ Result<void> VideoBackend::applyPlaybackState() {
                                      "video backend failed to change playback state");
     }
     return Result<void>::success();
+}
+
+void VideoBackend::applyPlaybackProperties() {
+    if (m_pipeline == nullptr) return;
+    g_object_set(m_pipeline,
+                 "volume",
+                 static_cast<gdouble>(m_volume),
+                 "mute",
+                 static_cast<gboolean>(m_muted),
+                 nullptr);
 }
 
 Result<void> VideoBackend::publishSample(GstSample* sample) {
@@ -802,10 +893,12 @@ void VideoBackend::drainBus() {
         switch (GST_MESSAGE_TYPE(message)) {
         case GST_MESSAGE_ERROR: {
             GError* error = nullptr;
-            gchar* debug = nullptr;
+            gchar*  debug = nullptr;
             gst_message_parse_error(message, &error, &debug);
-            const std::string messageText = error != nullptr ? error->message : "unknown GStreamer error";
-            appendDiagnostic(DiagnosticSeverity::Error, "video backend pipeline error: " + messageText);
+            const std::string messageText =
+                error != nullptr ? error->message : "unknown GStreamer error";
+            appendDiagnostic(DiagnosticSeverity::Error,
+                             "video backend pipeline error: " + messageText);
             if (error != nullptr) g_error_free(error);
             if (debug != nullptr) g_free(debug);
             m_sharedState->readyState.store(BackendReadyState::Error);
@@ -814,15 +907,15 @@ void VideoBackend::drainBus() {
         case GST_MESSAGE_EOS:
             m_eos = true;
             if (m_pipeline != nullptr) {
-                (void)gst_element_seek_simple(m_pipeline,
-                                              GST_FORMAT_TIME,
-                                              static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
-                                              0);
+                (void)gst_element_seek_simple(
+                    m_pipeline,
+                    GST_FORMAT_TIME,
+                    static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                    0);
                 if (! m_paused) (void)gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
             }
             break;
-        default:
-            break;
+        default: break;
         }
         gst_message_unref(message);
     }

@@ -4,12 +4,15 @@
 #include "runtime/backend/BackendContext.hpp"
 #include "runtime/backend/BackendReadyState.hpp"
 #include "runtime/backend/ContentBackend.hpp"
+#include "wallpaper/DmabufFormat.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 typedef struct _GstElement GstElement;
 typedef struct _GstBus GstBus;
@@ -63,8 +66,10 @@ private:
     void         appendDiagnostic(DiagnosticSeverity severity, std::string message);
     Result<void> ensurePipeline();
     void         destroyPipeline();
-    Result<void> buildPipeline(PipelineMode mode);
+    Result<void> buildPipeline(PipelineMode requestedMode);
+    Result<void> createPipeline(PipelineMode mode);
     Result<void> applyPlaybackState();
+    void         applyPlaybackProperties();
     Result<void> publishSample(GstSample* sample);
     void         drainBus();
 
@@ -83,6 +88,9 @@ private:
     PipelineMode                       m_pipelineMode { PipelineMode::Dmabuf };
     std::optional<std::string>         m_selectedDmabufDrmFormat;
     std::optional<std::string>         m_lastLoggedDmabufSampleSignature;
+    bool                                 m_consumerDmabufFormatsKnown { false };
+    std::vector<DmabufFormatModifier>    m_consumerDmabufFormats;
+    bool                                 m_allowShmFallback { false };
     bool                               m_paused { false };
     bool                               m_muted { false };
     bool                               m_started { false };

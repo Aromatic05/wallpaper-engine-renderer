@@ -503,7 +503,7 @@ if(BUILD_WEVIDEO)
 
     target_link_libraries(we-renderer-video-pipeline-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(we-renderer-video-pipeline-test PRIVATE ..)
-    target_compile_options(we-renderer-video-pipeline-test PRIVATE ${warn_opts})
+    target_compile_options(we-renderer-video-pipeline-test PRIVATE ${warn_opts} -UNDEBUG)
 
     add_test(NAME we-renderer-video-pipeline-test COMMAND we-renderer-video-pipeline-test)
 endif()
@@ -1074,7 +1074,8 @@ target_include_directories(
   ../backend/scene/internal/text
   ../common
   ../common/scene
-  ../render/vulkan/include)
+  ../render/vulkan/include
+  ${WEVIDEO_GSTREAMER_INCLUDE_DIRS})
 target_compile_options(video-texture-cache-test PRIVATE ${warn_opts})
 
 add_test(NAME video-texture-cache-test COMMAND video-texture-cache-test)

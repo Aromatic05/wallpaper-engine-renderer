@@ -1,4 +1,7 @@
 #include "wallpaper/abi/WeRenderer.h"
+#include "common/result/Result.hpp"
+
+#include <drm/drm_fourcc.h>
 
 #include <cassert>
 #include <chrono>
@@ -16,10 +19,46 @@
 
 namespace
 {
-constexpr const char* kProjectJson = R"({"type":"video","file":"clip.mp4","title":"Video Pipeline Test"})";
-
 constexpr std::string_view kFixtureMp4Base64 =
-    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAA6NtZGF0AAACUwYF//9P3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTEgZGVibG9jaz0wOjA6MCBhbmFseXNlPTA6MCBtZT1kaWEgc3VibWU9MCBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0wIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MCA4eDhkY3Q9MCBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0wIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0yIHNjZW5lY3V0PTAgaW50cmFfcmVmcmVzaD0wIHJjPWNyZiBtYnRyZWU9MCBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0wAIAAAAEBZYiEOgxgAdAAEGcOUC6tg8te9SsWN+AAs2arfzICYaAt+5aCoVx8XBoo0twCICCvVzlQiI236uxABAEYoiEcOXp48ylu1oBFBSnPhBrlPBwq/4sAQBGOGEUVzUGmHuF+U8QAAIC4AAgDg+4OAIAjAArHYAtVUBQ4Tv6aBGUhp4xD7BwBAEYEAEARgDsuA/EQEGiV/bc5ABvXIAQF9f8GAAIBAACWBGeAC6CFZ18w0aZDVFhCKuZUUcCVuYgPpNkLYBxNtOOAQCJZLySQLbAALB4BQLpHWTWVJc69wA4AofS09YFKMJ7c9MjAAEAxQ1/AcIyR6P/aDcAIh/M8OlrOBNoAAAA7QZohLwxwAbUeYlQEdfNie819MGuyiGigr74xMKbJ7oIoRAJRwBbLFSz5BXuhyELsAYweSJzoZDbY9OoAAAMpbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlN0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAHLbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABdm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAATZzdGJsAAAAtnN0c2QAAAAAAAAAAQAAAKZhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALGF2Y0MBQsAK/+EAFWdCwAraewEQAAADABAAAAMASPEiagEABGjOD8gAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAAc2AAAAAAAAAAYc3R0cwAAAAAAAAABAAAAAgAAIAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAgAAAAEAAAAcc3RzegAAAAAAAAAAAAAAAgAAA1wAAAA/AAAAFHN0Y28AAAAAAAAAAQAAADAAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYyLjEyLjEwMg==";
+    "AAAAFGZ0eXBxdCAgIAUDAHF0ICAAAAAIZnJlZQAAAwdtZGF0AAAAAgkQAAAAG2dCwAraEJsBagwMDUoAAAMAAgAAAwAJHi"
+    "RNQAAAAARozjyAAAACogYF//"
+    "+e3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2Rl"
+    "YyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IG"
+    "NhYmFjPTAgcmVmPTEgZGVibG9jaz0wOjA6MCBhbmFseXNlPTA6MCBtZT1kaWEgc3VibWU9MCBwc3k9MSBwc3lfcmQ9MS4w"
+    "MDowLjAwIG1peGVkX3JlZj0wIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MCA4eDhkY3Q9MCBjcW09MCBkZW"
+    "Fkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0wIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFk"
+    "cz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3"
+    "RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yIGtleWludF9taW49MSBzY2VuZWN1dD0wIGlu"
+    "dHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9MCByYz1jYnIgbWJ0cmVlPTAgYml0cmF0ZT0zMiByYXRldG9sPTEuMCBxY2"
+    "9tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgdmJ2X21heHJhdGU9MzIgdmJ2X2J1ZnNpemU9MTkgbmFsX2hy"
+    "ZD1ub25lIGZpbGxlcj0wIGlwX3JhdGlvPTEuNDAgYXE9MACAAAAAGGWIhAaokwoAA/"
+    "vyTycnXXXXXXXXXXXXgAAAAAIJMAAAAAZBmiAaoIwAAAOkbW9vdgAAAGxtdmhkAAAAAOZ7THXme0x1AAAMgAAADIAAAQAA"
+    "AQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAgAAAvN0cmFrAAAAXHRraGQAAAAH5ntMdeZ7THUAAAABAAAAAAAADIAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAA"
+    "AAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAyAAAAAAAABAA"
+    "AAAAISbWRpYQAAACBtZGhkAAAAAOZ7THXme0x1AAAAyAAAAMhVxAAAAAAALWhkbHIAAAAAbWhscnZpZGUAAAAAAAAAAAAA"
+    "AAAMVmlkZW9IYW5kbGVyAAABvW1pbmYAAAAUdm1oZAAAAAEAQIAAgACAAAAAACFoZGxyAAAAAGRobHJhbGlzAAAAAAAAAA"
+    "AAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAxhbGlzAAAAAQAAAVxzdGJsAAAA3HN0c2QAAAAAAAAAAQAAAMxh"
+    "dmMxAAAAAAAAAAEAAAAAAAAAAAAAAgAAAAIAAEAAQABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAGP//AAAAMmF2Y0MBQsAK/"
+    "+EAG2dCwAraEJsBagwMDUoAAAMAAgAAAwAJHiRNQAEABGjOPIAAAAAUYnRydAAAAAAAAIAAAAAX+"
+    "AAAABJjb2xybmNsYwAGAAYABgAAAApmaWVsAQAAAAAQcGFzcAAAAAEAAAABAAAAAAAAABhzdHRzAAAAAAAAAAEAAAACAAA"
+    "AZAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAACAAAAAQAAABxzdHN6AAAAAAAAAAAAAAACA"
+    "AAC7wAAABAAAAAUc3RjbwAAAAAAAAABAAAAJAAAAFl1ZHRhAAAAUW1ldGEAAAAAAAAAIWhkbHIAAAAAbWhscm1kaXIAAAA"
+    "AAAAAAAAAAAAAAAAAJGlsc3QAAAAcqXRvbwAAABRkYXRhAAAAAQAAAAB4MjY0AAAAPXVkdGEAAAA1bWV0YQAAAAAAAAAha"
+    "GRscgAAAABtaGxybWRpcgAAAAAAAAAAAAAAAAAAAAAIaWxzdA==";
+
+constexpr std::string_view kFixtureWebmBase64 =
+    "GkXfowEAAAAAAAAQQoKFd2VibQBCh4EEQoWBAhhTgGcBAAAAAAACIxFNm3QBAAAAAAAAjE27AQAAAAAAABJTq4QVSalmU6"
+    "yIAAAAAAAAAJhNuwEAAAAAAAASU6uEFlSua1OsiAAAAAAAAAEF7JoBAAAAAAAAElOrhBBDp3BTrIj//////////"
+    "027AQAAAAAAABJTq4QcU7trU6yIAAAAAAAAAfvsmgEAAAAAAAASU6uEElTDZ1OsiP//////////"
+    "FUmpZgEAAAAAAABhKtexgw9CQESJiECPQAAAAAAATYClR1N0cmVhbWVyIG1hdHJvc2thbXV4IHZlcnNpb24gMS4yOC41AF"
+    "dBmUdTdHJlYW1lciBNYXRyb3NrYSBtdXhlcgBEYYgLLmESh6LWmBZUrmsBAAAAAAAAZ64BAAAAAAAAXteBAYOBAXPFiC/"
+    "NXIxBm1NRI+"
+    "ODhA7msoBTboZWaWRlbwDgAQAAAAAAACuwgUC6gUCagQJVsAEAAAAAAAAYVbmBAVWxgQZVuoEGVbuBBlW3gQJVuIEChoZW"
+    "X1ZQOAAfQ7Z1AQAAAAAAAHfngQCjqoEAAIDwAgCdASpAAEAAAEcIhYWImYSIAgIABnA8QmAKsiD3MAD+/"
+    "6tQgKOWgQD6ANEBAAEQEAAYABhYL/QACI6AAKOWgQH0ANEBAAEQEAAYABhYL/QACI6AAKOWgQLuANEBAAEQEAAYABhYL/"
+    "QACI6AABxTu2sBAAAAAAAAHLsBAAAAAAAAE7OBALcBAAAAAAAAB/eBAfGCAXg=";
 
 int Base64Value(char c) {
     if (c >= 'A' && c <= 'Z') return c - 'A';
@@ -33,8 +72,8 @@ int Base64Value(char c) {
 
 std::vector<std::uint8_t> DecodeBase64(std::string_view text) {
     std::vector<std::uint8_t> bytes;
-    int quartet[4] = { 0, 0, 0, 0 };
-    int quartet_size = 0;
+    int                       quartet[4]   = { 0, 0, 0, 0 };
+    int                       quartet_size = 0;
 
     for (char c : text) {
         const int value = Base64Value(c);
@@ -49,8 +88,7 @@ std::vector<std::uint8_t> DecodeBase64(std::string_view text) {
                 static_cast<std::uint8_t>(((quartet[1] & 0x0f) << 4) | (quartet[2] >> 2)));
         }
         if (quartet[3] != -2) {
-            bytes.push_back(
-                static_cast<std::uint8_t>(((quartet[2] & 0x03) << 6) | quartet[3]));
+            bytes.push_back(static_cast<std::uint8_t>(((quartet[2] & 0x03) << 6) | quartet[3]));
         }
         quartet_size = 0;
     }
@@ -62,18 +100,21 @@ struct WorkshopFixture {
     std::filesystem::path dir;
     std::filesystem::path clip_path;
 
-    WorkshopFixture() {
-        dir = std::filesystem::temp_directory_path()
-            / ("we-renderer-video-pipeline-test-" + std::to_string(::getpid()));
-        clip_path = dir / "clip.mp4";
+    WorkshopFixture(std::string_view name, std::string_view filename,
+                    std::string_view fixture_base64) {
+        dir       = std::filesystem::temp_directory_path() /
+                    ("we-renderer-video-pipeline-test-" + std::string(name) + "-" +
+                     std::to_string(::getpid()));
+        clip_path = dir / filename;
         std::filesystem::create_directories(dir);
 
         {
             std::ofstream project(dir / "project.json");
-            project << kProjectJson;
+            project << R"({"type":"video","file":")" << filename
+                    << R"(","title":"Video Pipeline Test"})";
         }
 
-        const auto clip_bytes = DecodeBase64(kFixtureMp4Base64);
+        const auto clip_bytes = DecodeBase64(fixture_base64);
         {
             std::ofstream clip(clip_path, std::ios::binary);
             clip.write(reinterpret_cast<const char*>(clip_bytes.data()),
@@ -87,17 +128,12 @@ struct WorkshopFixture {
     }
 };
 
-void SkipTest(const char* reason) {
-    std::fprintf(stderr, "video-pipeline-test: skip: %s\n", reason);
-    std::exit(0);
-}
-
-bool DecoderAdvertisesDmabufDrmFormat() {
-    FILE* pipe = ::popen("gst-inspect-1.0 vah264dec 2>/dev/null", "r");
+bool PostprocAdvertisesCompatibleDmabufFormat() {
+    FILE* pipe = ::popen("gst-inspect-1.0 vapostproc 2>/dev/null", "r");
     if (pipe == nullptr) return false;
 
     std::ostringstream output;
-    char buffer[512];
+    char               buffer[512];
     while (std::fgets(buffer, static_cast<int>(sizeof(buffer)), pipe) != nullptr) {
         output << buffer;
     }
@@ -106,7 +142,27 @@ bool DecoderAdvertisesDmabufDrmFormat() {
 
     const std::string text = output.str();
     return text.find("memory:DMABuf") != std::string::npos &&
-           text.find("drm-format") != std::string::npos;
+           (text.find("AB24") != std::string::npos || text.find("XB24") != std::string::npos ||
+            text.find("AR24") != std::string::npos || text.find("XR24") != std::string::npos);
+}
+
+void RequireSessionSuccess(we_session_t* session, int result, const char* operation) {
+    if (result == 0) return;
+
+    std::uint32_t size = 0;
+    std::string   diagnostics;
+    if (we_session_get_diagnostics_json(session, nullptr, &size) == 0 && size > 0) {
+        diagnostics.resize(size);
+        if (we_session_get_diagnostics_json(session, diagnostics.data(), &size) != 0) {
+            diagnostics = "<failed to read diagnostics>";
+        }
+    }
+    std::fprintf(stderr,
+                 "video-pipeline-test: %s failed with %d: %s\n",
+                 operation,
+                 result,
+                 diagnostics.empty() ? "<no diagnostics>" : diagnostics.c_str());
+    assert(false);
 }
 
 we_frame_v1 WaitForFrame(we_session_t* session, we_frame_kind_v1 expected_kind) {
@@ -116,7 +172,7 @@ we_frame_v1 WaitForFrame(we_session_t* session, we_frame_kind_v1 expected_kind) 
         assert(we_session_tick(session) == 0);
 
         we_frame_v1 frame {};
-        frame.size = sizeof(frame);
+        frame.size               = sizeof(frame);
         const int acquire_result = we_session_acquire_frame(session, &frame);
         if (acquire_result == 0) {
             if (frame.kind != expected_kind) {
@@ -139,58 +195,72 @@ we_frame_v1 WaitForFrame(we_session_t* session, we_frame_kind_v1 expected_kind) 
 }
 
 void RunShmPipelineTest(const WorkshopFixture& fixture) {
-    we_session_t* session = we_session_create_with_cache_path("/tmp/we-renderer-video-shm-test-cache");
+    we_session_t* session =
+        we_session_create_with_cache_path("/tmp/we-renderer-video-shm-test-cache");
     assert(session != nullptr);
 
     we_source_v1 source {};
-    source.size = static_cast<std::uint32_t>(sizeof(source));
+    source.size    = static_cast<std::uint32_t>(sizeof(source));
     source.version = 1;
-    source.uri = fixture.dir.c_str();
-    assert(we_session_set_source(session, &source) == 0);
+    source.uri     = fixture.dir.c_str();
+    RequireSessionSuccess(session, we_session_set_source(session, &source), "set SHM source");
 
     we_render_config_v1 config {};
-    config.size = sizeof(config);
-    config.version = 1;
-    config.width = 16;
-    config.height = 16;
-    config.prefer_dmabuf = false;
+    config.size               = sizeof(config);
+    config.version            = 1;
+    config.width              = 16;
+    config.height             = 16;
+    config.prefer_dmabuf      = false;
     config.allow_shm_fallback = true;
-    assert(we_session_set_render_config(session, &config) == 0);
-    assert(we_session_play(session) == 0);
+    RequireSessionSuccess(
+        session, we_session_set_render_config(session, &config), "set SHM render config");
+    RequireSessionSuccess(session, we_session_play(session), "play SHM video");
 
     we_frame_v1 frame = WaitForFrame(session, WE_FRAME_KIND_SHM);
+    assert(frame.width == config.width);
+    assert(frame.height == config.height);
     assert(frame.shm_stride > 0);
     assert(frame.shm_size > 0);
     assert(frame.planes[0].fd >= 0);
     we_frame_release(&frame);
 
-    assert(we_session_stop(session) == 0);
+    RequireSessionSuccess(session, we_session_stop(session), "stop SHM video");
+    RequireSessionSuccess(session, we_session_play(session), "restart SHM video");
+    frame = WaitForFrame(session, WE_FRAME_KIND_SHM);
+    assert(frame.width == config.width);
+    assert(frame.height == config.height);
+    we_frame_release(&frame);
+    RequireSessionSuccess(session, we_session_stop(session), "stop restarted SHM video");
     we_session_destroy(session);
 }
 
 void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
-    if (! DecoderAdvertisesDmabufDrmFormat()) {
-        SkipTest("vah264dec with DMA-BUF drm-format caps is unavailable");
+    if (! PostprocAdvertisesCompatibleDmabufFormat()) {
+        std::fprintf(
+            stderr, "video-pipeline-test: skip DMA-BUF: vapostproc has no compatible RGB format\n");
+        return;
     }
 
-    we_session_t* session = we_session_create_with_cache_path("/tmp/we-renderer-video-dmabuf-test-cache");
+    we_session_t* session =
+        we_session_create_with_cache_path("/tmp/we-renderer-video-dmabuf-test-cache");
     assert(session != nullptr);
 
     we_source_v1 source {};
-    source.size = static_cast<std::uint32_t>(sizeof(source));
+    source.size    = static_cast<std::uint32_t>(sizeof(source));
     source.version = 1;
-    source.uri = fixture.dir.c_str();
-    assert(we_session_set_source(session, &source) == 0);
+    source.uri     = fixture.dir.c_str();
+    RequireSessionSuccess(session, we_session_set_source(session, &source), "set DMA-BUF source");
 
     we_render_config_v1 config {};
-    config.size = sizeof(config);
-    config.version = 1;
-    config.width = 16;
-    config.height = 16;
-    config.prefer_dmabuf = true;
+    config.size               = sizeof(config);
+    config.version            = 1;
+    config.width              = 16;
+    config.height             = 16;
+    config.prefer_dmabuf      = true;
     config.allow_shm_fallback = false;
-    assert(we_session_set_render_config(session, &config) == 0);
-    assert(we_session_play(session) == 0);
+    RequireSessionSuccess(
+        session, we_session_set_render_config(session, &config), "set DMA-BUF render config");
+    RequireSessionSuccess(session, we_session_play(session), "play DMA-BUF video");
 
     we_frame_v1 frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
     assert(frame.n_planes > 0);
@@ -199,6 +269,28 @@ void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
         assert(frame.planes[i].fd >= 0);
         assert(frame.planes[i].stride > 0);
     }
+    const std::uint32_t selectedFourcc   = frame.drm_fourcc;
+    const std::uint64_t selectedModifier = frame.drm_modifier;
+    we_frame_release(&frame);
+
+    RequireSessionSuccess(
+        session,
+        we_session_set_dmabuf_formats(session, &selectedFourcc, &selectedModifier, 1),
+        "apply exact DMA-BUF consumer format while playing");
+    frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.drm_fourcc == selectedFourcc);
+    assert(frame.drm_modifier == selectedModifier);
+    we_frame_release(&frame);
+
+    const std::uint32_t incompatibleFourcc = DRM_FORMAT_NV12;
+    const std::int32_t  incompatibleResult =
+        we_session_set_dmabuf_formats(session, &incompatibleFourcc, &selectedModifier, 1);
+    assert(incompatibleResult ==
+           static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
+
+    frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.drm_fourcc == selectedFourcc);
+    assert(frame.drm_modifier == selectedModifier);
     we_frame_release(&frame);
 
     assert(we_session_stop(session) == 0);
@@ -207,8 +299,10 @@ void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
 } // namespace
 
 int main() {
-    WorkshopFixture fixture;
-    RunShmPipelineTest(fixture);
-    RunDmabufPipelineTest(fixture);
+    WorkshopFixture mp4_fixture("mp4", "clip.mp4", kFixtureMp4Base64);
+    WorkshopFixture webm_fixture("webm", "clip.webm", kFixtureWebmBase64);
+    RunShmPipelineTest(mp4_fixture);
+    RunShmPipelineTest(webm_fixture);
+    RunDmabufPipelineTest(mp4_fixture);
     return 0;
 }

@@ -169,10 +169,6 @@ const char* CudaErrorName(CUresult result) {
 }
 #endif
 
-bool EndsWith(std::string_view value, std::string_view suffix) {
-    return value.size() >= suffix.size() &&
-           value.substr(value.size() - suffix.size(), suffix.size()) == suffix;
-}
 
 struct DecoderSettings {
     VideoTextureGpuPipeline gpu_pipeline { VideoTextureGpuPipeline::Nvidia };
@@ -196,49 +192,6 @@ DecoderSettings MakeDecoderSettings(VideoTexturePipelineSettings runtime_setting
     return settings;
 }
 
-void SetPluginDecoderRanks(const char* plugin_name, guint rank, bool use_stateless = false) {
-    GstRegistry* registry = gst_registry_get();
-    if (registry == nullptr) return;
-
-    GList* features = gst_registry_get_feature_list_by_plugin(registry, plugin_name);
-    for (GList* it = features; it != nullptr; it = it->next) {
-        auto* feature = GST_PLUGIN_FEATURE(it->data);
-        if (feature == nullptr) continue;
-
-        const char* name = gst_plugin_feature_get_name(feature);
-        if (name == nullptr) continue;
-
-        std::string_view feature_name(name);
-        if (!EndsWith(feature_name, "dec") && !EndsWith(feature_name, "postproc")) continue;
-
-        const bool is_stateless = feature_name.find("sl") != std::string_view::npos;
-        if (is_stateless != use_stateless) continue;
-
-        if (gst_plugin_feature_get_rank(feature) == rank) continue;
-        gst_plugin_feature_set_rank(feature, rank);
-    }
-    gst_plugin_feature_list_free(features);
-}
-
-void ConfigureDecoderRanks(const DecoderSettings& settings) {
-    // Renderer.js gives the resolved GPU pipeline a clear rank advantage so
-    // decodebin cannot make a different same-rank choice from native scene
-    // video textures.  Mirror that exact policy here before explicit pipeline
-    // selection reads factory ranks.
-    constexpr guint preferred_rank = GST_RANK_PRIMARY + 4;
-    if (settings.gpu_pipeline == VideoTextureGpuPipeline::Va) {
-        SetPluginDecoderRanks("va", preferred_rank, false);
-        SetPluginDecoderRanks("nvcodec", GST_RANK_NONE, false);
-        SetPluginDecoderRanks("nvcodec", GST_RANK_NONE, true);
-    } else {
-        SetPluginDecoderRanks("va", GST_RANK_NONE, false);
-        SetPluginDecoderRanks("nvcodec", preferred_rank, false);
-        if (settings.gpu_pipeline == VideoTextureGpuPipeline::NvidiaStateless)
-            SetPluginDecoderRanks("nvcodec", preferred_rank + 1, true);
-        else
-            SetPluginDecoderRanks("nvcodec", GST_RANK_NONE, true);
-    }
-}
 
 bool HasElementFactory(const char* name) {
     GstElementFactory* factory = gst_element_factory_find(name);
@@ -247,13 +200,6 @@ bool HasElementFactory(const char* name) {
     return true;
 }
 
-std::optional<guint> ElementFactoryRank(const char* name) {
-    GstElementFactory* factory = gst_element_factory_find(name);
-    if (factory == nullptr) return std::nullopt;
-    guint rank = gst_plugin_feature_get_rank(GST_PLUGIN_FEATURE(factory));
-    gst_object_unref(factory);
-    return rank;
-}
 
 enum class VideoPipelineMode
 {
@@ -364,9 +310,6 @@ bool SupportsVaDmabufImport(const Device& device) {
 }
 
 VideoPipelineMode SelectVideoPipelineMode(const Device& device, const DecoderSettings& settings) {
-    const bool has_va_h264_decoder = HasElementFactory("vah264dec");
-    const bool has_va_postproc = HasElementFactory("vapostproc");
-    const bool has_va_dmabuf_import = SupportsVaDmabufImport(device);
     const bool has_cuda_loader =
 #if HANABI_HAS_CUDA_INTEROP
         gst_cuda_load_library();
@@ -374,75 +317,36 @@ VideoPipelineMode SelectVideoPipelineMode(const Device& device, const DecoderSet
         false;
 #endif
 
-    struct PipelineCandidate {
-        VideoPipelineMode mode;
-        const char* name;
-        const char* decoder;
-        guint rank;
-    };
-    std::vector<PipelineCandidate> candidates;
-
-    // Scene video textures are explicit zero-copy graphs, not decodebin graphs.
-    // The resolved GPU pipeline is passed in from renderer.js through RenderInitInfo
-    // so ordinary videos, the scene Vulkan device, and embedded scene videos cannot
-    // split across different GPUs when VA and NVDEC both exist.
-    if (settings.gpu_pipeline == VideoTextureGpuPipeline::Va &&
-        has_va_h264_decoder && has_va_postproc && has_va_dmabuf_import) {
-        candidates.push_back(PipelineCandidate {
-            .mode = VideoPipelineMode::VaMemoryBgra,
-            .name = "VA VAMemory BGRA",
-            .decoder = "vah264dec",
-            .rank = ElementFactoryRank("vah264dec").value_or(GST_RANK_NONE),
-        });
+    // These GPU paths name their decoder explicitly. Selection must therefore be local to this
+    // cache instead of mutating process-global GStreamer feature ranks, which would also change
+    // decoder choice for the standalone video backend and any other GStreamer user in-process.
+    if (settings.gpu_pipeline == VideoTextureGpuPipeline::Va && HasElementFactory("vah264dec") &&
+        HasElementFactory("vapostproc") && SupportsVaDmabufImport(device)) {
+        LOG_VERBOSE("VideoTexturePipelineSelect: selected VA VAMemory BGRA path "
+                    "decoder=vah264dec resolved-pipeline=%s",
+                    PipelinePolicyName(settings.gpu_pipeline));
+        return VideoPipelineMode::VaMemoryBgra;
     }
+
+    if (settings.gpu_pipeline == VideoTextureGpuPipeline::NvidiaStateless && has_cuda_loader &&
+        HasElementFactory("nvh264sldec")) {
+        LOG_VERBOSE("VideoTexturePipelineSelect: selected NVIDIA stateless CUDA NV12 path "
+                    "decoder=nvh264sldec resolved-pipeline=%s",
+                    PipelinePolicyName(settings.gpu_pipeline));
+        return VideoPipelineMode::NvidiaStatelessCudaNv12;
+    }
+
     if ((settings.gpu_pipeline == VideoTextureGpuPipeline::Nvidia ||
          settings.gpu_pipeline == VideoTextureGpuPipeline::NvidiaStateless) &&
-        has_cuda_loader) {
-        if (auto rank = ElementFactoryRank("nvh264dec"); rank.has_value()) {
-            candidates.push_back(PipelineCandidate {
-                .mode = VideoPipelineMode::NvidiaCudaNv12,
-                .name = "NVIDIA CUDA NV12",
-                .decoder = "nvh264dec",
-                .rank = rank.value(),
-            });
-        }
-        if (settings.gpu_pipeline == VideoTextureGpuPipeline::NvidiaStateless) {
-            if (auto rank = ElementFactoryRank("nvh264sldec"); rank.has_value()) {
-                candidates.push_back(PipelineCandidate {
-                    .mode = VideoPipelineMode::NvidiaStatelessCudaNv12,
-                    .name = "NVIDIA stateless CUDA NV12",
-                    .decoder = "nvh264sldec",
-                    .rank = rank.value(),
-                });
-            }
-        }
-    }
-
-    auto best = std::max_element(candidates.begin(),
-                                 candidates.end(),
-                                 [](const PipelineCandidate& lhs, const PipelineCandidate& rhs) {
-                                     return lhs.rank < rhs.rank;
-                                 });
-    if (best != candidates.end() && best->rank > GST_RANK_NONE) {
-        LOG_VERBOSE("VideoTexturePipelineSelect: selected %s path decoder=%s rank=%u "
-                    "resolved-pipeline=%s",
-                    best->name,
-                    best->decoder,
-                    best->rank,
+        has_cuda_loader && HasElementFactory("nvh264dec")) {
+        LOG_VERBOSE("VideoTexturePipelineSelect: selected NVIDIA CUDA NV12 path "
+                    "decoder=nvh264dec resolved-pipeline=%s",
                     PipelinePolicyName(settings.gpu_pipeline));
-        return best->mode;
+        return VideoPipelineMode::NvidiaCudaNv12;
     }
 
-    LOG_VERBOSE("VideoTexturePipelineSelect: selected CPU RGBA path resolved-pipeline=%s "
-                "va-dec=%s va-postproc=%s va-dmabuf-import=%s nvh264dec-rank=%u "
-                "nvh264sldec-rank=%u cuda-loader=%s",
-                PipelinePolicyName(settings.gpu_pipeline),
-                has_va_h264_decoder ? "true" : "false",
-                has_va_postproc ? "true" : "false",
-                has_va_dmabuf_import ? "true" : "false",
-                ElementFactoryRank("nvh264dec").value_or(GST_RANK_NONE),
-                ElementFactoryRank("nvh264sldec").value_or(GST_RANK_NONE),
-                has_cuda_loader ? "true" : "false");
+    LOG_VERBOSE("VideoTexturePipelineSelect: selected CPU RGBA fallback resolved-pipeline=%s",
+                PipelinePolicyName(settings.gpu_pipeline));
     return VideoPipelineMode::CpuRgba;
 }
 
@@ -1215,7 +1119,6 @@ struct VideoTextureCache::Entry {
 VideoTextureCache::VideoTextureCache(const Device& device, VideoTexturePipelineSettings settings)
     : m_device(device), m_settings(settings) {
     if (! gst_is_initialized()) gst_init(nullptr, nullptr);
-    ConfigureDecoderRanks(MakeDecoderSettings(m_settings));
 }
 
 VideoTextureCache::~VideoTextureCache() = default;
