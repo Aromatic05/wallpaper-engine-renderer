@@ -394,8 +394,12 @@ VideoBackend::VideoBackend(const BackendContext& context)
             const PipelineMode requestedMode =
                 renderInfo.export_mode == ExternalFrameExportMode::SHM ? PipelineMode::Shm
                                                                        : PipelineMode::Dmabuf;
+            const bool outputExtentChanged =
+                ! m_renderBinding ||
+                m_renderBinding->renderInitInfo().width != renderInfo.width ||
+                m_renderBinding->renderInitInfo().height != renderInfo.height;
             const bool pipelineConfigChanged =
-                requestedMode != m_preferredPipelineMode ||
+                outputExtentChanged || requestedMode != m_preferredPipelineMode ||
                 renderInfo.allow_shm_fallback != m_allowShmFallback ||
                 renderInfo.consumer_dmabuf_formats_known != m_consumerDmabufFormatsKnown ||
                 renderInfo.consumer_dmabuf_formats != m_consumerDmabufFormats;
@@ -689,6 +693,14 @@ Result<void> VideoBackend::createPipeline(PipelineMode mode) {
                                      "video backend source URI creation failed: " + message);
     }
 
+    std::uint32_t targetWidth  = 0;
+    std::uint32_t targetHeight = 0;
+    if (m_renderBinding) {
+        const auto& renderInfo = m_renderBinding->renderInitInfo();
+        targetWidth            = renderInfo.width;
+        targetHeight           = renderInfo.height;
+    }
+
     std::string sinkDescription;
     if (mode == PipelineMode::Dmabuf) {
         if (! m_selectedDmabufDrmFormat.has_value()) {
@@ -702,23 +714,22 @@ Result<void> VideoBackend::createPipeline(PipelineMode mode) {
             "vapostproc "
             "! capsfilter "
             "caps=\"video/x-raw(memory:DMABuf),format=(string)DMA_DRM,drm-format=(string)" +
-            EscapeGstPropertyString(*m_selectedDmabufDrmFormat) +
+            EscapeGstPropertyString(*m_selectedDmabufDrmFormat);
+        if (targetWidth > 0 && targetHeight > 0) {
+            sinkDescription += ",width=(int)" + std::to_string(targetWidth) +
+                               ",height=(int)" + std::to_string(targetHeight);
+        }
+        sinkDescription +=
             "\" "
             "! appsink name=sink sync=true max-buffers=1 drop=true wait-on-eos=false "
             "enable-last-sample=false";
         std::fprintf(stderr,
                      "video-backend[debug]: source=playbin pipeline-mode=dmabuf "
-                     "selected-drm-format=%s\n",
-                     m_selectedDmabufDrmFormat->c_str());
+                     "selected-drm-format=%s target=%ux%u\n",
+                     m_selectedDmabufDrmFormat->c_str(),
+                     static_cast<unsigned>(targetWidth),
+                     static_cast<unsigned>(targetHeight));
     } else {
-        std::uint32_t targetWidth  = 0;
-        std::uint32_t targetHeight = 0;
-        if (m_renderBinding) {
-            const auto& renderInfo = m_renderBinding->renderInitInfo();
-            targetWidth            = renderInfo.width;
-            targetHeight           = renderInfo.height;
-        }
-
         sinkDescription = "videoconvert ! videoscale ";
         if (targetWidth > 0 && targetHeight > 0) {
             sinkDescription += "! video/x-raw,format=(string)BGRA,width=(int)" +

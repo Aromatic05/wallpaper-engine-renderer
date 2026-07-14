@@ -263,6 +263,8 @@ void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
     RequireSessionSuccess(session, we_session_play(session), "play DMA-BUF video");
 
     we_frame_v1 frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.width == config.width);
+    assert(frame.height == config.height);
     assert(frame.n_planes > 0);
     assert(frame.drm_fourcc != 0);
     for (std::uint32_t i = 0; i < frame.n_planes && i < 4; ++i) {
@@ -278,6 +280,20 @@ void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
         we_session_set_dmabuf_formats(session, &selectedFourcc, &selectedModifier, 1),
         "apply exact DMA-BUF consumer format while playing");
     frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.width == config.width);
+    assert(frame.height == config.height);
+    assert(frame.drm_fourcc == selectedFourcc);
+    assert(frame.drm_modifier == selectedModifier);
+    we_frame_release(&frame);
+
+    constexpr std::uint32_t resizedWidth  = 24;
+    constexpr std::uint32_t resizedHeight = 12;
+    RequireSessionSuccess(session,
+                          we_session_resize_output(session, resizedWidth, resizedHeight),
+                          "resize DMA-BUF output while playing");
+    frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.width == resizedWidth);
+    assert(frame.height == resizedHeight);
     assert(frame.drm_fourcc == selectedFourcc);
     assert(frame.drm_modifier == selectedModifier);
     we_frame_release(&frame);
@@ -289,6 +305,8 @@ void RunDmabufPipelineTest(const WorkshopFixture& fixture) {
            static_cast<std::int32_t>(wallpaper::ResultCode::NotSupported) + 1);
 
     frame = WaitForFrame(session, WE_FRAME_KIND_DMABUF);
+    assert(frame.width == resizedWidth);
+    assert(frame.height == resizedHeight);
     assert(frame.drm_fourcc == selectedFourcc);
     assert(frame.drm_modifier == selectedModifier);
     we_frame_release(&frame);
