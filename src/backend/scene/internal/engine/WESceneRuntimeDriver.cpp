@@ -615,19 +615,23 @@ private:
             return;
         }
 
-        m_render_scale          = std::max(1.0, info->render_scale);
-        const bool first_bind   = ! m_render->inited();
-        bool       output_ready = false;
-        if (first_bind) {
-            output_ready = m_render->init(*info);
-        } else {
-            output_ready = m_render->reconfigureOutput(*info);
-            if (output_ready) {
-                if (auto previous = m_output_binding.lock()) previous->attachSwapchain(nullptr);
-            }
+        m_render_scale        = std::max(1.0, info->render_scale);
+        const bool first_bind = ! m_render->inited();
+        auto       previous   = m_output_binding.lock();
+        if (! first_bind && previous) {
+            // reconfigureOutput replaces or destroys the current swapchain. Detach the previous
+            // binding first so it never retains a dangling pointer to the old swapchain.
+            previous->attachSwapchain(nullptr);
         }
 
+        const bool output_ready =
+            first_bind ? m_render->init(*info) : m_render->reconfigureOutput(*info);
         if (! output_ready || m_render->exSwapchain() == nullptr) {
+            // Failed reconfiguration is transactional and keeps the previous swapchain alive.
+            // Restore the old binding so callers can continue acquiring the prior output.
+            if (! first_bind && previous && m_render->exSwapchain() != nullptr) {
+                previous->attachSwapchain(m_render->exSwapchain());
+            }
             LOG_ERROR("failed to bind scene output extent=%ux%u",
                       static_cast<unsigned>(info->width),
                       static_cast<unsigned>(info->height));

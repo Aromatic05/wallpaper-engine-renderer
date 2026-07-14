@@ -85,9 +85,12 @@ int main() {
     renderConfig.version            = 1;
     renderConfig.width              = 64;
     renderConfig.height             = 64;
-    renderConfig.prefer_dmabuf      = false;
+    renderConfig.prefer_dmabuf      = true;
     renderConfig.allow_shm_fallback = true;
     assert(we_session_set_render_config(session, &renderConfig) == 0);
+    // A compositor can publish its exact DMA-BUF feedback after the initial output bind.
+    // Rebinding while the scene loader is active must detach the old swapchain before replacement.
+    assert(we_session_set_dmabuf_formats(session, nullptr, nullptr, 0) == 0);
 
     we_runtime_settings_v1 runtimeSettings {};
     runtimeSettings.size      = sizeof(runtimeSettings);
