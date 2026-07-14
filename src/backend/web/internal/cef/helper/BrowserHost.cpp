@@ -15,7 +15,7 @@ namespace wallpaper
 namespace
 {
 struct CefRuntimeState {
-    std::mutex mutex;
+    std::mutex  mutex;
     std::size_t ref_count { 0 };
 };
 
@@ -25,16 +25,16 @@ CefRuntimeState& runtimeState() {
 }
 
 bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOptions& opts) {
-    auto& state = runtimeState();
+    auto&                       state = runtimeState();
     std::lock_guard<std::mutex> lock(state.mutex);
     if (state.ref_count > 0) {
         ++state.ref_count;
         return true;
     }
 
-    int argc = 1;
-    char arg0[] = "we-browser-host";
-    char* argv[] = { arg0 };
+    int         argc   = 1;
+    char        arg0[] = "we-browser-host";
+    char*       argv[] = { arg0 };
     CefMainArgs main_args(argc, argv);
 
     CefSettings settings;
@@ -72,7 +72,7 @@ bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOpti
 }
 
 void releaseCefRuntime() {
-    auto& state = runtimeState();
+    auto&                       state = runtimeState();
     std::lock_guard<std::mutex> lock(state.mutex);
     if (state.ref_count == 0) return;
     --state.ref_count;
@@ -86,7 +86,7 @@ CefWebBrowserHost::~CefWebBrowserHost() { Shutdown(); }
 
 bool CefWebBrowserHost::Init(const InitOptions& opts) {
     if (! impl_) {
-        impl_ = std::make_shared<Impl>();
+        impl_      = std::make_shared<Impl>();
         impl_->app = new AppHandler();
     }
     if (impl_->initialised) {
@@ -97,24 +97,27 @@ bool CefWebBrowserHost::Init(const InitOptions& opts) {
     if (! acquireCefRuntime(impl_->app, opts)) {
         return false;
     }
-    impl_->runtime_acquired = true;
-    impl_->initialised = true;
+    impl_->runtime_acquired         = true;
+    impl_->initialised              = true;
     impl_->prefer_accelerated_paint = opts.prefer_accelerated_paint;
     impl_->should_exit.store(false);
     impl_->close_requested.store(false);
     return true;
 }
 
-bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&        manifest,
-                                      const std::filesystem::path& workshop_dir,
-                                      int                           width,
-                                      int                           height) {
+bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&       manifest,
+                                      const std::filesystem::path& workshop_dir, int width,
+                                      int height) {
     if (! impl_) return false;
     if (! impl_->initialised) {
         std::fprintf(stderr, "web: OpenWallpaper before Init\n");
         return false;
     }
 
+    impl_->client = nullptr;
+    impl_->osr    = nullptr;
+    impl_->should_exit.store(false);
+    impl_->close_requested.store(false);
     impl_->osr = new OsrRenderHandler();
     impl_->osr->SetViewSize(width, height);
     if (accelerated_paint_callback_) {
@@ -124,7 +127,8 @@ bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&        manifest,
         impl_->osr->SetSoftwarePaintCallback(software_paint_callback_);
     }
 
-    impl_->client = new ClientHandler(manifest.user_props_json, manifest.has_user_props, impl_->osr);
+    impl_->client =
+        new ClientHandler(manifest.user_props_json, manifest.has_user_props, impl_->osr);
     impl_->client->SetCloseCallback([this] {
         impl_->should_exit.store(true);
     });
@@ -134,7 +138,7 @@ bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&        manifest,
 
     CefWindowInfo info;
     info.SetAsWindowless(0); // no parent window — pure OSR
-    info.shared_texture_enabled = impl_->prefer_accelerated_paint ? 1 : 0;
+    info.shared_texture_enabled = accelerated_paint_callback_ ? 1 : 0;
 
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 60;
@@ -143,7 +147,7 @@ bool CefWebBrowserHost::OpenWallpaper(const WebManifestData&        manifest,
         info, impl_->client.get(), url, browser_settings, nullptr, nullptr);
     if (! browser) {
         impl_->client = nullptr;
-        impl_->osr = nullptr;
+        impl_->osr    = nullptr;
         return false;
     }
     return true;
@@ -154,6 +158,19 @@ void CefWebBrowserHost::Invalidate() {
     if (! impl_->client) return;
     auto b = impl_->client->GetBrowser();
     if (b && b->GetHost()) b->GetHost()->Invalidate(PET_VIEW);
+}
+
+bool CefWebBrowserHost::ReopenWallpaper(const WebManifestData&       manifest,
+                                        const std::filesystem::path& workshop_dir, int width,
+                                        int height) {
+    if (! impl_ || ! impl_->initialised) return false;
+    RequestClose();
+    for (int i = 0; i < 200 && ! impl_->should_exit.load(); ++i) {
+        CefDoMessageLoopWork();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (! impl_->should_exit.load()) return false;
+    return OpenWallpaper(manifest, workshop_dir, width, height);
 }
 
 void CefWebBrowserHost::OnResize(int width, int height) {
@@ -322,10 +339,10 @@ void CefWebBrowserHost::Shutdown() {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    impl_->client = nullptr;
-    impl_->osr = nullptr;
+    impl_->client               = nullptr;
+    impl_->osr                  = nullptr;
     accelerated_paint_callback_ = {};
-    software_paint_callback_ = {};
+    software_paint_callback_    = {};
     impl_->should_exit.store(true);
     impl_->close_requested.store(false);
     impl_->initialised = false;

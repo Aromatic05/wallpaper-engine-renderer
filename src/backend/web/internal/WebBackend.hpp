@@ -24,8 +24,7 @@ struct WebManifestData;
 
 class WebBackend final : public ContentBackend {
 public:
-    WebBackend(const BackendContext&            context,
-               std::shared_ptr<WebEngineServices> services = {});
+    WebBackend(const BackendContext& context, std::shared_ptr<WebEngineServices> services = {});
     ~WebBackend() override;
 
     BackendType         type() const override;
@@ -66,30 +65,38 @@ private:
         std::atomic<bool>              acceleratedFrameSeen { false };
     };
 
-    void appendDiagnostic(DiagnosticSeverity severity, std::string message);
-    bool ensureBrowserHostReady();
-    Result<void> validateSubprocessPath(const std::filesystem::path& path);
+    void                appendDiagnostic(DiagnosticSeverity severity, std::string message);
+    bool                ensureBrowserHostReady();
+    void                configurePaintCallbacks(bool acceleratedPaint);
+    Result<void>        reopenBrowserHost();
+    Result<void>        validateSubprocessPath(const std::filesystem::path& path);
     std::pair<int, int> resolveInputPixels(const InputEvent& event) const;
 
 private:
-    BackendContext                       m_context;
-    std::shared_ptr<WebEngineServices>   m_services;
-    std::shared_ptr<WebBrowserHost>      m_browserHost;
-    std::shared_ptr<WebManifestData>     m_manifest;
-    std::filesystem::path                m_workshopDir;
-    std::shared_ptr<SharedState>         m_sharedState;
-    std::unique_ptr<WebOutputSource>     m_outputSource;
-    std::shared_ptr<WebOutputBinding>    m_renderBinding;
-    std::unique_ptr<WebFrameSwapchain>   m_frameSwapchain;
-    DiagnosticsSnapshot                  m_diagnostics;
-    float                                m_volume { 1.0f };
-    std::int32_t                         m_fps { 30 };
-    bool                                 m_muted { false };
-    std::shared_ptr<std::vector<float>>  m_audioSamples;
-    bool                                 m_paused { false };
-    bool                                 m_softwareFallbackEnabled { false };
-    bool                                 m_reportedSoftwareFallbackUnsupported { false };
-    bool                                 m_reportedMissingAcceleratedFrames { false };
-    int                                  m_updatesWithoutAcceleratedFrame { 0 };
+    BackendContext                      m_context;
+    std::shared_ptr<WebEngineServices>  m_services;
+    std::shared_ptr<WebBrowserHost>     m_browserHost;
+    std::shared_ptr<WebManifestData>    m_manifest;
+    std::filesystem::path               m_workshopDir;
+    std::shared_ptr<SharedState>        m_sharedState;
+    std::unique_ptr<WebOutputSource>    m_outputSource;
+    std::shared_ptr<WebOutputBinding>   m_renderBinding;
+    std::unique_ptr<WebFrameSwapchain>  m_frameSwapchain;
+    DiagnosticsSnapshot                 m_diagnostics;
+    float                               m_volume { 1.0f };
+    std::int32_t                        m_fps { 30 };
+    bool                                m_muted { false };
+    std::shared_ptr<std::vector<float>> m_audioSamples;
+    bool                                m_paused { false };
+    bool                                m_started { false };
+    bool                                m_acceleratedPaintActive { false };
+    bool                                m_forceSoftwarePaint { false };
+    std::atomic<bool>                   m_browserRestartRequested { false };
+    std::atomic<bool>                   m_forceSoftwareRestartRequested { false };
+    bool                                m_softwareFallbackEnabled { false };
+    bool                                m_reportedSoftwareFallbackUnsupported { false };
+    bool                                m_reportedMissingAcceleratedFrames { false };
+    bool                                m_reportedUnsupportedAcceleratedFormat { false };
+    int                                 m_updatesWithoutAcceleratedFrame { 0 };
 };
 } // namespace wallpaper

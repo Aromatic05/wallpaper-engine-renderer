@@ -33,17 +33,17 @@ namespace wallpaper
 class WebBrowserHost {
 public:
     struct InitOptions {
-        std::filesystem::path resources_dir; // CEF Resources/
-        std::filesystem::path locales_dir;   // CEF Resources/locales/
-        std::filesystem::path cache_dir;     // optional CEF disk cache
+        std::filesystem::path resources_dir;           // CEF Resources/
+        std::filesystem::path locales_dir;             // CEF Resources/locales/
+        std::filesystem::path cache_dir;               // optional CEF disk cache
         std::filesystem::path browser_subprocess_path; // helper executable
         bool                  enable_remote_debugging { false };
         int                   remote_debugging_port { 0 };
         // false ⇒ pass --mute-audio to Chromium so no output device opens.
-        bool enable_audio { true };
-        WebCefRuntimeProfile runtime_profile { WebCefRuntimeProfile::Default };
-        WebCefWindowSystem   preferred_window_system { WebCefWindowSystem::Auto };
-        bool                 prefer_accelerated_paint { true };
+        bool                     enable_audio { true };
+        WebCefRuntimeProfile     runtime_profile { WebCefRuntimeProfile::Default };
+        WebCefWindowSystem       preferred_window_system { WebCefWindowSystem::Auto };
+        bool                     prefer_accelerated_paint { true };
         std::vector<std::string> extra_command_line_switches;
     };
 
@@ -72,10 +72,17 @@ public:
     // HTML is loaded from `workshop_dir / manifest.entry_html`; the
     // manifest's user_props_json is injected on first load. Initial
     // logical size is `width` x `height`; resize via OnResize.
-    virtual bool OpenWallpaper(const WebManifestData&        manifest,
-                               const std::filesystem::path& workshop_dir,
-                               int                           width,
-                               int                           height) = 0;
+    virtual bool OpenWallpaper(const WebManifestData&       manifest,
+                               const std::filesystem::path& workshop_dir, int width,
+                               int height) = 0;
+
+    // Close and recreate only the OSR browser while keeping the process-wide CEF runtime alive.
+    // Paint callbacks installed before this call determine whether shared-texture output is used.
+    virtual bool ReopenWallpaper(const WebManifestData&       manifest,
+                                 const std::filesystem::path& workshop_dir, int width, int height) {
+        RequestClose();
+        return OpenWallpaper(manifest, workshop_dir, width, height);
+    }
 
     // Notify CEF that the host window changed size. Updates GetViewRect
     // so the next OnPaint matches `width` x `height`.
@@ -88,12 +95,12 @@ public:
 
     // Mouse / wheel / key / focus forwarding. Coordinates are in logical
     // pixels matching the GetViewRect rect.
-    virtual void OnMouseMove(int x, int y, bool left_down) = 0;
+    virtual void OnMouseMove(int x, int y, bool left_down)                               = 0;
     virtual void OnMouseButton(int x, int y, int cef_button, bool down, int click_count) = 0;
-    virtual void OnMouseWheel(int x, int y, int delta_x, int delta_y) = 0;
+    virtual void OnMouseWheel(int x, int y, int delta_x, int delta_y)                    = 0;
     virtual void OnKey(int cef_key_event_type, int native_key_code, int windows_key_code,
-                       int modifiers, unsigned int unicode_char) = 0;
-    virtual void OnFocus(bool gained) = 0;
+                       int modifiers, unsigned int unicode_char)                         = 0;
+    virtual void OnFocus(bool gained)                                                    = 0;
 
     // Pump the CEF message loop once. Caller drives this from their main
     // event loop alongside whatever windowing-system polling they do.
@@ -101,9 +108,9 @@ public:
 
     // Hot-reload setting hooks. Safe to call from the same thread that
     // drives Pump (typically the main thread).
-    virtual void ApplyVolume(float volume) = 0;                // → {audio:{value:v}}
-    virtual void SetFrameRate(int fps) = 0;                    // CefBrowserHost::SetWindowlessFrameRate
-    virtual void SetPaused(bool paused) = 0;                   // CefBrowserHost::WasHidden
+    virtual void ApplyVolume(float volume) = 0; // → {audio:{value:v}}
+    virtual void SetFrameRate(int fps)     = 0; // CefBrowserHost::SetWindowlessFrameRate
+    virtual void SetPaused(bool paused)    = 0; // CefBrowserHost::WasHidden
     virtual void ApplyUserProperty(std::string_view key, std::string_view value_json) = 0;
 
     // Feed one audio-response frame to the page. `data` is the WE web
@@ -121,6 +128,7 @@ public:
 
     // Tear down CEF. Safe to call multiple times.
     virtual void Shutdown() = 0;
+
 protected:
     AcceleratedPaintCallback accelerated_paint_callback_;
     SoftwarePaintCallback    software_paint_callback_;

@@ -2,6 +2,7 @@
 
 #include "backend/web/internal/cef/CefHostApi.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -18,10 +20,9 @@ namespace
 {
 void dlopenSelfAnchor() {}
 
-constexpr int kDlOpenFlags =
-    RTLD_NOW | RTLD_LOCAL
+constexpr int kDlOpenFlags = RTLD_NOW | RTLD_LOCAL
 #ifdef RTLD_NODELETE
-    | RTLD_NODELETE
+                             | RTLD_NODELETE
 #endif
     ;
 
@@ -67,17 +68,17 @@ public:
         }
 
         WeCefInitOptions init_opts {};
-        init_opts.struct_size                = static_cast<uint32_t>(sizeof(init_opts));
-        init_opts.resources_dir              = resources_dir.c_str();
-        init_opts.locales_dir                = locales_dir.c_str();
-        init_opts.cache_dir                  = cache_dir.c_str();
-        init_opts.browser_subprocess_path    = browser_subprocess_dir.c_str();
-        init_opts.enable_remote_debugging    = opts.enable_remote_debugging ? 1 : 0;
-        init_opts.remote_debugging_port      = opts.remote_debugging_port;
-        init_opts.enable_audio               = opts.enable_audio ? 1 : 0;
-        init_opts.runtime_profile            = static_cast<int>(opts.runtime_profile);
-        init_opts.preferred_window_system    = static_cast<int>(opts.preferred_window_system);
-        init_opts.prefer_accelerated_paint   = opts.prefer_accelerated_paint ? 1 : 0;
+        init_opts.struct_size                 = static_cast<uint32_t>(sizeof(init_opts));
+        init_opts.resources_dir               = resources_dir.c_str();
+        init_opts.locales_dir                 = locales_dir.c_str();
+        init_opts.cache_dir                   = cache_dir.c_str();
+        init_opts.browser_subprocess_path     = browser_subprocess_dir.c_str();
+        init_opts.enable_remote_debugging     = opts.enable_remote_debugging ? 1 : 0;
+        init_opts.remote_debugging_port       = opts.remote_debugging_port;
+        init_opts.enable_audio                = opts.enable_audio ? 1 : 0;
+        init_opts.runtime_profile             = static_cast<int>(opts.runtime_profile);
+        init_opts.preferred_window_system     = static_cast<int>(opts.preferred_window_system);
+        init_opts.prefer_accelerated_paint    = opts.prefer_accelerated_paint ? 1 : 0;
         init_opts.extra_command_line_switches = {
             extra_switches.data(),
             extra_switches.size(),
@@ -102,10 +103,8 @@ public:
         syncCallbacks();
     }
 
-    bool OpenWallpaper(const WebManifestData&        manifest,
-                       const std::filesystem::path& workshop_dir,
-                       int                           width,
-                       int                           height) override {
+    bool OpenWallpaper(const WebManifestData& manifest, const std::filesystem::path& workshop_dir,
+                       int width, int height) override {
         if (! host_ || ! api_) {
             std::fprintf(stderr, "web: OpenWallpaper before Init\n");
             return false;
@@ -117,17 +116,30 @@ public:
         const std::string workshop_path   = workshop_dir.string();
 
         WeCefManifestData manifest_data {};
-        manifest_data.struct_size    = static_cast<uint32_t>(sizeof(manifest_data));
-        manifest_data.title          = title.c_str();
-        manifest_data.entry_html     = entry_html.c_str();
+        manifest_data.struct_size     = static_cast<uint32_t>(sizeof(manifest_data));
+        manifest_data.title           = title.c_str();
+        manifest_data.entry_html      = entry_html.c_str();
         manifest_data.user_props_json = user_props_json.c_str();
-        manifest_data.has_user_props = manifest.has_user_props ? 1 : 0;
+        manifest_data.has_user_props  = manifest.has_user_props ? 1 : 0;
 
-        if (api_->open_wallpaper(host_, &manifest_data, workshop_path.c_str(), width, height) == 0) {
+        if (api_->open_wallpaper(host_, &manifest_data, workshop_path.c_str(), width, height) ==
+            0) {
             reportApiError("CEF open wallpaper failed");
             return false;
         }
         return true;
+    }
+
+    bool ReopenWallpaper(const WebManifestData& manifest, const std::filesystem::path& workshop_dir,
+                         int width, int height) override {
+        if (! host_ || ! api_) return false;
+        RequestClose();
+        for (int i = 0; i < 200 && ! ShouldExit(); ++i) {
+            Pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        if (! ShouldExit()) return false;
+        return OpenWallpaper(manifest, workshop_dir, width, height);
     }
 
     void OnResize(int width, int height) override {
@@ -152,11 +164,15 @@ public:
         if (host_ && api_) api_->on_mouse_wheel(host_, x, y, delta_x, delta_y);
     }
 
-    void OnKey(int cef_key_event_type, int native_key_code, int windows_key_code,
-               int modifiers, unsigned int unicode_char) override {
+    void OnKey(int cef_key_event_type, int native_key_code, int windows_key_code, int modifiers,
+               unsigned int unicode_char) override {
         if (host_ && api_) {
-            api_->on_key(
-                host_, cef_key_event_type, native_key_code, windows_key_code, modifiers, unicode_char);
+            api_->on_key(host_,
+                         cef_key_event_type,
+                         native_key_code,
+                         windows_key_code,
+                         modifiers,
+                         unicode_char);
         }
     }
 
@@ -200,7 +216,10 @@ public:
     }
 
     void Shutdown() override {
-        if (host_ && api_) api_->shutdown(host_);
+        if (! host_ || ! api_) return;
+        api_->shutdown(host_);
+        api_->destroy_host(host_);
+        host_ = nullptr;
     }
 
 private:
@@ -245,7 +264,7 @@ private:
         if (! info.dli_fname) return {};
 
         std::error_code ec;
-        const auto full_path = std::filesystem::weakly_canonical(info.dli_fname, ec);
+        const auto      full_path = std::filesystem::weakly_canonical(info.dli_fname, ec);
         if (ec) {
             return std::filesystem::path(info.dli_fname).parent_path();
         }
@@ -277,7 +296,8 @@ private:
                 continue;
             }
 
-            auto* get_api = reinterpret_cast<WeCefGetHostApiFn>(dlsym(handle, "we_cef_get_host_api"));
+            auto* get_api =
+                reinterpret_cast<WeCefGetHostApiFn>(dlsym(handle, "we_cef_get_host_api"));
             if (! get_api) {
                 last_load_error_ = dlerrorString();
                 dlclose(handle);
@@ -314,11 +334,12 @@ private:
             return false;
         }
         if (! api->create_host || ! api->destroy_host || ! api->set_callbacks || ! api->init ||
-            ! api->open_wallpaper || ! api->on_resize || ! api->invalidate || ! api->on_mouse_move ||
-            ! api->on_mouse_button || ! api->on_mouse_wheel || ! api->on_key || ! api->on_focus ||
-            ! api->pump || ! api->apply_volume || ! api->set_frame_rate || ! api->set_paused ||
-            ! api->apply_user_property || ! api->push_audio_data || ! api->should_exit ||
-            ! api->request_close || ! api->shutdown || ! api->helper_main || ! api->last_error) {
+            ! api->open_wallpaper || ! api->on_resize || ! api->invalidate ||
+            ! api->on_mouse_move || ! api->on_mouse_button || ! api->on_mouse_wheel ||
+            ! api->on_key || ! api->on_focus || ! api->pump || ! api->apply_volume ||
+            ! api->set_frame_rate || ! api->set_paused || ! api->apply_user_property ||
+            ! api->push_audio_data || ! api->should_exit || ! api->request_close ||
+            ! api->shutdown || ! api->helper_main || ! api->last_error) {
             std::fprintf(stderr, "web: CEF host api is missing required functions\n");
             return false;
         }

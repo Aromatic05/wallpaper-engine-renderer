@@ -19,17 +19,17 @@ public:
     ~CefWebBrowserHost() override;
 
     bool Init(const InitOptions& opts) override;
-    bool OpenWallpaper(const WebManifestData&        manifest,
-                       const std::filesystem::path& workshop_dir,
-                       int                           width,
-                       int                           height) override;
+    bool OpenWallpaper(const WebManifestData& manifest, const std::filesystem::path& workshop_dir,
+                       int width, int height) override;
+    bool ReopenWallpaper(const WebManifestData& manifest, const std::filesystem::path& workshop_dir,
+                         int width, int height) override;
     void OnResize(int width, int height) override;
     void Invalidate() override;
     void OnMouseMove(int x, int y, bool left_down) override;
     void OnMouseButton(int x, int y, int cef_button, bool down, int click_count) override;
     void OnMouseWheel(int x, int y, int delta_x, int delta_y) override;
-    void OnKey(int cef_key_event_type, int native_key_code, int windows_key_code,
-               int modifiers, unsigned int unicode_char) override;
+    void OnKey(int cef_key_event_type, int native_key_code, int windows_key_code, int modifiers,
+               unsigned int unicode_char) override;
     void OnFocus(bool gained) override;
     void Pump() override;
     void ApplyVolume(float volume) override;

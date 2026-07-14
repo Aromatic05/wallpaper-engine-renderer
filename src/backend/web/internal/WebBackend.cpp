@@ -10,6 +10,8 @@
 #include "wallpaper/web/WebOutputBinding.hpp"
 #include "wallpaper/web/WebTypes.hpp"
 
+#include <drm/drm_fourcc.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <cmath>
@@ -25,48 +27,101 @@ std::filesystem::path WorkshopDirFromSourceUri(const std::string& uri) {
     // <workshop>/project.json:file. We do not strip a trailing slash.
     return std::filesystem::path(uri);
 }
+
+std::uint32_t WebDrmFourcc(DmaBufFormat format) {
+    switch (format) {
+    case DmaBufFormat::BGRA8_UNORM: return DRM_FORMAT_ARGB8888;
+    case DmaBufFormat::RGBA8_UNORM: return DRM_FORMAT_ABGR8888;
+    }
+    return 0;
+}
+
+std::uint64_t WebDrmModifier(std::uint64_t modifier) {
+    return modifier == DRM_FORMAT_MOD_INVALID ? static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR)
+                                              : modifier;
+}
+
+bool ConsumerMayAcceptWebDmabuf(const RenderInitInfo& info) {
+    if (! info.consumer_dmabuf_formats_known) return true;
+    return std::any_of(info.consumer_dmabuf_formats.begin(),
+                       info.consumer_dmabuf_formats.end(),
+                       [](const DmabufFormatModifier& format) {
+                           return format.fourcc == DRM_FORMAT_ARGB8888 ||
+                                  format.fourcc == DRM_FORMAT_ABGR8888;
+                       });
+}
+
+bool ConsumerAcceptsWebDmabuf(const RenderInitInfo& info, const DmaBufFrame& frame) {
+    if (! info.consumer_dmabuf_formats_known) return true;
+    return SupportsDmabufFormat(
+        info.consumer_dmabuf_formats, WebDrmFourcc(frame.format), WebDrmModifier(frame.modifier));
+}
 } // namespace
 
-WebBackend::WebBackend(const BackendContext&              context,
-                       std::shared_ptr<WebEngineServices> services)
-    : m_context(context)
-    , m_services(services ? std::move(services) : CreateDefaultWebEngineServices())
-    , m_sharedState(std::make_shared<SharedState>())
-{
+WebBackend::WebBackend(const BackendContext& context, std::shared_ptr<WebEngineServices> services)
+    : m_context(context),
+      m_services(services ? std::move(services) : CreateDefaultWebEngineServices()),
+      m_sharedState(std::make_shared<SharedState>()) {
     // The RenderPlan's bind lambda captures a weak ref to the shared
     // state and a raw ref to the backend. When the OutputController
     // calls bindOutput(target), we stash the WebOutputBinding and
     // advance readiness. The actual CEF init lives in start() so the
     // C ABI can pre-bind before any browser is up.
     auto weakSharedState = std::weak_ptr<SharedState>(m_sharedState);
-    auto plan = std::make_shared<WebRenderPlan>([this, weakSharedState](const OutputTarget& target) {
-        auto shared = weakSharedState.lock();
-        if (! shared) {
-            return Result<void>::failure(ResultCode::InvalidState,
-                                         "web backend was destroyed before bind");
-        }
-        auto binding = std::dynamic_pointer_cast<WebOutputBinding>(target.binding);
-        if (! binding) {
-            return Result<void>::failure(ResultCode::InvalidArgument,
-                                         "web render plan requires a WebOutputBinding");
-        }
-        if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
-        m_frameSwapchain.reset();
-        m_renderBinding = std::move(binding);
-        const auto& renderInfo = m_renderBinding->renderInitInfo();
-        m_frameSwapchain = std::make_unique<WebFrameSwapchain>(renderInfo.width, renderInfo.height);
-        m_renderBinding->attachSwapchain(m_frameSwapchain.get());
-        if (m_browserHost) {
-            m_browserHost->OnResize(renderInfo.width, renderInfo.height);
-        }
-        shared->outputBound.store(true);
-        shared->outputStateChanged.store(true);
-        if (shared->readyState.load() == BackendReadyState::Loaded) {
-            shared->readyState.store(BackendReadyState::OutputReady);
-            shared->contentStateChanged.store(true);
-        }
-        return Result<void>::success();
-    });
+    auto plan =
+        std::make_shared<WebRenderPlan>([this, weakSharedState](const OutputTarget& target) {
+            auto shared = weakSharedState.lock();
+            if (! shared) {
+                return Result<void>::failure(ResultCode::InvalidState,
+                                             "web backend was destroyed before bind");
+            }
+            auto binding = std::dynamic_pointer_cast<WebOutputBinding>(target.binding);
+            if (! binding) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "web render plan requires a WebOutputBinding");
+            }
+            const auto& nextRenderInfo          = binding->renderInitInfo();
+            const bool  consumerMayAcceptDmabuf = ConsumerMayAcceptWebDmabuf(nextRenderInfo);
+            if (nextRenderInfo.export_mode == ExternalFrameExportMode::DMA_BUF &&
+                ! consumerMayAcceptDmabuf && ! nextRenderInfo.allow_shm_fallback) {
+                return Result<void>::failure(
+                    ResultCode::NotSupported,
+                    "web backend has no CEF DMA-BUF format accepted by the consumer");
+            }
+            if (m_started) {
+                if (nextRenderInfo.export_mode == ExternalFrameExportMode::DMA_BUF &&
+                    ! nextRenderInfo.allow_shm_fallback) {
+                    m_forceSoftwarePaint = false;
+                }
+                const bool nextAcceleratedPaint =
+                    nextRenderInfo.export_mode == ExternalFrameExportMode::DMA_BUF &&
+                    consumerMayAcceptDmabuf && ! m_forceSoftwarePaint;
+                if (nextAcceleratedPaint != m_acceleratedPaintActive) {
+                    if (! nextAcceleratedPaint) m_forceSoftwarePaint = true;
+                    m_browserRestartRequested.store(true);
+                }
+            }
+            if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
+            m_frameSwapchain.reset();
+            m_renderBinding           = std::move(binding);
+            const auto& renderInfo    = m_renderBinding->renderInitInfo();
+            m_softwareFallbackEnabled = renderInfo.export_mode == ExternalFrameExportMode::SHM ||
+                                        renderInfo.allow_shm_fallback;
+            m_reportedUnsupportedAcceleratedFormat = false;
+            m_frameSwapchain =
+                std::make_unique<WebFrameSwapchain>(renderInfo.width, renderInfo.height);
+            m_renderBinding->attachSwapchain(m_frameSwapchain.get());
+            if (m_browserHost) {
+                m_browserHost->OnResize(renderInfo.width, renderInfo.height);
+            }
+            shared->outputBound.store(true);
+            shared->outputStateChanged.store(true);
+            if (shared->readyState.load() == BackendReadyState::Loaded) {
+                shared->readyState.store(BackendReadyState::OutputReady);
+                shared->contentStateChanged.store(true);
+            }
+            return Result<void>::success();
+        });
     m_outputSource = std::make_unique<WebOutputSource>(plan);
 }
 
@@ -78,8 +133,8 @@ BackendType WebBackend::type() const { return BackendType::Web; }
 
 BackendCapabilities WebBackend::capabilities() const {
     BackendCapabilities capabilities;
-    capabilities.supportsProperties    = true;
-    capabilities.supportsInput         = true;
+    capabilities.supportsProperties = true;
+    capabilities.supportsInput      = true;
     return capabilities;
 }
 
@@ -90,9 +145,15 @@ Result<void> WebBackend::load(const WallpaperSource& source) {
     m_sharedState->outputStateChanged.store(false);
     m_sharedState->frameRequested.store(false);
     m_sharedState->acceleratedFrameSeen.store(false);
-    m_reportedSoftwareFallbackUnsupported = false;
-    m_reportedMissingAcceleratedFrames = false;
-    m_softwareFallbackEnabled = false;
+    m_reportedSoftwareFallbackUnsupported  = false;
+    m_reportedMissingAcceleratedFrames     = false;
+    m_reportedUnsupportedAcceleratedFormat = false;
+    m_started                              = false;
+    m_acceleratedPaintActive               = false;
+    m_forceSoftwarePaint                   = false;
+    m_browserRestartRequested.store(false);
+    m_forceSoftwareRestartRequested.store(false);
+    m_softwareFallbackEnabled        = false;
     m_updatesWithoutAcceleratedFrame = 0;
 
     m_workshopDir = WorkshopDirFromSourceUri(source.uri);
@@ -131,10 +192,8 @@ bool WebBackend::ensureBrowserHostReady() {
 
 Result<void> WebBackend::validateSubprocessPath(const std::filesystem::path& path) {
     if (path.empty()) {
-        appendDiagnostic(DiagnosticSeverity::Error,
-                         "CEF subprocess helper not found: empty path");
-        return Result<void>::failure(ResultCode::NotFound,
-                                     "CEF subprocess helper not found");
+        appendDiagnostic(DiagnosticSeverity::Error, "CEF subprocess helper not found: empty path");
+        return Result<void>::failure(ResultCode::NotFound, "CEF subprocess helper not found");
     }
 
     std::error_code ec;
@@ -149,17 +208,18 @@ Result<void> WebBackend::validateSubprocessPath(const std::filesystem::path& pat
         appendDiagnostic(DiagnosticSeverity::Error,
                          "CEF subprocess helper is not a regular file: " + path.string());
         return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "CEF subprocess helper is not a regular file: " + path.string());
+                                     "CEF subprocess helper is not a regular file: " +
+                                         path.string());
     }
 
     return Result<void>::success();
 }
 
 std::pair<int, int> WebBackend::resolveInputPixels(const InputEvent& event) const {
-    int width = 1;
+    int width  = 1;
     int height = 1;
     if (m_renderBinding) {
-        width = std::max(1, static_cast<int>(m_renderBinding->renderInitInfo().width));
+        width  = std::max(1, static_cast<int>(m_renderBinding->renderInitInfo().width));
         height = std::max(1, static_cast<int>(m_renderBinding->renderInitInfo().height));
     }
 
@@ -172,12 +232,82 @@ std::pair<int, int> WebBackend::resolveInputPixels(const InputEvent& event) cons
 
     int x = scale_axis(event.pointerX, width);
     int y = scale_axis(event.pointerY, height);
-    x = std::clamp(x, 0, width > 0 ? width - 1 : 0);
-    y = std::clamp(y, 0, height > 0 ? height - 1 : 0);
+    x     = std::clamp(x, 0, width > 0 ? width - 1 : 0);
+    y     = std::clamp(y, 0, height > 0 ? height - 1 : 0);
     return { x, y };
 }
 
+void WebBackend::configurePaintCallbacks(bool acceleratedPaint) {
+    if (acceleratedPaint) {
+        m_browserHost->SetAcceleratedPaintCallback([this](const DmaBufFrame& frame) {
+            if (! m_frameSwapchain || ! m_renderBinding) return;
+            if (! ConsumerAcceptsWebDmabuf(m_renderBinding->renderInitInfo(), frame)) {
+                const bool fallbackAllowed = m_renderBinding->renderInitInfo().allow_shm_fallback;
+                if (! m_reportedUnsupportedAcceleratedFormat) {
+                    m_reportedUnsupportedAcceleratedFormat = true;
+                    appendDiagnostic(fallbackAllowed ? DiagnosticSeverity::Warning
+                                                     : DiagnosticSeverity::Error,
+                                     fallbackAllowed ? "web backend rejected a CEF DMA-BUF "
+                                                       "format/modifier not advertised by "
+                                                       "the consumer; restarting with SHM output"
+                                                     : "web backend rejected a CEF DMA-BUF "
+                                                       "format/modifier not advertised by "
+                                                       "the consumer and SHM fallback is disabled");
+                }
+                if (fallbackAllowed) {
+                    m_forceSoftwareRestartRequested.store(true);
+                } else {
+                    m_sharedState->readyState.store(BackendReadyState::Error);
+                    m_sharedState->contentStateChanged.store(true);
+                }
+                return;
+            }
+            if (! m_frameSwapchain->publishFrame(frame)) {
+                appendDiagnostic(DiagnosticSeverity::Warning,
+                                 "web backend failed to publish accelerated paint frame");
+                return;
+            }
+            m_sharedState->acceleratedFrameSeen.store(true);
+            m_updatesWithoutAcceleratedFrame = 0;
+            m_sharedState->frameRequested.store(true);
+        });
+    } else {
+        m_browserHost->SetAcceleratedPaintCallback({});
+    }
+    m_browserHost->SetSoftwarePaintCallback(
+        [this](const void* buffer, int width, int height, int stride_bytes) {
+            if (! m_softwareFallbackEnabled) {
+                if (m_reportedSoftwareFallbackUnsupported) return;
+                m_reportedSoftwareFallbackUnsupported = true;
+                appendDiagnostic(DiagnosticSeverity::Warning,
+                                 "web backend received CPU paint frame (" + std::to_string(width) +
+                                     "x" + std::to_string(height) +
+                                     ") but SHM/software fallback is disabled");
+                return;
+            }
+            if (! m_frameSwapchain) return;
+            if (! m_frameSwapchain->publishFrame(
+                    buffer,
+                    static_cast<std::uint32_t>(std::max(width, 0)),
+                    static_cast<std::uint32_t>(std::max(height, 0)),
+                    static_cast<std::uint32_t>(std::max(stride_bytes, 0)))) {
+                appendDiagnostic(DiagnosticSeverity::Warning,
+                                 "web backend failed to publish software paint frame");
+                return;
+            }
+            if (! m_reportedSoftwareFallbackUnsupported) {
+                m_reportedSoftwareFallbackUnsupported = true;
+                appendDiagnostic(DiagnosticSeverity::Warning,
+                                 "web backend received CPU paint frame (" + std::to_string(width) +
+                                     "x" + std::to_string(height) +
+                                     ") and exported it through SHM fallback");
+            }
+            m_sharedState->frameRequested.store(true);
+        });
+}
+
 Result<void> WebBackend::start() {
+    if (m_started) return Result<void>::success();
     if (! m_manifest) {
         return Result<void>::failure(ResultCode::InvalidState,
                                      "web backend has no loaded manifest");
@@ -188,79 +318,45 @@ Result<void> WebBackend::start() {
     }
 
     WebBrowserHost::InitOptions opts {};
-    opts.resources_dir         = m_services->provideCefResourcesDir();
-    opts.locales_dir           = m_services->provideCefLocalesDir();
-    opts.cache_dir             = m_services->provideCefCacheDir();
-    opts.browser_subprocess_path = m_services->provideCefSubprocessPath();
-    opts.enable_audio          = ! m_services->audioMuted();
-    opts.runtime_profile       = m_services->runtimeProfile();
-    opts.preferred_window_system = m_services->preferredWindowSystem();
+    opts.resources_dir               = m_services->provideCefResourcesDir();
+    opts.locales_dir                 = m_services->provideCefLocalesDir();
+    opts.cache_dir                   = m_services->provideCefCacheDir();
+    opts.browser_subprocess_path     = m_services->provideCefSubprocessPath();
+    opts.enable_audio                = ! m_services->audioMuted();
+    opts.runtime_profile             = m_services->runtimeProfile();
+    opts.preferred_window_system     = m_services->preferredWindowSystem();
     opts.extra_command_line_switches = m_services->extraCommandLineSwitches();
-    auto helperPathResult = validateSubprocessPath(opts.browser_subprocess_path);
+    auto helperPathResult            = validateSubprocessPath(opts.browser_subprocess_path);
     if (! helperPathResult) {
         return helperPathResult;
     }
+
+    int                     width              = 1280;
+    int                     height             = 720;
+    ExternalFrameExportMode export_mode        = ExternalFrameExportMode::DMA_BUF;
+    bool                    allow_shm_fallback = false;
+    if (m_renderBinding) {
+        width              = m_renderBinding->renderInitInfo().width;
+        height             = m_renderBinding->renderInitInfo().height;
+        export_mode        = m_renderBinding->renderInitInfo().export_mode;
+        allow_shm_fallback = m_renderBinding->renderInitInfo().allow_shm_fallback;
+    }
+    const bool consumerMayAcceptDmabuf =
+        ! m_renderBinding || ConsumerMayAcceptWebDmabuf(m_renderBinding->renderInitInfo());
+    if (export_mode == ExternalFrameExportMode::DMA_BUF && ! consumerMayAcceptDmabuf &&
+        ! allow_shm_fallback) {
+        return Result<void>::failure(
+            ResultCode::NotSupported,
+            "web backend has no CEF DMA-BUF format accepted by the consumer");
+    }
+    m_softwareFallbackEnabled = export_mode == ExternalFrameExportMode::SHM || allow_shm_fallback;
+    opts.prefer_accelerated_paint = export_mode == ExternalFrameExportMode::DMA_BUF &&
+                                    consumerMayAcceptDmabuf && ! m_forceSoftwarePaint;
+    configurePaintCallbacks(opts.prefer_accelerated_paint);
     if (! m_browserHost->Init(opts)) {
         return Result<void>::failure(ResultCode::InternalError, "CefInitialize failed");
     }
 
-    int width  = 1280;
-    int height = 720;
-    ExternalFrameExportMode export_mode = ExternalFrameExportMode::DMA_BUF;
-    bool allow_shm_fallback = false;
-    if (m_renderBinding) {
-        width  = m_renderBinding->renderInitInfo().width;
-        height = m_renderBinding->renderInitInfo().height;
-        export_mode = m_renderBinding->renderInitInfo().export_mode;
-        allow_shm_fallback = m_renderBinding->renderInitInfo().allow_shm_fallback;
-    }
-    m_softwareFallbackEnabled =
-        export_mode == ExternalFrameExportMode::SHM || allow_shm_fallback;
-    opts.prefer_accelerated_paint = export_mode == ExternalFrameExportMode::DMA_BUF;
-    m_browserHost->SetAcceleratedPaintCallback([this](const DmaBufFrame& frame) {
-        if (! m_frameSwapchain) return;
-        if (! m_frameSwapchain->publishFrame(frame)) {
-            appendDiagnostic(DiagnosticSeverity::Warning,
-                             "web backend failed to publish accelerated paint frame");
-            return;
-        }
-        m_sharedState->acceleratedFrameSeen.store(true);
-        m_updatesWithoutAcceleratedFrame = 0;
-        m_sharedState->frameRequested.store(true);
-    });
-    m_browserHost->SetSoftwarePaintCallback([this, export_mode, allow_shm_fallback](
-                                                const void* buffer,
-                                                int         width,
-                                                int         height,
-                                                int         stride_bytes) {
-        if (! m_softwareFallbackEnabled) {
-            if (m_reportedSoftwareFallbackUnsupported) return;
-            m_reportedSoftwareFallbackUnsupported = true;
-            appendDiagnostic(DiagnosticSeverity::Warning,
-                             "web backend received CPU paint frame ("
-                                 + std::to_string(width) + "x" + std::to_string(height)
-                                 + ") but SHM/software fallback is disabled");
-            return;
-        }
-        if (! m_frameSwapchain) return;
-        if (! m_frameSwapchain->publishFrame(
-                buffer,
-                static_cast<std::uint32_t>(std::max(width, 0)),
-                static_cast<std::uint32_t>(std::max(height, 0)),
-                static_cast<std::uint32_t>(std::max(stride_bytes, 0)))) {
-            appendDiagnostic(DiagnosticSeverity::Warning,
-                             "web backend failed to publish software paint frame");
-            return;
-        }
-        if (! m_reportedSoftwareFallbackUnsupported) {
-            m_reportedSoftwareFallbackUnsupported = true;
-            appendDiagnostic(DiagnosticSeverity::Warning,
-                             "web backend received CPU paint frame ("
-                                 + std::to_string(width) + "x" + std::to_string(height)
-                                 + ") and exported it through SHM fallback");
-        }
-        m_sharedState->frameRequested.store(true);
-    });
     if (! m_browserHost->OpenWallpaper(*m_manifest, m_workshopDir, width, height)) {
         return Result<void>::failure(ResultCode::InternalError, "CEF CreateBrowser failed");
     }
@@ -274,7 +370,9 @@ Result<void> WebBackend::start() {
     m_sharedState->contentStateChanged.store(true);
     m_sharedState->frameRequested.store(false);
     m_updatesWithoutAcceleratedFrame = 0;
-    m_paused = false;
+    m_paused                         = false;
+    m_started                        = true;
+    m_acceleratedPaintActive         = opts.prefer_accelerated_paint;
     return Result<void>::success();
 }
 
@@ -302,10 +400,15 @@ Result<void> WebBackend::stop() {
     m_sharedState->outputBound.store(false);
     m_sharedState->frameRequested.store(false);
     m_sharedState->acceleratedFrameSeen.store(false);
-    m_paused = false;
+    m_paused                 = false;
+    m_started                = false;
+    m_acceleratedPaintActive = false;
+    m_forceSoftwarePaint     = false;
+    m_browserRestartRequested.store(false);
+    m_forceSoftwareRestartRequested.store(false);
     m_reportedSoftwareFallbackUnsupported = false;
-    m_reportedMissingAcceleratedFrames = false;
-    m_updatesWithoutAcceleratedFrame = 0;
+    m_reportedMissingAcceleratedFrames    = false;
+    m_updatesWithoutAcceleratedFrame      = 0;
     return Result<void>::success();
 }
 
@@ -395,12 +498,8 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
                              event.modifiers,
                              event.unicodeChar);
         return Result<void>::success();
-    case InputEventType::FocusGained:
-        m_browserHost->OnFocus(true);
-        return Result<void>::success();
-    case InputEventType::FocusLost:
-        m_browserHost->OnFocus(false);
-        return Result<void>::success();
+    case InputEventType::FocusGained: m_browserHost->OnFocus(true); return Result<void>::success();
+    case InputEventType::FocusLost: m_browserHost->OnFocus(false); return Result<void>::success();
     case InputEventType::Custom:
         return Result<void>::failure(ResultCode::NotSupported,
                                      "web backend does not support custom input payloads");
@@ -408,22 +507,58 @@ Result<void> WebBackend::sendInput(const InputEvent& event) {
     return Result<void>::failure(ResultCode::NotSupported, "unknown input event type");
 }
 
+Result<void> WebBackend::reopenBrowserHost() {
+    if (! m_browserHost || ! m_manifest || ! m_renderBinding) {
+        return Result<void>::failure(ResultCode::InvalidState,
+                                     "web backend cannot reopen an uninitialized browser");
+    }
+    const auto& renderInfo       = m_renderBinding->renderInitInfo();
+    const bool  acceleratedPaint = renderInfo.export_mode == ExternalFrameExportMode::DMA_BUF &&
+                                   ConsumerMayAcceptWebDmabuf(renderInfo) && ! m_forceSoftwarePaint;
+    configurePaintCallbacks(acceleratedPaint);
+    if (! m_browserHost->ReopenWallpaper(
+            *m_manifest, m_workshopDir, renderInfo.width, renderInfo.height)) {
+        return Result<void>::failure(ResultCode::InternalError,
+                                     "CEF browser reopen failed during output renegotiation");
+    }
+    m_browserHost->SetFrameRate(m_fps);
+    m_browserHost->ApplyVolume(m_muted ? 0.0f : m_volume);
+    if (m_audioSamples && ! m_audioSamples->empty()) {
+        m_browserHost->PushAudioData(m_audioSamples->data(), m_audioSamples->size());
+    }
+    m_browserHost->SetPaused(m_paused);
+    m_acceleratedPaintActive = acceleratedPaint;
+    m_sharedState->acceleratedFrameSeen.store(false);
+    m_updatesWithoutAcceleratedFrame = 0;
+    return Result<void>::success();
+}
+
 Result<void> WebBackend::update() {
+    if (m_forceSoftwareRestartRequested.exchange(false)) {
+        m_forceSoftwarePaint = true;
+        m_browserRestartRequested.store(true);
+    }
+    if (m_browserRestartRequested.exchange(false)) {
+        auto restartResult = reopenBrowserHost();
+        if (! restartResult) {
+            m_sharedState->readyState.store(BackendReadyState::Error);
+            m_sharedState->contentStateChanged.store(true);
+            return restartResult;
+        }
+    }
     if (m_browserHost) {
         if (! m_paused) {
             m_browserHost->Invalidate();
-            if (! m_softwareFallbackEnabled
-                && ! m_sharedState->acceleratedFrameSeen.load()
-                && ! m_reportedMissingAcceleratedFrames) {
+            if (! m_softwareFallbackEnabled && ! m_sharedState->acceleratedFrameSeen.load() &&
+                ! m_reportedMissingAcceleratedFrames) {
                 ++m_updatesWithoutAcceleratedFrame;
-                if (m_updatesWithoutAcceleratedFrame
-                    >= kMissingAcceleratedFrameWarningUpdates) {
+                if (m_updatesWithoutAcceleratedFrame >= kMissingAcceleratedFrameWarningUpdates) {
                     m_reportedMissingAcceleratedFrames = true;
                     appendDiagnostic(
                         DiagnosticSeverity::Warning,
-                        "web backend has not received any accelerated paint frames after "
-                            + std::to_string(kMissingAcceleratedFrameWarningUpdates)
-                            + " update cycles; only dma-buf output is currently supported");
+                        "web backend has not received any accelerated paint frames after " +
+                            std::to_string(kMissingAcceleratedFrameWarningUpdates) +
+                            " update cycles; only dma-buf output is currently supported");
                 }
             }
         }
@@ -444,7 +579,7 @@ Result<FrameLifecycle> WebBackend::tick() {
     FrameLifecycle lifecycle;
     lifecycle.contentStateChanged = m_sharedState->contentStateChanged.exchange(false);
     lifecycle.outputStateChanged  = m_sharedState->outputStateChanged.exchange(false);
-    auto frameResult = produceFrame();
+    auto frameResult              = produceFrame();
     if (! frameResult) {
         return Result<FrameLifecycle>(frameResult.error());
     }

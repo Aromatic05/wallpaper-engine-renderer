@@ -32,8 +32,8 @@ struct WorkshopFixture {
     std::filesystem::path dir;
 
     WorkshopFixture() {
-        dir = std::filesystem::temp_directory_path()
-            / ("wp-web-contract-test-" + std::to_string(::getpid()));
+        dir = std::filesystem::temp_directory_path() /
+              ("wp-web-contract-test-" + std::to_string(::getpid()));
         std::filesystem::create_directories(dir);
         std::ofstream f(dir / "project.json");
         f << kProjectJson;
@@ -50,8 +50,8 @@ public:
     explicit SingleBackendFactory(std::unique_ptr<wallpaper::ContentBackend> backend)
         : backend_(std::move(backend)) {}
 
-    wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>> create(
-        wallpaper::BackendType, const wallpaper::BackendContext&) override {
+    wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>>
+    create(wallpaper::BackendType, const wallpaper::BackendContext&) override {
         if (! backend_) {
             return wallpaper::Result<std::unique_ptr<wallpaper::ContentBackend>>::failure(
                 wallpaper::ResultCode::InvalidState, "test backend was already consumed");
@@ -83,21 +83,35 @@ int main() {
     requireAt(::unsetenv("WE_CEF_CACHE_DIR") == 0, "unset CEF cache environment");
 
     wallpaper::WallpaperRuntime runtime;
-    auto services = std::make_shared<wallpaper::WebEngineServices>();
-    services->provideCefResourcesDir = []() { return std::filesystem::path("/usr/lib/cef"); };
-    services->provideCefLocalesDir = []() { return std::filesystem::path("/usr/lib/cef/locales"); };
-    services->provideCefCacheDir = []() { return std::filesystem::path("/tmp/web-backend-contract-cache"); };
-    services->provideCefSubprocessPath = []() { return std::filesystem::path("/bin/sh"); };
-    services->runtimeProfile = []() { return wallpaper::WebCefRuntimeProfile::Compatibility; };
-    services->preferredWindowSystem = []() { return wallpaper::WebCefWindowSystem::X11; };
+    auto                        services = std::make_shared<wallpaper::WebEngineServices>();
+    services->provideCefResourcesDir     = []() {
+        return std::filesystem::path("/usr/lib/cef");
+    };
+    services->provideCefLocalesDir = []() {
+        return std::filesystem::path("/usr/lib/cef/locales");
+    };
+    services->provideCefCacheDir = []() {
+        return std::filesystem::path("/tmp/web-backend-contract-cache");
+    };
+    services->provideCefSubprocessPath = []() {
+        return std::filesystem::path("/bin/sh");
+    };
+    services->runtimeProfile = []() {
+        return wallpaper::WebCefRuntimeProfile::Compatibility;
+    };
+    services->preferredWindowSystem = []() {
+        return wallpaper::WebCefWindowSystem::X11;
+    };
     services->extraCommandLineSwitches = []() {
         return std::vector<std::string> { "foo", "bar=baz" };
     };
-    services->audioMuted = []() { return true; };
+    services->audioMuted = []() {
+        return true;
+    };
     services->captureAudioSamples =
         [](std::chrono::milliseconds) -> std::optional<std::array<float, 128>> {
-            return std::nullopt;
-        };
+        return std::nullopt;
+    };
 
     auto rawBackend =
         wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(services));
@@ -119,23 +133,27 @@ int main() {
     // Load: parses the workshop project.json and stores the manifest.
     wallpaper::WebSourceConfig sourceConfig;
     sourceConfig.uri = workshop.dir.string();
-    auto loadResult = session->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
+    auto loadResult  = session->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
     requireAt(static_cast<bool>(loadResult), "load result");
 
     // Render config + bind: required before start().
     wallpaper::RenderInitInfo info {};
-    info.offscreen = true;
-    info.export_mode = wallpaper::ExternalFrameExportMode::DMA_BUF;
-    info.offscreen_tiling = wallpaper::TexTiling::LINEAR;
-    info.allow_shm_fallback = true;
-    info.width = 640;
-    info.height = 480;
-    auto binding = wallpaper::MakeWebOutputBinding(info);
+    info.offscreen                     = true;
+    info.export_mode                   = wallpaper::ExternalFrameExportMode::DMA_BUF;
+    info.offscreen_tiling              = wallpaper::TexTiling::LINEAR;
+    info.allow_shm_fallback            = true;
+    info.consumer_dmabuf_formats_known = true;
+    info.consumer_dmabuf_formats       = {
+        { DRM_FORMAT_ABGR8888, DRM_FORMAT_MOD_LINEAR },
+    };
+    info.width                      = 640;
+    info.height                     = 480;
+    auto                    binding = wallpaper::MakeWebOutputBinding(info);
     wallpaper::OutputTarget target {};
-    target.type = wallpaper::OutputTargetType::Offscreen;
-    target.binding = binding;
-    target.width = 640;
-    target.height = 480;
+    target.type     = wallpaper::OutputTargetType::Offscreen;
+    target.binding  = binding;
+    target.width    = 640;
+    target.height   = 480;
     auto bindResult = session->bindOutput(target);
     requireAt(static_cast<bool>(bindResult), "bind result");
 
@@ -156,6 +174,7 @@ int main() {
     assert(mock->last_init_opts.extra_command_line_switches.size() == 2);
     assert(mock->last_init_opts.extra_command_line_switches[0] == "foo");
     assert(mock->last_init_opts.extra_command_line_switches[1] == "bar=baz");
+    assert(mock->last_init_opts.prefer_accelerated_paint);
 
     // The manifest was forwarded verbatim: entry_html is "index.html",
     // the user_props_json round-trips the {color: {type, value}} object.
@@ -168,11 +187,10 @@ int main() {
     assert(mock->last_open_height == 480);
     assert(mock->last_workshop_dir == workshop.dir);
 
-
     wallpaper::RenderInitInfo resizedInfo = info;
-    resizedInfo.width = 1024;
-    resizedInfo.height = 768;
-    auto resizedBinding = wallpaper::MakeWebOutputBinding(resizedInfo);
+    resizedInfo.width                     = 1024;
+    resizedInfo.height                    = 768;
+    auto resizedBinding                   = wallpaper::MakeWebOutputBinding(resizedInfo);
     assert(session->bindOutput(wallpaper::MakeWebOutputTarget(resizedBinding)));
     assert(mock->resize_w == 1024);
     assert(mock->resize_h == 768);
@@ -185,21 +203,16 @@ int main() {
     auto diagnostics = backend->diagnostics();
     assert(diagnostics.entries.empty());
 
-    // Audio volume 0.7 lands on ApplyVolume(0.7). ApplyVolume builds
-    // the applyUserProperties({audio: {value: 0.7}}) snippet, so the
-    // JS-side ApplyUserProperty call is expected too.
+    // Audio volume is forwarded through the BrowserHost volume control.
     auto setVol = backend->setProperty(wallpaper::WE_SCENE_PROPERTY_VOLUME, 0.7f);
     assert(setVol);
     assert(mock->last_volume == 0.7f);
-    assert(mock->hasCall("ApplyUserProperty"));
-    assert(mock->last_user_key == "audio");
-    assert(mock->last_user_value_json.find("0.7000") != std::string::npos);
 
     // 30 FPS -> SetFrameRate(30).
-    auto setFps = backend->setProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(30));
+    auto setFps =
+        backend->setProperty(wallpaper::WE_SCENE_PROPERTY_FPS, static_cast<std::int32_t>(30));
     assert(setFps);
     assert(mock->last_fps == 30);
-
 
     // Muting preserves the configured volume so unmute restores it instead of forcing 1.0.
     assert(backend->setProperty(wallpaper::WE_SCENE_PROPERTY_MUTED, true));
@@ -210,9 +223,8 @@ int main() {
     assert(mock->last_volume == 0.4f);
 
     auto audio = std::make_shared<std::vector<float>>(std::initializer_list<float> { 0.1f, 0.2f });
-    assert(backend->setProperty(
-        wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES,
-        std::static_pointer_cast<void>(audio)));
+    assert(backend->setProperty(wallpaper::WE_SCENE_PROPERTY_AUDIO_SAMPLES,
+                                std::static_pointer_cast<void>(audio)));
     assert(mock->push_audio_count == 1);
     assert(mock->last_audio == *audio);
 
@@ -222,7 +234,7 @@ int main() {
 
     // Pointer event -> OnMouseMove(x, y) + (on Down) OnMouseButton.
     wallpaper::InputEvent move;
-    move.type = wallpaper::InputEventType::PointerMove;
+    move.type     = wallpaper::InputEventType::PointerMove;
     move.pointerX = 123.0;
     move.pointerY = 456.0;
     assert(backend->sendInput(move));
@@ -230,10 +242,10 @@ int main() {
     assert(mock->mouse_move_y == 456);
 
     wallpaper::InputEvent down;
-    down.type = wallpaper::InputEventType::PointerDown;
+    down.type     = wallpaper::InputEventType::PointerDown;
     down.pointerX = 100.0;
     down.pointerY = 200.0;
-    down.button = 2;
+    down.button   = 2;
     assert(backend->sendInput(down));
     assert(mock->mouse_button_x == 100);
     assert(mock->mouse_button_y == 200);
@@ -241,9 +253,9 @@ int main() {
     assert(mock->mouse_button_down);
 
     wallpaper::InputEvent wheel;
-    wheel.type = wallpaper::InputEventType::PointerWheel;
-    wheel.pointerX = 12.0;
-    wheel.pointerY = 34.0;
+    wheel.type        = wallpaper::InputEventType::PointerWheel;
+    wheel.pointerX    = 12.0;
+    wheel.pointerY    = 34.0;
     wheel.wheelDeltaX = -5;
     wheel.wheelDeltaY = 120;
     assert(backend->sendInput(wheel));
@@ -254,7 +266,7 @@ int main() {
 
     std::vector<std::uint8_t> software_pixels(320u * 240u * 4u, 0x7f);
     mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
-    diagnostics = backend->diagnostics();
+    diagnostics                            = backend->diagnostics();
     std::size_t software_fallback_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
         if (entry.message.find("exported it through SHM fallback") != std::string::npos) {
@@ -266,7 +278,7 @@ int main() {
     assert(software_frame_lifecycle);
     requireAt(software_frame_lifecycle.value().frameRequested,
               "software paint should request frame");
-    auto software_frame_result = binding->acquireTexture();
+    auto software_frame_result = resizedBinding->acquireTexture();
     requireAt(software_frame_result.ok(), "software frame should be published");
     auto software_frame = std::move(software_frame_result.value());
     requireAt(software_frame.exportKind == wallpaper::TextureExportKind::SharedMemory,
@@ -276,7 +288,7 @@ int main() {
     requireAt(software_frame.planes[0].descriptor.valid(), "software frame fd");
 
     mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
-    diagnostics = backend->diagnostics();
+    diagnostics                = backend->diagnostics();
     software_fallback_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
         if (entry.message.find("exported it through SHM fallback") != std::string::npos) {
@@ -286,11 +298,11 @@ int main() {
     assert(software_fallback_warnings == 1);
 
     wallpaper::InputEvent keyDown;
-    keyDown.type = wallpaper::InputEventType::KeyDown;
-    keyDown.keyCode = 65;
+    keyDown.type          = wallpaper::InputEventType::KeyDown;
+    keyDown.keyCode       = 65;
     keyDown.nativeKeyCode = 38;
-    keyDown.modifiers = 4;
-    keyDown.unicodeChar = 'A';
+    keyDown.modifiers     = 4;
+    keyDown.unicodeChar   = 'A';
     assert(backend->sendInput(keyDown));
     assert(mock->last_key_type == 0);
     assert(mock->last_native_key_code == 38);
@@ -307,16 +319,16 @@ int main() {
     assert(session->pause());
     assert(mock->last_paused);
     const auto invalidate_count_before_pause = mock->callCount("Invalidate");
-    assert(session->update());
+    assert(backend->update());
     assert(mock->callCount("Invalidate") == invalidate_count_before_pause);
     assert(mock->callCount("Pump") >= 1);
     assert(session->play());
     assert(! mock->last_paused);
 
     for (int i = 0; i < kMissingAcceleratedFrameWarningUpdates; ++i) {
-        assert(session->update());
+        assert(backend->update());
     }
-    diagnostics = backend->diagnostics();
+    diagnostics                              = backend->diagnostics();
     std::size_t missing_accelerated_warnings = 0;
     for (const auto& entry : diagnostics.entries) {
         if (entry.message.find("accelerated paint frames after") != std::string::npos) {
@@ -334,24 +346,24 @@ int main() {
     const int frame_fd = ::dup(STDOUT_FILENO);
     assert(frame_fd >= 0);
     wallpaper::DmaBufFrame frame {};
-    frame.plane_count = 1;
-    frame.planes[0].fd = frame_fd;
+    frame.plane_count      = 1;
+    frame.planes[0].fd     = frame_fd;
     frame.planes[0].stride = 800 * 4;
     frame.planes[0].offset = 128;
-    frame.modifier = static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR);
-    frame.format = wallpaper::DmaBufFormat::RGBA8_UNORM;
-    frame.coded_width = 800;
-    frame.coded_height = 600;
-    frame.visible_x = 10;
-    frame.visible_y = 20;
-    frame.visible_width = 640;
-    frame.visible_height = 480;
+    frame.modifier         = static_cast<std::uint64_t>(DRM_FORMAT_MOD_LINEAR);
+    frame.format           = wallpaper::DmaBufFormat::RGBA8_UNORM;
+    frame.coded_width      = 800;
+    frame.coded_height     = 600;
+    frame.visible_x        = 10;
+    frame.visible_y        = 20;
+    frame.visible_width    = 640;
+    frame.visible_height   = 480;
     mock->accelerated_paint_callback(frame);
 
     auto lifecycle = backend->tick();
     assert(lifecycle);
     assert(lifecycle.value().frameRequested);
-    auto ex_frame_result = binding->acquireTexture();
+    auto ex_frame_result = resizedBinding->acquireTexture();
     assert(ex_frame_result);
     auto ex_frame = std::move(ex_frame_result.value());
     assert(ex_frame.exportKind == wallpaper::TextureExportKind::DmaBuf);
@@ -362,28 +374,99 @@ int main() {
     assert(ex_frame.planes[0].stride == 800u * 4u);
     assert(ex_frame.planes[0].offset == 128u + 20u * 800u * 4u + 10u * 4u);
     assert(ex_frame.planes[0].descriptor.valid());
+
+    wallpaper::RenderInitInfo incompatibleInfo = resizedInfo;
+    incompatibleInfo.consumer_dmabuf_formats   = {
+        { DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_LINEAR },
+    };
+    auto incompatibleBinding = wallpaper::MakeWebOutputBinding(incompatibleInfo);
+    assert(session->bindOutput(wallpaper::MakeWebOutputTarget(incompatibleBinding)));
+    mock->accelerated_paint_callback(frame);
+    auto incompatibleLifecycle = backend->tick();
+    assert(incompatibleLifecycle);
+    assert(! incompatibleLifecycle.value().frameRequested);
+    assert(! incompatibleBinding->acquireTexture());
+
+    diagnostics                              = backend->diagnostics();
+    std::size_t incompatible_format_warnings = 0;
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("not advertised by the consumer") != std::string::npos) {
+            ++incompatible_format_warnings;
+        }
+    }
+    assert(incompatible_format_warnings == 1);
+    mock->accelerated_paint_callback(frame);
+    diagnostics                  = backend->diagnostics();
+    incompatible_format_warnings = 0;
+    for (const auto& entry : diagnostics.entries) {
+        if (entry.message.find("not advertised by the consumer") != std::string::npos) {
+            ++incompatible_format_warnings;
+        }
+    }
+    assert(incompatible_format_warnings == 1);
+
+    const auto init_count_before_fallback     = mock->callCount("Init");
+    const auto open_count_before_fallback     = mock->callCount("OpenWallpaper");
+    const auto shutdown_count_before_fallback = mock->callCount("Shutdown");
+    assert(backend->update());
+    assert(mock->callCount("Init") == init_count_before_fallback);
+    assert(mock->callCount("OpenWallpaper") == open_count_before_fallback + 1);
+    assert(mock->callCount("Shutdown") == shutdown_count_before_fallback);
+    assert(! mock->has_accelerated_paint_callback);
+
+    mock->software_paint_callback(software_pixels.data(), 320, 240, 320 * 4);
+    auto fallbackLifecycle = backend->tick();
+    assert(fallbackLifecycle);
+    assert(fallbackLifecycle.value().frameRequested);
+    auto fallbackFrameResult = incompatibleBinding->acquireTexture();
+    assert(fallbackFrameResult);
+    assert(fallbackFrameResult.value().exportKind == wallpaper::TextureExportKind::SharedMemory);
+
+    wallpaper::RenderInitInfo rejectedInfo = resizedInfo;
+    rejectedInfo.allow_shm_fallback        = false;
+    rejectedInfo.consumer_dmabuf_formats   = {
+        { DRM_FORMAT_NV12, DRM_FORMAT_MOD_LINEAR },
+    };
+    auto rejectedBinding    = wallpaper::MakeWebOutputBinding(rejectedInfo);
+    auto rejectedBindResult = session->bindOutput(wallpaper::MakeWebOutputTarget(rejectedBinding));
+    assert(! rejectedBindResult);
+    assert(rejectedBindResult.error().code == wallpaper::ResultCode::NotSupported);
     ::close(frame_fd);
 
-    // Stop -> Shutdown.
+    // Stop shuts down CEF once; runtime fallback only reopened the OSR browser.
     assert(session->stop());
-    assert(mock->request_close_count == 1);
+    assert(mock->request_close_count == 2);
     assert(mock->callCount("Shutdown") == 1);
 
     auto missingHelperServices = std::make_shared<wallpaper::WebEngineServices>();
-    missingHelperServices->provideCefResourcesDir = []() { return std::filesystem::path("/usr/lib/cef"); };
-    missingHelperServices->provideCefLocalesDir = []() { return std::filesystem::path("/usr/lib/cef/locales"); };
-    missingHelperServices->provideCefCacheDir = []() { return std::filesystem::path("/tmp/web-backend-contract-cache"); };
+    missingHelperServices->provideCefResourcesDir = []() {
+        return std::filesystem::path("/usr/lib/cef");
+    };
+    missingHelperServices->provideCefLocalesDir = []() {
+        return std::filesystem::path("/usr/lib/cef/locales");
+    };
+    missingHelperServices->provideCefCacheDir = []() {
+        return std::filesystem::path("/tmp/web-backend-contract-cache");
+    };
     missingHelperServices->provideCefSubprocessPath = []() {
         return std::filesystem::path("/definitely/missing/we-cef-helper");
     };
-    missingHelperServices->runtimeProfile = []() { return wallpaper::WebCefRuntimeProfile::Compatibility; };
-    missingHelperServices->preferredWindowSystem = []() { return wallpaper::WebCefWindowSystem::Wayland; };
-    missingHelperServices->extraCommandLineSwitches = []() { return std::vector<std::string> {}; };
-    missingHelperServices->audioMuted = []() { return true; };
+    missingHelperServices->runtimeProfile = []() {
+        return wallpaper::WebCefRuntimeProfile::Compatibility;
+    };
+    missingHelperServices->preferredWindowSystem = []() {
+        return wallpaper::WebCefWindowSystem::Wayland;
+    };
+    missingHelperServices->extraCommandLineSwitches = []() {
+        return std::vector<std::string> {};
+    };
+    missingHelperServices->audioMuted = []() {
+        return true;
+    };
     missingHelperServices->captureAudioSamples =
         [](std::chrono::milliseconds) -> std::optional<std::array<float, 128>> {
-            return std::nullopt;
-        };
+        return std::nullopt;
+    };
 
     auto missingHelperBackend =
         wallpaper::CreateWebBackend(wallpaper::BackendContext {}, std::move(missingHelperServices));
@@ -393,17 +476,17 @@ int main() {
     missingHelperRaw->testSetBrowserHost(std::make_shared<wallpaper::test::MockWebBrowserHost>());
 
     wallpaper::RenderInitInfo missingInfo {};
-    missingInfo.offscreen = true;
-    missingInfo.export_mode = wallpaper::ExternalFrameExportMode::DMA_BUF;
-    missingInfo.offscreen_tiling = wallpaper::TexTiling::LINEAR;
-    missingInfo.width = 640;
-    missingInfo.height = 480;
-    auto missingBinding = wallpaper::MakeWebOutputBinding(missingInfo);
+    missingInfo.offscreen                  = true;
+    missingInfo.export_mode                = wallpaper::ExternalFrameExportMode::DMA_BUF;
+    missingInfo.offscreen_tiling           = wallpaper::TexTiling::LINEAR;
+    missingInfo.width                      = 640;
+    missingInfo.height                     = 480;
+    auto                    missingBinding = wallpaper::MakeWebOutputBinding(missingInfo);
     wallpaper::OutputTarget missingTarget {};
-    missingTarget.type = wallpaper::OutputTargetType::Offscreen;
+    missingTarget.type    = wallpaper::OutputTargetType::Offscreen;
     missingTarget.binding = missingBinding;
-    missingTarget.width = 640;
-    missingTarget.height = 480;
+    missingTarget.width   = 640;
+    missingTarget.height  = 480;
 
     wallpaper::SessionConfig missingHelperSessionConfig {};
     missingHelperSessionConfig.backendFactory =
@@ -411,7 +494,8 @@ int main() {
     auto missingHelperSession = runtime.createSession(missingHelperSessionConfig);
     requireAt(static_cast<bool>(missingHelperSession), "missing helper session create");
 
-    auto missingLoadResult = missingHelperSession->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
+    auto missingLoadResult =
+        missingHelperSession->load(wallpaper::MakeWebWallpaperSource(sourceConfig));
     requireAt(static_cast<bool>(missingLoadResult), "missing helper load");
     auto missingBindResult = missingHelperSession->bindOutput(missingTarget);
     requireAt(static_cast<bool>(missingBindResult), "missing helper bind");
