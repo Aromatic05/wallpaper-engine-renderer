@@ -15,9 +15,11 @@
 
 #include <drm/drm_fourcc.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 using namespace wallpaper;
@@ -66,6 +68,12 @@ constexpr VkFormatFeatureFlags2 kRequiredDmabufFeatures =
     static_cast<VkFormatFeatureFlags2>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) |
     static_cast<VkFormatFeatureFlags2>(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) |
     static_cast<VkFormatFeatureFlags2>(VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
+constexpr std::array<VkImageAspectFlagBits, ExHandle::MAX_PLANES> kMemoryPlaneAspects {
+    VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT,
+    VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT,
+    VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT,
+    VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT,
+};
 
 std::vector<uint64_t> FilterSupportedDrmModifiers(const vvk::PhysicalDevice& gpu,
                                                   VkFormat                   format,
@@ -440,13 +448,6 @@ std::optional<ExImageParameters> CreateExImage(uint32_t width, uint32_t height, 
                 break;
             }
 
-            const VkImageSubresource subresource {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .mipLevel = 0,
-                .arrayLayer = 0,
-            };
-            const auto layout = image.handle.GetSubresourceLayout(subresource);
-
             image.drm_fourcc = drm_fourcc;
             if (use_modifier_tiling) {
                 VkImageDrmFormatModifierPropertiesEXT modifier_properties {
@@ -454,13 +455,69 @@ std::optional<ExImageParameters> CreateExImage(uint32_t width, uint32_t height, 
                 };
                 VVK_CHECK_ACT(break, image.handle.GetDrmFormatModifierProperties(modifier_properties));
                 image.drm_modifier = modifier_properties.drmFormatModifier;
+                const auto modifier_table = gpu.GetDrmFormatModifierProperties2(format);
+                const auto selected_modifier = std::find_if(
+                    modifier_table.begin(),
+                    modifier_table.end(),
+                    [&image](const VkDrmFormatModifierProperties2EXT& candidate) {
+                        return candidate.drmFormatModifier == image.drm_modifier;
+                    });
+                if (selected_modifier == modifier_table.end()) {
+                    LOG_ERROR("selected dma-buf modifier is missing from physical-device properties");
+                    break;
+                }
+                image.n_planes = selected_modifier->drmFormatModifierPlaneCount;
+                if (image.n_planes == 0 || image.n_planes > image.planes.size()) {
+                    LOG_ERROR("unsupported dma-buf memory plane count: %u", image.n_planes);
+                    break;
+                }
+
+                bool valid_plane_layouts = true;
+                for (std::uint32_t plane = 0; plane < image.n_planes; ++plane) {
+                    const VkImageSubresource subresource {
+                        .aspectMask = kMemoryPlaneAspects[plane],
+                        .mipLevel   = 0,
+                        .arrayLayer = 0,
+                    };
+                    const auto layout = image.handle.GetSubresourceLayout(subresource);
+                    if (layout.offset > std::numeric_limits<std::uint32_t>::max() ||
+                        layout.rowPitch == 0 ||
+                        layout.rowPitch > std::numeric_limits<std::uint32_t>::max()) {
+                        LOG_ERROR("invalid dma-buf plane layout: plane=%u offset=%llu row-pitch=%llu",
+                                  plane,
+                                  static_cast<unsigned long long>(layout.offset),
+                                  static_cast<unsigned long long>(layout.rowPitch));
+                        valid_plane_layouts = false;
+                        break;
+                    }
+                    // Non-disjoint modifier images use one allocation. Each DRM memory plane
+                    // references the same dma-buf fd with its own offset and row pitch.
+                    image.planes[plane].fd     = image.fd;
+                    image.planes[plane].offset = static_cast<std::uint32_t>(layout.offset);
+                    image.planes[plane].stride = static_cast<std::uint32_t>(layout.rowPitch);
+                }
+                if (! valid_plane_layouts) break;
             } else {
-                image.drm_modifier = DRM_FORMAT_MOD_LINEAR;
+                const VkImageSubresource subresource {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel   = 0,
+                    .arrayLayer = 0,
+                };
+                const auto layout = image.handle.GetSubresourceLayout(subresource);
+                if (layout.offset > std::numeric_limits<std::uint32_t>::max() ||
+                    layout.rowPitch == 0 ||
+                    layout.rowPitch > std::numeric_limits<std::uint32_t>::max()) {
+                    LOG_ERROR("invalid linear dma-buf layout: offset=%llu row-pitch=%llu",
+                              static_cast<unsigned long long>(layout.offset),
+                              static_cast<unsigned long long>(layout.rowPitch));
+                    break;
+                }
+                image.drm_modifier      = DRM_FORMAT_MOD_LINEAR;
+                image.n_planes          = 1;
+                image.planes[0].fd      = image.fd;
+                image.planes[0].offset  = static_cast<std::uint32_t>(layout.offset);
+                image.planes[0].stride  = static_cast<std::uint32_t>(layout.rowPitch);
             }
-            image.n_planes = 1;
-            image.planes[0].fd = image.fd;
-            image.planes[0].offset = static_cast<uint32_t>(layout.offset);
-            image.planes[0].stride = static_cast<uint32_t>(layout.rowPitch);
         }
 
         return image;

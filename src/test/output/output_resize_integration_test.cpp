@@ -1,6 +1,7 @@
 #include "render/vulkanrender/VulkanRender.hpp"
 #include "wallpaper/VulkanOutputInit.hpp"
 #include "wallpaper/swapchain/ExSwapchain.hpp"
+#include "render/vulkan/include/vulkan/VulkanExSwapchain.hpp"
 
 #include <drm/drm_fourcc.h>
 
@@ -74,5 +75,37 @@ int main() {
     assert(fallbackRenderer.init(fallbackInfo));
     assert(fallbackRenderer.exSwapchain() != nullptr);
     fallbackRenderer.destroy();
+
+    // AMD DCC modifiers expose metadata as additional DRM memory planes. When this exact modifier
+    // is supported by the current GPU, the public DMA-BUF contract must describe every plane rather
+    // than flattening the image into a single COLOR subresource.
+    constexpr std::uint64_t kAmdDccModifier = 0x020000000056bb03ULL;
+    wallpaper::RenderInitInfo dccInfo {};
+    dccInfo.offscreen                     = true;
+    dccInfo.export_mode                   = wallpaper::ExternalFrameExportMode::DMA_BUF;
+    dccInfo.offscreen_tiling              = wallpaper::TexTiling::LINEAR;
+    dccInfo.allow_shm_fallback            = false;
+    dccInfo.consumer_dmabuf_formats_known = true;
+    dccInfo.consumer_dmabuf_formats       = {
+        { DRM_FORMAT_ABGR8888, kAmdDccModifier },
+    };
+    dccInfo.width  = 2560;
+    dccInfo.height = 1600;
+
+    wallpaper::vulkan::VulkanRender dccRenderer;
+    if (dccRenderer.init(dccInfo)) {
+        auto* dccSwapchain = dynamic_cast<wallpaper::vulkan::VulkanExSwapchain*>(
+            dccRenderer.exSwapchain());
+        assert(dccSwapchain != nullptr);
+        for (const auto& handle : dccSwapchain->handles()) {
+            assert(handle.image.drm_modifier == kAmdDccModifier);
+            assert(handle.image.n_planes > 1);
+            for (std::uint32_t plane = 0; plane < handle.image.n_planes; ++plane) {
+                assert(handle.image.planes[plane].fd >= 0);
+                assert(handle.image.planes[plane].stride > 0);
+            }
+        }
+        dccRenderer.destroy();
+    }
     return 0;
 }
