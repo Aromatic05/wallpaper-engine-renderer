@@ -95,6 +95,25 @@ Result<void> ApplyRendererSourceOptionsJson(std::string_view jsonText, Wallpaper
     }
 
     const auto& scene = *sceneIt;
+
+    const auto audioIt = scene.find("audio");
+    if (audioIt != scene.end()) {
+        if (! audioIt->is_object()) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "scene.audio must be an object");
+        }
+
+        const auto forceLoopIt = audioIt->find("forceLoop");
+        if (forceLoopIt != audioIt->end()) {
+            if (! forceLoopIt->is_boolean()) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "scene.audio.forceLoop must be a boolean");
+            }
+            source.initialProperties[std::string(WE_SCENE_PROPERTY_FORCE_AUDIO_LOOP)] =
+                forceLoopIt->get<bool>();
+        }
+    }
+
     const auto userPropertiesIt = scene.find("userProperties");
     if (userPropertiesIt != scene.end()) {
         auto valid = ValidateUserProperties(*userPropertiesIt);

@@ -11,6 +11,9 @@ int main() {
     auto result = wallpaper::ApplyRendererSourceOptionsJson(R"({
         "version": 1,
         "scene": {
+            "audio": {
+                "forceLoop": true
+            },
             "userProperties": {
                 "enabled": true,
                 "scale": 1.25,
@@ -24,6 +27,11 @@ int main() {
         }
     })", source);
     assert(result);
+
+    const auto forceAudioLoopIt = source.initialProperties.find(
+        std::string(wallpaper::WE_SCENE_PROPERTY_FORCE_AUDIO_LOOP));
+    assert(forceAudioLoopIt != source.initialProperties.end());
+    assert(std::get<bool>(forceAudioLoopIt->second));
 
     const auto userIt = source.initialProperties.find(
         std::string(wallpaper::WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES_JSON));
@@ -61,6 +69,13 @@ int main() {
     assert(! wallpaper::ApplyRendererSourceOptionsJson(
         R"({"version":1,"scene":{"graphviz":{"enabled":"yes"}}})",
         invalidGraphviz));
+
+    wallpaper::WallpaperSource invalidAudio;
+    invalidAudio.type = wallpaper::BackendType::WEScene;
+    assert(! wallpaper::ApplyRendererSourceOptionsJson(
+        R"({"version":1,"scene":{"audio":true}})", invalidAudio));
+    assert(! wallpaper::ApplyRendererSourceOptionsJson(
+        R"({"version":1,"scene":{"audio":{"forceLoop":"yes"}}})", invalidAudio));
 
     wallpaper::WallpaperSource webSource;
     webSource.type = wallpaper::BackendType::Web;

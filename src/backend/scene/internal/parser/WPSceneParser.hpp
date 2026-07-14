@@ -19,7 +19,8 @@ public:
                                  fs::VFS&,
                                  audio::SoundManager&,
                                  const UserPropertyMap* user_properties,
-                                 double                 text_render_scale = 1.0);
+                                 double                 text_render_scale = 1.0,
+                                 bool                   force_audio_loop = false);
     std::shared_ptr<Scene> Parse(std::string_view scene_id, const std::string&, fs::VFS&, audio::SoundManager&) override;
 };
 

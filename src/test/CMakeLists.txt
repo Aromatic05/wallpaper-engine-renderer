@@ -948,6 +948,30 @@ target_compile_options(parallax-propagation-test PRIVATE ${warn_opts})
 add_test(NAME parallax-propagation-test COMMAND parallax-propagation-test)
 
 add_executable(
+  sound-playback-policy-test
+  scene/sound_playback_policy_test.cpp)
+
+target_link_libraries(sound-playback-policy-test PRIVATE ${PROJECT_NAME} wpSceneBackend)
+target_include_directories(
+  sound-playback-policy-test PRIVATE
+  ..
+  ../../include
+  ../backend/scene/internal
+  ../backend/scene/internal/animation
+  ../backend/scene/internal/scene/include
+  ../backend/scene/internal/scenescript
+  ../backend/scene/internal/settings
+  ../backend/scene/internal/text
+  ../common
+  ../common/scene
+  ../common/fs/include
+  ../common/utils/include
+  ../../third_party/nlohmann/include)
+target_compile_options(sound-playback-policy-test PRIVATE ${warn_opts} -UNDEBUG)
+
+add_test(NAME sound-playback-policy-test COMMAND sound-playback-policy-test)
+
+add_executable(
   image-alignment-test
   scene/image_alignment_test.cpp)
 

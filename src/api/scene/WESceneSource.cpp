@@ -15,6 +15,8 @@ WallpaperSource MakeWESceneWallpaperSource(const WESceneSourceConfig& config) {
     source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_SPEED), config.speed);
     source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_VOLUME), config.volume);
     source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_MUTED), config.muted);
+    source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_FORCE_AUDIO_LOOP),
+                                     config.forceAudioLoop);
     source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_GRAPHVIZ), config.graphviz);
     if (! config.graphvizPath.empty()) {
         source.initialProperties.emplace(std::string(WE_SCENE_PROPERTY_GRAPHVIZ_PATH),

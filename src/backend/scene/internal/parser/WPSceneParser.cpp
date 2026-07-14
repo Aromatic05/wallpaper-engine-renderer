@@ -7584,8 +7584,12 @@ bool ParseDynamicSceneObject(ParseContext& context, const nlohmann::json& object
         if (! object.FromJson(object_json, *context.vfs)) return false;
         resolve_visibility(object);
         if (context.scene->soundManager == nullptr) return false;
-        const auto sound_handle =
-            WPSoundParser::Parse(object, *context.vfs, *context.scene->soundManager);
+        const bool autoplay = object.visible && ! object.startsilent;
+        const auto sound_handle = WPSoundParser::Parse(object,
+                                                       *context.vfs,
+                                                       *context.scene->soundManager,
+                                                       autoplay,
+                                                       context.scene->forceAudioLoop);
         if (sound_handle == 0) return false;
         context.scene->objectRuntimeSoundHandles[object.id] = sound_handle;
         if (out_layer_id) *out_layer_id = object.id;
@@ -7931,7 +7935,8 @@ bool wallpaper::CreateDynamicSceneLayer(
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
                                             fs::VFS& vfs, audio::SoundManager& sm,
                                             const UserPropertyMap* user_properties,
-                                            double                 text_render_scale) {
+                                            double                 text_render_scale,
+                                            bool                   force_audio_loop) {
     nlohmann::json json;
     if (! PARSE_JSON(buf, json)) return nullptr;
 
@@ -8167,6 +8172,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
     }
 
     InitContext(context, vfs, sc, scene_id);
+    context.scene->forceAudioLoop = force_audio_loop;
     context.scene->parallaxPropagationDisabledLayerIds =
         CollectParallaxPropagationDisabledLayerIds(json);
     context.layer_visibility_contracts = std::move(layer_visibility_contracts);
@@ -8236,8 +8242,19 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
                            ParseParticleObj(context, obj);
                        },
                        [&context, &sm](wpscene::WPSoundObject& obj) {
+                           const auto* visibility_contract =
+                               FindLayerVisibilityContract(context, obj.id);
+                           const bool initially_visible = visibility_contract != nullptr
+                                                              ? visibility_contract->initial_visible
+                                                              : obj.visible;
+                           const bool autoplay = initially_visible && ! obj.startsilent;
                            context.scene->objectRuntimeSoundHandles[obj.id] =
-                               WPSoundParser::Parse(obj, *context.vfs, sm);
+                               WPSoundParser::Parse(
+                                   obj,
+                                   *context.vfs,
+                                   sm,
+                                   autoplay,
+                                   context.scene->forceAudioLoop);
                        },
                        [&context](wpscene::WPLightObject& obj) {
                            ParseLightObj(context, obj);
