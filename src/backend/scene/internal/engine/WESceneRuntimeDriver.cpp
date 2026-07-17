@@ -334,6 +334,7 @@ private:
     std::string m_source;
     std::string m_cache_path;
     bool        m_gen_graphviz { false };
+    bool        m_force_audio_loop { false };
     std::string m_graphviz_path;
 
     WPSceneParser                         m_scene_parser;
@@ -804,6 +805,10 @@ MHANDLER_CMD_IMPL(MainHandler, SET_PROPERTY) {
             bool muted { false };
             msg->findBool("value", &muted);
             m_sound_manager->SetMuted(muted);
+        } else if (property == PROPERTY_FORCE_AUDIO_LOOP) {
+            // This is a load-time policy. WESceneBackend stages all initial properties before
+            // posting PROPERTY_SOURCE, so the parser sees a stable value for the entire scene.
+            msg->findBool("value", &m_force_audio_loop);
         } else if (property == PROPERTY_VOLUME) {
             float volume { 1.0f };
             msg->findFloat("value", &volume);
@@ -1050,7 +1055,8 @@ void MainHandler::loadScene() {
                                        vfs,
                                        *m_sound_manager,
                                        &m_user_properties,
-                                       m_render_handler->textRenderScale());
+                                       m_render_handler->textRenderScale(),
+                                       m_force_audio_loop);
         m_scene = scene;
         scene->vfs.swap(pVfs);
     }

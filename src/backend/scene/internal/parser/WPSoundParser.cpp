@@ -12,22 +12,33 @@
 
 using namespace wallpaper;
 
-enum class PlaybackMode
-{
-    Single,
-    Random,
-    Loop
+static WPSoundPlaybackMode ToPlaybackMode(std::string_view s) {
+    if (s == "single")
+        return WPSoundPlaybackMode::Single;
+    else if (s == "loop")
+        return WPSoundPlaybackMode::Loop;
+    else if (s == "random")
+        return WPSoundPlaybackMode::Random;
+    return WPSoundPlaybackMode::Loop;
 };
 
-static PlaybackMode ToPlaybackMode(std::string_view s) {
-    if (s == "single")
-        return PlaybackMode::Single;
-    else if (s == "loop")
-        return PlaybackMode::Loop;
-    else if (s == "random")
-        return PlaybackMode::Random;
-    return PlaybackMode::Loop;
-};
+WPSoundPlaybackPolicy WPSoundParser::ResolvePlaybackPolicy(
+    const wpscene::WPSoundObject& obj, bool autoplay, bool force_audio_loop) {
+    const auto authored_mode = ToPlaybackMode(obj.playbackmode);
+    if (force_audio_loop && autoplay && authored_mode == WPSoundPlaybackMode::Single) {
+        return { .autoplay = true, .mode = WPSoundPlaybackMode::Loop };
+    }
+    return { .autoplay = autoplay, .mode = authored_mode };
+}
+
+static const char* PlaybackModeName(WPSoundPlaybackMode mode) {
+    switch (mode) {
+    case WPSoundPlaybackMode::Single: return "single";
+    case WPSoundPlaybackMode::Random: return "random";
+    case WPSoundPlaybackMode::Loop: return "loop";
+    }
+    return "loop";
+}
 
 class WPSoundStream : public audio::SoundStream {
 public:
@@ -35,7 +46,7 @@ public:
         float        maxtime { 10.0f };
         float        mintime { 0.0f };
         float        volume { 1.0f };
-        PlaybackMode mode { PlaybackMode::Loop };
+        WPSoundPlaybackMode mode { WPSoundPlaybackMode::Loop };
     };
     WPSoundStream(const std::vector<std::string>& paths, fs::VFS& vfs, Config c)
         : vfs(vfs), m_config(c), m_soundPaths(paths) {};
@@ -44,7 +55,7 @@ public:
     uint64_t NextPcmData(void* pData, uint32_t frameCount) override {
         if (m_soundPaths.empty()) return 0;
 
-        if (m_config.mode == PlaybackMode::Random && ! m_curActive) {
+        if (m_config.mode == WPSoundPlaybackMode::Random && ! m_curActive) {
             if (! m_randomDelayScheduled) ScheduleRandomDelay();
             if (m_randomDelayFramesRemaining > 0) return DrainRandomDelay(pData, frameCount);
             m_randomDelayScheduled = false;
@@ -58,12 +69,12 @@ public:
 
         uint64_t frameReads = m_curActive->NextPcmData(pData, frameCount);
         if (frameReads == 0) {
-            if (m_config.mode == PlaybackMode::Single) {
+            if (m_config.mode == WPSoundPlaybackMode::Single) {
                 LOG_INFO("SceneSoundEnd: mode='single' paths=%zu", m_soundPaths.size());
                 m_curActive.reset();
                 return 0;
             }
-            if (m_config.mode == PlaybackMode::Random) {
+            if (m_config.mode == WPSoundPlaybackMode::Random) {
                 m_curActive.reset();
                 ScheduleRandomDelay();
                 if (m_randomDelayFramesRemaining > 0) return DrainRandomDelay(pData, frameCount);
@@ -120,7 +131,7 @@ public:
                  m_desc.sampleRate);
     }
     uint32_t LoopIndex() {
-        if (m_config.mode == PlaybackMode::Random) {
+        if (m_config.mode == WPSoundPlaybackMode::Random) {
             if (m_soundPaths.size() == 1) {
                 m_curIndex = 0;
                 return m_curIndex;
@@ -175,17 +186,18 @@ private:
 };
 
 audio::SoundHandle WPSoundParser::Parse(const wpscene::WPSoundObject& obj, fs::VFS& vfs,
-                                        audio::SoundManager& sm) {
+                                        audio::SoundManager& sm, bool autoplay,
+                                        bool force_audio_loop) {
+    const auto policy = ResolvePlaybackPolicy(obj, autoplay, force_audio_loop);
     WPSoundStream::Config config { .maxtime = obj.maxtime,
                                    .mintime = obj.mintime,
                                    .volume  = 1.0f,
-                                   .mode    = ToPlaybackMode(obj.playbackmode) };
+                                   .mode    = policy.mode };
 
     auto ss = std::make_unique<WPSoundStream>(obj.sound, vfs, config);
-    const bool autoplay = obj.visible && ! obj.startsilent;
-    const auto handle = sm.MountStream(std::move(ss), obj.volume, autoplay);
+    const auto handle = sm.MountStream(std::move(ss), obj.volume, policy.autoplay);
     LOG_VERBOSE("SceneSoundMount: layer=%d name='%s' handle=%u sounds=%zu volume=%.3f visible=%s "
-                "startsilent=%s autoplay=%s playbackmode='%s'",
+                "startsilent=%s autoplay=%s playbackmode='%s' effective-playbackmode='%s'",
                 obj.id,
                 obj.name.c_str(),
                 handle,
@@ -193,7 +205,8 @@ audio::SoundHandle WPSoundParser::Parse(const wpscene::WPSoundObject& obj, fs::V
                 obj.volume,
                 obj.visible ? "true" : "false",
                 obj.startsilent ? "true" : "false",
-                autoplay ? "true" : "false",
-                obj.playbackmode.c_str());
+                policy.autoplay ? "true" : "false",
+                obj.playbackmode.c_str(),
+                PlaybackModeName(policy.mode));
     return handle;
 }

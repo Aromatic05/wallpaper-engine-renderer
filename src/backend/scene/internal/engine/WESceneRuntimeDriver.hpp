@@ -28,6 +28,7 @@ constexpr std::string_view PROPERTY_GRAPHVIZ_PATH        = WE_SCENE_PROPERTY_GRA
 constexpr std::string_view PROPERTY_GRAPHIVZ             = WE_SCENE_PROPERTY_GRAPHIVZ;
 constexpr std::string_view PROPERTY_VOLUME               = WE_SCENE_PROPERTY_VOLUME;
 constexpr std::string_view PROPERTY_MUTED                = WE_SCENE_PROPERTY_MUTED;
+constexpr std::string_view PROPERTY_FORCE_AUDIO_LOOP     = WE_SCENE_PROPERTY_FORCE_AUDIO_LOOP;
 constexpr std::string_view PROPERTY_CACHE_PATH           = WE_SCENE_PROPERTY_CACHE_PATH;
 constexpr std::string_view PROPERTY_FIRST_FRAME_CALLBACK = WE_SCENE_PROPERTY_FIRST_FRAME_CALLBACK;
 constexpr std::string_view PROPERTY_LOAD_USER_PROPERTIES = WE_SCENE_PROPERTY_LOAD_USER_PROPERTIES;

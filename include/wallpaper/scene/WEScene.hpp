@@ -23,6 +23,7 @@ struct WESceneSourceConfig {
     bool         graphviz { false };
     std::string  graphvizPath;
     std::string  userPropertiesJson;
+    bool         forceAudioLoop { false };
 };
 
 std::unique_ptr<WallpaperSession> CreateWESceneSession(WallpaperRuntime& runtime,

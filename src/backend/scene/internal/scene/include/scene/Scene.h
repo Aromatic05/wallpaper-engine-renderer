@@ -253,6 +253,9 @@ public:
 
     std::unique_ptr<ParticleSystem> paritileSys;
     audio::SoundManager*            soundManager { nullptr };
+    // Retained on Scene so sound layers created later by SceneScript use the same load-time policy
+    // as authored layers parsed from scene.json.
+    bool                            forceAudioLoop { false };
     std::array<float, 2>            mousePositionNormalized { 0.5f, 0.5f };
     bool                            cursorLeftDown { false };
 
