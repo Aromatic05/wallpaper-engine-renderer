@@ -966,6 +966,7 @@ target_include_directories(
   ../common/scene
   ../common/fs/include
   ../common/utils/include
+  ../host/audio/include
   ../../third_party/nlohmann/include)
 target_compile_options(sound-playback-policy-test PRIVATE ${warn_opts} -UNDEBUG)
 
