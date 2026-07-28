@@ -30,9 +30,9 @@ static constexpr std::string_view SHADER_PLACEHOLD { "__SHADER_PLACEHOLD__" };
 #define SHADER_SRC_DIR "prepared-shaders02"
 #define SHADER_SRC_SUFFIX "wpsrc"
 
-static constexpr int              kPreparedShaderSourceVersion { 4 };
+static constexpr int              kPreparedShaderSourceVersion { 5 };
 static constexpr std::string_view kPreparedShaderPipelineKey {
-    "prepared-shader-v19-dxc-interface-sanitize\n"
+    "prepared-shader-v20-directive-terminator-sanitize\n"
 };
 
 using namespace wallpaper;
@@ -1983,6 +1983,31 @@ inline std::string SanitizeBrokenPreprocessorDirectives(const std::string& src,
         }
         return std::string(line);
     };
+    const auto repair_preprocessor_condition_terminator = [](std::string& line) {
+        const auto first_non_ws = line.find_first_not_of(" \t\r");
+        if (first_non_ws == std::string::npos || line[first_non_ws] != '#') return;
+
+        const auto directive = std::string_view(line).substr(first_non_ws);
+        if (!(directive.rfind("#if ", 0) == 0 || directive == "#if" ||
+              directive.rfind("#elif ", 0) == 0 || directive == "#elif")) {
+            return;
+        }
+
+        auto condition_end = line.size();
+        const auto line_comment = line.find("//", first_non_ws);
+        const auto block_comment = line.find("/*", first_non_ws);
+        if (line_comment != std::string::npos) condition_end = line_comment;
+        if (block_comment != std::string::npos) condition_end = std::min(condition_end, block_comment);
+
+        while (condition_end > first_non_ws &&
+               (line[condition_end - 1] == ' ' || line[condition_end - 1] == '\t' ||
+                line[condition_end - 1] == '\r')) {
+            condition_end--;
+        }
+        if (condition_end > first_non_ws && line[condition_end - 1] == ';') {
+            line.erase(condition_end - 1, 1);
+        }
+    };
 
     std::vector<IfFrame> if_stack;
     std::string::size_type              pos { 0 };
@@ -1993,6 +2018,7 @@ inline std::string SanitizeBrokenPreprocessorDirectives(const std::string& src,
         auto line_len =
             line_end == std::string::npos ? src.size() - pos : line_end - pos;
         auto line = src.substr(pos, line_len);
+        repair_preprocessor_condition_terminator(line);
 
         auto first_non_ws = line.find_first_not_of(" \t\r");
         bool handled      = false;
@@ -2609,13 +2635,19 @@ bool WPShaderParser::CompileToSpv(std::string_view scene_id, std::span<WPShaderU
         const std::string prepared_sha1 = GenPreparedShaderSha1(units, shader_info->combos, texs);
         const std::string prepared_cache_file_path = GetPreparedShaderCachePath(scene_id, prepared_sha1);
 
+        bool prepared_units_loaded = false;
         if (vfs.Contains(prepared_cache_file_path)) {
             auto cache_file = vfs.Open(prepared_cache_file_path);
-            if (! cache_file || ! ::LoadPreparedShaderUnits(units, *cache_file)) {
-                LOG_ERROR("load prepared shader from '%s' failed", prepared_cache_file_path.c_str());
-                return false;
+            auto cached_units = std::vector<WPShaderUnit>(units.begin(), units.end());
+            if (cache_file && ::LoadPreparedShaderUnits(cached_units, *cache_file)) {
+                std::move(cached_units.begin(), cached_units.end(), units.begin());
+                prepared_units_loaded = true;
+            } else {
+                LOG_WARN("load prepared shader from '%s' failed; regenerating",
+                         prepared_cache_file_path.c_str());
             }
-        } else {
+        }
+        if (! prepared_units_loaded) {
             PrepareShaderUnitsForDxc(units, shader_info, texs);
             if (auto cache_file = vfs.OpenW(prepared_cache_file_path); cache_file) {
                 ::SavePreparedShaderUnits(units, *cache_file);

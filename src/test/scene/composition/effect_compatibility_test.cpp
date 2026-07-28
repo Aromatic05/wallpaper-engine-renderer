@@ -4,6 +4,8 @@
 #include "backend/scene/internal/parser/effect/Extent.hpp"
 #include "backend/scene/internal/parser/effect/LegacyAtmosphere.hpp"
 #include "backend/scene/internal/scene/include/scene/Scene.h"
+#include "backend/scene/internal/scene/include/scene/SceneCamera.h"
+#include "backend/scene/internal/scene/include/scene/SceneImageEffectLayer.h"
 #include "backend/scene/internal/wpscene/WPEffect.h"
 #include "backend/scene/internal/wpscene/WPImageObject.h"
 #include "backend/scene/internal/wpscene/WPMaterial.h"
@@ -120,11 +122,27 @@ void MountAssets(wallpaper::fs::VFS& vfs) {
                               }
                           ]
                       })" },
+                    { "/effects/broken.json",
+                      R"({
+                          "name": "Broken",
+                          "passes": [
+                              { "material": "materials/broken.json" }
+                          ]
+                      })" },
                     { "/materials/filter.json",
                       R"({
                           "passes": [
                               {
                                   "shader": "effects/filter",
+                                  "textures": []
+                              }
+                          ]
+                      })" },
+                    { "/materials/broken.json",
+                      R"({
+                          "passes": [
+                              {
+                                  "shader": "effects/broken",
                                   "textures": []
                               }
                           ]
@@ -142,6 +160,8 @@ void MountAssets(wallpaper::fs::VFS& vfs) {
                     { "/shaders/genericimage.frag", fragment_shader },
                     { "/shaders/effects/filter.vert", vertex_shader },
                     { "/shaders/effects/filter.frag", fragment_shader },
+                    { "/shaders/effects/broken.vert", vertex_shader },
+                    { "/shaders/effects/broken.frag", "this is not valid shader source" },
                     { "/shaders/passthrough.vert", vertex_shader },
                     { "/shaders/passthrough.frag", fragment_shader },
                 }),
@@ -201,6 +221,26 @@ std::shared_ptr<wallpaper::Scene> ParseScene() {
                                             "visible": true
                                         }
                                     ]
+                                },
+                                {
+                                    "id": 30,
+                                    "name": "BrokenEffectChain",
+                                    "image": "small.json",
+                                    "origin": [0, 0, 0],
+                                    "angles": [0, 0, 0],
+                                    "scale": [1, 1, 1],
+                                    "effects": [
+                                        {
+                                            "id": 31,
+                                            "file": "effects/broken.json",
+                                            "visible": true
+                                        },
+                                        {
+                                            "id": 32,
+                                            "file": "effects/filter.json",
+                                            "visible": true
+                                        }
+                                    ]
                                 }
                             ]
                         })",
@@ -214,6 +254,21 @@ const wallpaper::SceneRenderTarget* FirstLayerTarget(const wallpaper::Scene& sce
     if (it == scene.objectRuntimeRenderTargets.end() || it->second.empty()) return nullptr;
     const auto target_it = scene.renderTargets.find(it->second.front());
     return target_it == scene.renderTargets.end() ? nullptr : &target_it->second;
+}
+
+wallpaper::SceneImageEffectLayer* FindEffectLayer(wallpaper::Scene& scene, int32_t layer_id) {
+    const auto nodes_it = scene.objectRuntimeNodes.find(layer_id);
+    if (nodes_it == scene.objectRuntimeNodes.end()) return nullptr;
+    for (auto* node : nodes_it->second) {
+        if (node == nullptr || node->Camera().empty()) continue;
+        const auto camera_it = scene.cameras.find(node->Camera());
+        if (camera_it == scene.cameras.end() || camera_it->second == nullptr ||
+            ! camera_it->second->HasImgEffect()) {
+            continue;
+        }
+        return camera_it->second->GetImgEffect().get();
+    }
+    return nullptr;
 }
 } // namespace
 
@@ -311,6 +366,11 @@ int main() {
         Require(!target.allowReuse, "unique effect FBO remained reusable");
     }
     Require(found_unique_target, "unique effect FBO was not materialized");
+
+    auto* broken_effect_layer = FindEffectLayer(*scene, 30);
+    Require(broken_effect_layer != nullptr, "broken effect chain has no effect bridge");
+    Require(broken_effect_layer->EffectCount() == 0,
+            "downstream effects remained active after an earlier effect failed to load");
 
     return 0;
 }

@@ -129,6 +129,11 @@ public:
                           std::string_view pingpong_b);
 
     void AddEffect(const std::shared_ptr<SceneImageEffect>& node) { m_effects.push_back(node); }
+    void MarkMaterializationFailed() {
+        m_materialization_failed = true;
+        m_effects.clear();
+    }
+    bool MaterializationFailed() const { return m_materialization_failed; }
     void AddPrefillNode(SceneImageEffectNode node) { m_prefill_nodes.push_back(std::move(node)); }
     const std::vector<SceneImageEffectNode>& PrefillNodes() const { return m_prefill_nodes; }
     std::size_t EffectCount() const { return m_effects.size(); }
@@ -220,6 +225,7 @@ private:
     // effect camera/fullscreen mesh path; resolving that pass through the active scene camera turns
     // a shader such as godrays_combine into a tiny world-space quad and makes the rays disappear.
     bool m_fullscreen { false };
+    bool m_materialization_failed { false };
     SourcePolicy m_source_policy { SourcePolicy::OwnerNode };
     //    std::vector<float> m_size;
     std::unique_ptr<SceneMesh> m_source_mesh;

@@ -1,10 +1,13 @@
 #include "backend/scene/internal/parser/WPShaderParserTestHooks.hpp"
 #include "backend/scene/internal/parser/WPShaderParser.hpp"
+#include "fs/PhysicalFs.h"
 #include "fs/VFS.h"
 
 #include <cstdio>
 #include <array>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 
@@ -120,6 +123,134 @@ void TestPackedAudioShaderCompiles() {
     Require(! codes[0].empty() && ! codes[1].empty(), "compiled shader code must not be empty");
 }
 
+std::array<wallpaper::WPShaderUnit, 2> MakeConditionalAudioShaderUnits() {
+    return {
+        wallpaper::WPShaderUnit {
+            .stage = wallpaper::ShaderType::VERTEX,
+            .src = R"(
+                attribute vec3 a_Position;
+                varying vec2 v_TexCoord;
+                void main() {
+                    v_TexCoord = a_Position.xy;
+                    gl_Position = vec4(a_Position, 1.0);
+                }
+            )",
+            .preprocess_info = {},
+        },
+        wallpaper::WPShaderUnit {
+            .stage = wallpaper::ShaderType::FRAGMENT,
+            .src = R"(
+                varying vec2 v_TexCoord;
+                void main() {
+                #if AUDIOSAMPLES == 16
+                    gl_FragColor = vec4(0.25, 0.25, 0.25, 1.0);
+                #elif AUDIOSAMPLES == 32;
+                    gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);
+                #elif AUDIOSAMPLES == 64;
+                    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                #endif
+                }
+            )",
+            .preprocess_info = {},
+        },
+    };
+}
+
+std::array<wallpaper::WPShaderUnit, 2> MakePreparedCacheTestShaderUnits() {
+    return {
+        wallpaper::WPShaderUnit {
+            .stage = wallpaper::ShaderType::VERTEX,
+            .src = R"(
+                attribute vec3 a_Position;
+                void main() {
+                    gl_Position = vec4(a_Position, 1.0);
+                }
+            )",
+            .preprocess_info = {},
+        },
+        wallpaper::WPShaderUnit {
+            .stage = wallpaper::ShaderType::FRAGMENT,
+            .src = R"(
+                void main() {
+                    gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);
+                }
+            )",
+            .preprocess_info = {},
+        },
+    };
+}
+
+void TestTrailingSemicolonPreprocessorConditionCompiles() {
+    wallpaper::fs::VFS vfs;
+    wallpaper::WPShaderInfo shader_info;
+    shader_info.combos["AUDIOSAMPLES"] = "32";
+    auto units = MakeConditionalAudioShaderUnits();
+    std::vector<wallpaper::ShaderCode> codes;
+
+    const bool compiled = wallpaper::WPShaderParser::CompileToSpv(
+        "audio-condition-semicolon-test",
+        std::span<wallpaper::WPShaderUnit>(units.data(), units.size()),
+        codes,
+        vfs,
+        &shader_info,
+        std::span<const wallpaper::WPShaderTexInfo>());
+
+    Require(compiled, "audio shader with Wallpaper Engine preprocessor semicolons should compile");
+}
+
+void TestCorruptPreparedShaderCacheRegenerates() {
+    const auto cache_root =
+        std::filesystem::temp_directory_path() / "we-renderer-prepared-cache-recovery-test";
+    std::filesystem::remove_all(cache_root);
+    std::filesystem::create_directories(cache_root);
+
+    wallpaper::fs::VFS vfs;
+    Require(vfs.Mount("/cache",
+                      std::make_unique<wallpaper::fs::PhysicalFs>(cache_root.string()),
+                      "cache"),
+            "failed to mount shader cache test directory");
+
+    wallpaper::WPShaderInfo shader_info;
+    auto first_units = MakePreparedCacheTestShaderUnits();
+    std::vector<wallpaper::ShaderCode> first_codes;
+    Require(wallpaper::WPShaderParser::CompileToSpv(
+                "prepared-cache-recovery-test",
+                std::span<wallpaper::WPShaderUnit>(first_units.data(), first_units.size()),
+                first_codes,
+                vfs,
+                &shader_info,
+                std::span<const wallpaper::WPShaderTexInfo>()),
+            "initial prepared shader compilation failed");
+
+    std::filesystem::path prepared_cache_file;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(cache_root)) {
+        if (entry.path().extension() == ".wpsrc") {
+            prepared_cache_file = entry.path();
+            break;
+        }
+    }
+    Require(! prepared_cache_file.empty(), "prepared shader cache file was not created");
+    {
+        std::ofstream corrupt(prepared_cache_file, std::ios::binary | std::ios::trunc);
+        corrupt << "corrupt prepared shader cache";
+    }
+
+    auto second_units = MakePreparedCacheTestShaderUnits();
+    std::vector<wallpaper::ShaderCode> second_codes;
+    Require(wallpaper::WPShaderParser::CompileToSpv(
+                "prepared-cache-recovery-test",
+                std::span<wallpaper::WPShaderUnit>(second_units.data(), second_units.size()),
+                second_codes,
+                vfs,
+                &shader_info,
+                std::span<const wallpaper::WPShaderTexInfo>()),
+            "corrupt prepared shader cache should be regenerated");
+    Require(second_codes.size() == second_units.size(),
+            "regenerated prepared shader stage count mismatch");
+
+    std::filesystem::remove_all(cache_root);
+}
+
 } // namespace
 
 int main() {
@@ -128,5 +259,7 @@ int main() {
     TestOnlyAudioArraysAreRewritten();
     TestMalformedAccessStaysVisible();
     TestPackedAudioShaderCompiles();
+    TestCorruptPreparedShaderCacheRegenerates();
+    TestTrailingSemicolonPreprocessorConditionCompiles();
     return 0;
 }

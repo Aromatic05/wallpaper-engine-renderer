@@ -5184,7 +5184,12 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                 imgEffect->SetLocalVisible(effect_visibility.initial_visible);
                 imgEffectLayer->AddEffect(imgEffect);
             } else {
-                LOG_ERROR("effect \'%s\' failed to load", wpeffobj.name.c_str());
+                imgEffectLayer->MarkMaterializationFailed();
+                LOG_ERROR("SceneEffectChainDisabled: layer=%d effect='%s' failed to load; "
+                          "suppressing the complete effect chain",
+                          wpimgobj.id,
+                          wpeffobj.name.c_str());
+                break;
             }
         }
     }

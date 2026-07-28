@@ -194,6 +194,7 @@ static void ToGraphPass(SceneNode* node, std::string_view output, i32 imgId, Ext
     }
 
     auto loadEffect = [node, &rgraph, &scene, &extra](SceneImageEffectLayer* effs) {
+        if (effs->MaterializationFailed()) return;
         const bool publish_link =
             scene.offscreenDependencyLayerIds.count(node->ID()) != 0;
         const bool publish_through_neutral_composite =
