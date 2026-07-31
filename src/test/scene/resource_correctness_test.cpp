@@ -494,6 +494,53 @@ void TestCopyPassKeepsPreparedSourceResidentUntilExecution() {
                 "producer and prepared copy pass bound different source views");
 }
 
+void TestGeneratedCopyTargetTracksResizedSource() {
+    VulkanFixture vk;
+    wallpaper::Scene scene;
+
+    constexpr std::string_view source_key = "_rt_dynamic_copy_source";
+    constexpr std::string_view target_key = "_rt_dynamic_copy_target";
+    scene.renderTargets[std::string(source_key)] = wallpaper::SceneRenderTarget {
+        .width = 4,
+        .height = 5,
+        .mapWidth = 4,
+        .mapHeight = 5,
+        .allowReuse = true,
+    };
+
+    vk::CopyPass copy(vk::CopyPass::Desc {
+        .src = std::string(source_key),
+        .dst = std::string(target_key),
+        .track_source_extent = true,
+    });
+    vk::RenderingResources resources {};
+    copy.prepare(scene, vk.device, resources);
+    RequireTest(copy.prepared(), "generated copy pass did not prepare");
+
+    auto& target_before_resize = scene.renderTargets.at(std::string(target_key));
+    target_before_resize.has_mipmap = true;
+    target_before_resize.mipmap_level = 4;
+
+    auto& source = scene.renderTargets.at(std::string(source_key));
+    source.width = 8;
+    source.height = 6;
+    source.mapWidth = 7;
+    source.mapHeight = 5;
+    copy.refreshResources(scene, vk.device, resources);
+
+    const auto& target = scene.renderTargets.at(std::string(target_key));
+    RequireTest(target.width == 8 && target.height == 6,
+                "generated copy target did not inherit resized source allocation");
+    RequireTest(target.mapWidth == 7 && target.mapHeight == 5,
+                "generated copy target did not inherit resized source content extent");
+    RequireTest(target.has_mipmap && target.mipmap_level == 4,
+                "source extent synchronization overwrote destination target semantics");
+    RequireTest(copy.desc().vk_src.extent.width == 8 && copy.desc().vk_src.extent.height == 6,
+                "copy source image was not rebound after resize");
+    RequireTest(copy.desc().vk_dst.extent.width == 8 && copy.desc().vk_dst.extent.height == 6,
+                "generated copy destination image was not resized with its source");
+}
+
 void TestTextureCacheDeferredGraphActivation() {
     VulkanFixture vk;
     auto&         cache = vk.device.tex_cache();
@@ -697,6 +744,7 @@ int main() {
     TestVfsIdentityAndCacheIsolation();
     TestVfsTextureCacheIsolation();
     TestCopyPassKeepsPreparedSourceResidentUntilExecution();
+    TestGeneratedCopyTargetTracksResizedSource();
     TestTextureCacheDeferredGraphActivation();
     TestDecoderFailureHandling();
     TestDecoderProbeAndRewind();

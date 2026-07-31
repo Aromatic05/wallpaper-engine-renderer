@@ -73,6 +73,7 @@ TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc =
             copy = builder.createTexNode(desc, true);
             doCopy(builder, pdesc, in, copy);
             pdesc.should_execute = should_execute;
+            pdesc.track_source_extent = true;
         });
     return copy;
 }

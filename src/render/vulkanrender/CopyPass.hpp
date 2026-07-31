@@ -20,6 +20,7 @@ public:
         ImageParameters vk_src;
         ImageParameters vk_dst;
         std::function<bool()> should_execute;
+        bool track_source_extent { false };
     };
 
     CopyPass(const Desc&);
@@ -30,12 +31,15 @@ public:
     void execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
     std::string residencyKey() const override;
+    bool canReuseForResidency(const VulkanPass&) const override;
     void absorbResidencyGraphState(const VulkanPass&) override;
     bool referencesRenderTarget(std::string_view) const override;
 
     const Desc& desc() const { return m_desc; }
 
 private:
+    bool synchronizeDestinationTarget(Scene&);
+
     Desc m_desc;
 };
 

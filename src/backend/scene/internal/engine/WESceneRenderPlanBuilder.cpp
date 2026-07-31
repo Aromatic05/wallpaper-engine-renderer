@@ -63,6 +63,7 @@ TexNode* addCopyPass(RenderGraph& rgraph, TexNode* in, TexNode::Desc* out_desc =
             copy = builder.createTexNode(desc, true);
             doCopy(builder, pdesc, in, copy);
             pdesc.should_execute = should_execute;
+            pdesc.track_source_extent = true;
         });
     return copy;
 }
@@ -169,6 +170,7 @@ static rg::TexNode* AddLayerLinkPublication(rg::RenderGraph& rgraph, Scene& scen
             auto output_desc = rg::createTexDesc(GenLinkTex(static_cast<idx>(layer_id)), &scene);
             auto* output = builder.createTexNode(output_desc, true);
             rg::doCopy(builder, desc, input, output);
+            desc.track_source_extent = true;
             published = output;
         });
     return published;

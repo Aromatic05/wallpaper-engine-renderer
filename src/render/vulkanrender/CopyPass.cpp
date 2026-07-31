@@ -15,6 +15,12 @@ std::string CopyPass::residencyKey() const {
     return "CopyPass|src=" + m_desc.src + "|dst=" + m_desc.dst;
 }
 
+bool CopyPass::canReuseForResidency(const VulkanPass& next_pass) const {
+    const auto* next = dynamic_cast<const CopyPass*>(&next_pass);
+    return next != nullptr && residencyKey() == next->residencyKey() &&
+           m_desc.track_source_extent == next->m_desc.track_source_extent;
+}
+
 void CopyPass::absorbResidencyGraphState(const VulkanPass& next_pass) {
     VulkanPass::absorbResidencyGraphState(next_pass);
     const auto* next = dynamic_cast<const CopyPass*>(&next_pass);
@@ -26,15 +32,29 @@ bool CopyPass::referencesRenderTarget(std::string_view render_target) const {
     return m_desc.src == render_target || m_desc.dst == render_target;
 }
 
-void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& rr) {
-    if (scene.renderTargets.count(m_desc.src) == 0) {
+bool CopyPass::synchronizeDestinationTarget(Scene& scene) {
+    const auto source = scene.renderTargets.find(m_desc.src);
+    if (source == scene.renderTargets.end()) return false;
+
+    auto destination = scene.renderTargets.find(m_desc.dst);
+    if (destination == scene.renderTargets.end()) {
+        auto inherited       = source->second;
+        inherited.allowReuse = true;
+        scene.renderTargets.insert_or_assign(m_desc.dst, std::move(inherited));
+    } else if (m_desc.track_source_extent) {
+        destination->second.width      = source->second.width;
+        destination->second.height     = source->second.height;
+        destination->second.mapWidth   = source->second.mapWidth;
+        destination->second.mapHeight  = source->second.mapHeight;
+        destination->second.allowReuse = true;
+    }
+    return true;
+}
+
+void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources&) {
+    if (! synchronizeDestinationTarget(scene)) {
         LOG_ERROR("%s not found", m_desc.src.c_str());
         return;
-    }
-    if (scene.renderTargets.count(m_desc.dst) == 0) {
-        auto& rt                                   = scene.renderTargets.at(m_desc.src);
-        scene.renderTargets[m_desc.dst]            = rt;
-        scene.renderTargets[m_desc.dst].allowReuse = true;
     }
 
     std::array<std::string, 2>      textures    = { m_desc.src, m_desc.dst };
@@ -66,6 +86,10 @@ void CopyPass::prepare(Scene& scene, const Device& device, RenderingResources& r
 };
 
 void CopyPass::refreshResources(Scene& scene, const Device& device, RenderingResources&) {
+    if (! synchronizeDestinationTarget(scene)) {
+        setPrepared(false);
+        return;
+    }
     std::array<std::string, 2>      textures    = { m_desc.src, m_desc.dst };
     std::array<ImageParameters*, 2> vk_textures = { &m_desc.vk_src, &m_desc.vk_dst };
     for (usize i = 0; i < textures.size(); i++) {
@@ -97,6 +121,21 @@ void CopyPass::execute(const Device& device, RenderingResources& rr) {
 
     if (! (src.handle && dst.handle)) {
         assert(src.handle && dst.handle);
+        releaseFinalReadTexs(device);
+        return;
+    }
+
+    if (src.extent.width > dst.extent.width || src.extent.height > dst.extent.height ||
+        src.extent.depth > dst.extent.depth) {
+        LOG_ERROR("copy image extent exceeds destination: src='%s' %ux%ux%u dst='%s' %ux%ux%u",
+                  m_desc.src.c_str(),
+                  src.extent.width,
+                  src.extent.height,
+                  src.extent.depth,
+                  m_desc.dst.c_str(),
+                  dst.extent.width,
+                  dst.extent.height,
+                  dst.extent.depth);
         releaseFinalReadTexs(device);
         return;
     }
