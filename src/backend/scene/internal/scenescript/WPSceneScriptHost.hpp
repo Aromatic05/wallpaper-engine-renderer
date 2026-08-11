@@ -71,6 +71,12 @@ public:
     bool RegisterPropertyBinding(WPSceneScriptRegistration registration);
     bool RegisterPropertyScript(WPSceneScriptRegistration registration);
     bool RegisterPropertyAnimation(WPSceneScriptRegistration registration);
+    void PromoteMaterialUniformTarget(int32_t object_id,
+                                      int32_t target_id,
+                                      uint32_t material_index,
+                                      const std::string& authored_property_name,
+                                      SceneNode* node,
+                                      const std::string& uniform_name);
     void Initialize();
     // Materialize at most one deferred hidden layer after a presented frame. Keeping this work
     // incremental removes hidden-language/resource branches from the startup critical path.

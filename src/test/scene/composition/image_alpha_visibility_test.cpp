@@ -87,9 +87,11 @@ void MountAssets(wallpaper::fs::VFS& vfs) {
     const std::string transform_fragment_shader = R"(
         uniform sampler2D g_Texture0;
         uniform float g_UserAlpha;
+        uniform float g_Speed; // {"material":"speed","default":0.5}
         varying vec2 v_TexCoord;
         void main() {
             vec4 sampled = texture(g_Texture0, v_TexCoord);
+            sampled.rgb *= 1.0 + g_Speed * 0.001;
             gl_FragColor = vec4(sampled.rgb, sampled.a * g_UserAlpha);
         }
     )";
@@ -217,9 +219,29 @@ Fixture ParseScene(const wallpaper::UserPropertyMap& properties) {
                                           "image": "image.json",
                                           "origin": [32, 32, 0],
                                           "angles": [0, 0, 0],
-                                          "scale": [1, 1, 1],
+                                          "scale": {
+                                              "value": [1, 1, 1],
+                                              "script": "'use strict';\nexport function mediaPlaybackChanged(event) { shared.mCheckRotation(event); }\nexport function update(value) { return new Vec3(shared.lastEffectInitCount ?? -1, 1, 1); }"
+                                          },
                                           "visible": { "value": false, "user": "show_direct" },
-                                          "alpha": { "value": 0.25, "user": "direct_alpha" }
+                                          "alpha": { "value": 0.25, "user": "direct_alpha" },
+                                          "effects": [
+                                              {
+                                                  "id": 11,
+                                                  "file": "effects/transform.json",
+                                                  "visible": true,
+                                                  "passes": [
+                                                      {
+                                                          "constantshadervalues": {
+                                                              "speed": {
+                                                                  "value": 0.5,
+                                                                  "script": "'use strict';\nlet speed = 0.5;\nshared.effectModuleInitCount = (shared.effectModuleInitCount ?? 0) + 1;\nshared.mCheckRotation = (event) => { shared.lastEffectInitCount = shared.effectModuleInitCount; speed = 0.75; };\nexport function update(value) { return speed; }"
+                                                              }
+                                                          }
+                                                      }
+                                                  ]
+                                              }
+                                          ]
                                       },
                                       {
                                           "id": 20,
@@ -334,6 +356,9 @@ int main() {
     auto graph = wallpaper::BuildWESceneRenderPlan(*scene);
     Require(graph != nullptr, "initial render graph failed to build");
     RegisterRuntime(*scene);
+    scene->scriptHost->FrameBegin(0.1);
+    Require(NearlyEqual(scene->layerNodes.at(10)->Scale().x(), 1.0f),
+            "deferred effect script module was not initialized before initial media dispatch");
 
     auto shown = Properties(true, 0.7f, 0.6f);
     scene->scriptHost->ApplyUserProperties(shown, false);
@@ -348,10 +373,23 @@ int main() {
     Require(direct_material != nullptr, "shown image has no material");
     Require(NearlyEqual(ReadAlpha(*direct_material), 0.7f),
             "same-dispatch alpha did not reach newly materialized image");
+    auto* deferred_effect = FindAuthoredFinalEffectMaterial(*scene, 10);
+    Require(deferred_effect != nullptr, "shown deferred image has no effect material");
+    const auto speed = deferred_effect->customShader.constValues.find("g_Speed");
+    Require(speed != deferred_effect->customShader.constValues.end() && speed->second.size() == 1 &&
+                NearlyEqual(speed->second[0], 0.75f),
+            "deferred effect script state was not applied to the materialized uniform");
     Require(NearlyEqual(ReadAlpha(*effect_base), 0.6f),
             "dynamic alpha did not reach effect source material");
     Require(NearlyEqual(ReadAlpha(*effect_final), 0.6f),
             "dynamic alpha did not reach authored final effect material");
+
+    wallpaper::WPSceneScriptMediaState media_state;
+    media_state.playback_state = 1;
+    scene->scriptHost->ApplyMediaState(media_state, false);
+    scene->scriptHost->FrameBegin(0.1);
+    Require(NearlyEqual(scene->layerNodes.at(10)->Scale().x(), 1.0f),
+            "deferred effect script module was initialized more than once after materialization");
 
     auto hidden = Properties(false, 0.2f, 0.6f);
     scene->scriptHost->ApplyUserProperties(hidden, false);

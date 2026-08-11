@@ -2690,6 +2690,10 @@ bool SameRegistrationTarget(const WPSceneScriptRegistration& lhs,
                             const WPSceneScriptRegistration& rhs) {
     if (lhs.target_kind != rhs.target_kind || lhs.object_id != rhs.object_id) return false;
 
+    if (lhs.target_kind == WPSceneScriptTargetKind::MaterialUniform) {
+        return lhs.target_id == rhs.target_id && lhs.target_index == rhs.target_index;
+    }
+
     if (lhs.target_kind == WPSceneScriptTargetKind::Effect) {
         // Authored effect ids survive parse-time pruning better than array positions, but older
         // registrations may only have an index. Prefer ids when both sides have one and fall back
@@ -9308,6 +9312,41 @@ bool WPSceneScriptHost::RegisterPropertyAnimation(WPSceneScriptRegistration regi
     m_impl->property_animations.push_back(std::move(animation));
     ApplyPropertyAnimationInstance(m_impl, m_impl->property_animations.back());
     return true;
+}
+
+void WPSceneScriptHost::PromoteMaterialUniformTarget(int32_t object_id,
+                                                     int32_t target_id,
+                                                     uint32_t material_index,
+                                                     const std::string& authored_property_name,
+                                                     SceneNode* node,
+                                                     const std::string& uniform_name) {
+    if (! Ready() || node == nullptr) return;
+
+    const auto matches = [object_id,
+                          target_id,
+                          material_index,
+                          &authored_property_name](const WPSceneScriptRegistration& registration) {
+        return registration.target_kind == WPSceneScriptTargetKind::MaterialUniform &&
+               registration.object_id == object_id && registration.target_id == target_id &&
+               registration.target_index == material_index &&
+               registration.property_name == authored_property_name;
+    };
+    const auto promote = [node, &uniform_name](WPSceneScriptRegistration& registration) {
+        registration.node          = node;
+        registration.property_name = uniform_name;
+    };
+
+    for (auto& animation : m_impl->property_animations) {
+        if (! matches(animation.registration)) continue;
+        promote(animation.registration);
+        ApplyPropertyAnimationInstance(m_impl, animation);
+    }
+    for (auto& instance : m_impl->instances) {
+        if (instance == nullptr || ! matches(instance->registration)) continue;
+        promote(instance->registration);
+        EnsureTextureAnimationStatesForNode(m_impl, instance->registration.node);
+        ApplyRegistrationValue(m_impl, instance->registration, instance->current_value);
+    }
 }
 
 void WPSceneScriptHost::Initialize() {
