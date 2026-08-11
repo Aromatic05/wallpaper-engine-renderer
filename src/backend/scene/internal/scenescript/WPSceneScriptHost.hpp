@@ -50,6 +50,8 @@ struct WPSceneScriptRegistration {
     WPSceneScriptTargetKind                     target_kind { WPSceneScriptTargetKind::Layer };
     uint32_t                                    target_index { 0 };
     int32_t                                     target_id { 0 };
+    uint32_t                                    target_effect_index { 0 };
+    std::string                                 authored_property_name;
     WPDynamicValue::Type                        value_type { WPDynamicValue::Type::Null };
     WPDynamicValue                              base_value {};
     std::shared_ptr<WPPropertyAnimationDefinition> animation;
