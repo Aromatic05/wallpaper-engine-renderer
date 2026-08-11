@@ -2392,6 +2392,11 @@ void RegisterLayerSceneState(ParseContext& context, int32_t layer_id, int32_t pa
     context.scene->SetLayerLocalVisibility(layer_id, visible);
 }
 
+int32_t MaterialUniformTargetId(int32_t effect_id, usize effect_index) {
+    if (effect_id != 0) return effect_id;
+    return -static_cast<int32_t>(effect_index) - 1;
+}
+
 void RegisterDeferredEffectConstantScripts(ParseContext& context,
                                            const wpscene::WPImageObject& image,
                                            SceneNode* logical_node) {
@@ -2418,11 +2423,10 @@ void RegisterDeferredEffectConstantScripts(ParseContext& context,
                     .node                   = logical_node,
                     .target_kind            = WPSceneScriptTargetKind::MaterialUniform,
                     .target_index           = static_cast<uint32_t>(material_index),
-                    .target_id              = effect.id,
-                    .target_effect_index    = static_cast<uint32_t>(effect_index),
-                    .authored_property_name = material_value_name,
+                    .target_id              = MaterialUniformTargetId(effect.id, effect_index),
                     .value_type             = binding.setting.value.type(),
                     .base_value             = binding.setting.value,
+                    .animation              = nullptr,
                     .setting                = binding.setting,
                 };
 
@@ -3098,38 +3102,32 @@ void RegisterConstantShaderValueBindings(ParseContext& context, const wpscene::W
             .node                   = node,
             .target_kind            = WPSceneScriptTargetKind::MaterialUniform,
             .target_index           = static_cast<uint32_t>(material_index),
-            .target_id              = effect_id,
-            .target_effect_index    = static_cast<uint32_t>(effect_index),
-            .authored_property_name = material_value_name,
+            .target_id              = MaterialUniformTargetId(
+                effect_id, static_cast<usize>(effect_index)),
             .value_type             = setting.value.type(),
             .base_value             = setting.value,
             .setting                = setting,
         };
 
-        const auto same_target = [&registration](const WPSceneScriptRegistration& existing) {
+        const auto same_target = [&registration, &material_value_name, &gl_uniform_name](
+                                     const WPSceneScriptRegistration& existing) {
             if (existing.target_kind != WPSceneScriptTargetKind::MaterialUniform ||
                 existing.object_id != registration.object_id ||
                 existing.target_index != registration.target_index ||
-                existing.target_effect_index != registration.target_effect_index ||
-                existing.authored_property_name != registration.authored_property_name) {
+                existing.target_id != registration.target_id) {
                 return false;
             }
-            if (existing.target_id != 0 && registration.target_id != 0) {
-                return existing.target_id == registration.target_id;
-            }
-            return true;
+            return existing.property_name == material_value_name ||
+                   existing.property_name == gl_uniform_name;
         };
         const auto promote_existing = [&registration, &same_target](auto& registrations) {
             const auto it = std::find_if(registrations.begin(), registrations.end(), same_target);
             if (it == registrations.end()) return false;
-            it->node                   = registration.node;
-            it->property_name          = registration.property_name;
-            it->target_id              = registration.target_id;
-            it->target_effect_index    = registration.target_effect_index;
-            it->authored_property_name = registration.authored_property_name;
-            it->value_type             = registration.value_type;
-            it->base_value             = registration.base_value;
-            it->setting                = registration.setting;
+            it->node          = registration.node;
+            it->property_name = registration.property_name;
+            it->value_type    = registration.value_type;
+            it->base_value    = registration.base_value;
+            it->setting       = registration.setting;
             return true;
         };
 
@@ -3161,6 +3159,16 @@ void RegisterConstantShaderValueBindings(ParseContext& context, const wpscene::W
         } else if (setting.hasUserBinding()) {
             context.scene->bindingRegistrations.push_back(registration);
             registration_kind += registration_kind.empty() ? "user" : "+user";
+        }
+
+        if (context.scene->scriptHost != nullptr && (setting.hasScript() || has_animation)) {
+            context.scene->scriptHost->PromoteMaterialUniformTarget(
+                object_id,
+                registration.target_id,
+                registration.target_index,
+                material_value_name,
+                node,
+                gl_uniform_name);
         }
 
         LOG_VERBOSE("ConstantShaderValueRegister: layer=%d name='%.*s' effect-id=%d "

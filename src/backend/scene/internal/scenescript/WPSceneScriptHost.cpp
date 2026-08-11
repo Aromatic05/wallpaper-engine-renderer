@@ -2691,18 +2691,7 @@ bool SameRegistrationTarget(const WPSceneScriptRegistration& lhs,
     if (lhs.target_kind != rhs.target_kind || lhs.object_id != rhs.object_id) return false;
 
     if (lhs.target_kind == WPSceneScriptTargetKind::MaterialUniform) {
-        if (lhs.target_index != rhs.target_index ||
-            lhs.target_effect_index != rhs.target_effect_index) {
-            return false;
-        }
-        if (lhs.target_id != 0 && rhs.target_id != 0 && lhs.target_id != rhs.target_id) {
-            return false;
-        }
-        const auto& lhs_name = lhs.authored_property_name.empty() ? lhs.property_name
-                                                                  : lhs.authored_property_name;
-        const auto& rhs_name = rhs.authored_property_name.empty() ? rhs.property_name
-                                                                  : rhs.authored_property_name;
-        return lhs_name == rhs_name;
+        return lhs.target_id == rhs.target_id && lhs.target_index == rhs.target_index;
     }
 
     if (lhs.target_kind == WPSceneScriptTargetKind::Effect) {
@@ -2766,7 +2755,7 @@ void RebindLayerRegistrations(WPSceneScriptHost::Opaque* opaque, int32_t layer_i
                               SceneNode* node) {
     if (opaque == nullptr || opaque->scene == nullptr) return;
 
-    auto rebind_layer_registration = [layer_id, node](WPSceneScriptRegistration& registration) {
+    auto rebind_registration = [layer_id, node](WPSceneScriptRegistration& registration) {
         if (registration.object_id == layer_id &&
             (registration.target_kind == WPSceneScriptTargetKind::Layer ||
              registration.target_kind == WPSceneScriptTargetKind::Effect)) {
@@ -2777,65 +2766,23 @@ void RebindLayerRegistrations(WPSceneScriptHost::Opaque* opaque, int32_t layer_i
         }
     };
 
-    const auto promote_material_registration =
-        [layer_id](WPSceneScriptRegistration& registration, const auto& resolved_registrations) {
-            if (registration.object_id != layer_id ||
-                registration.target_kind != WPSceneScriptTargetKind::MaterialUniform) {
-                return false;
-            }
-            const auto it = std::find_if(
-                resolved_registrations.begin(),
-                resolved_registrations.end(),
-                [&registration](const WPSceneScriptRegistration& candidate) {
-                    return candidate.node != nullptr && candidate.node->Mesh() != nullptr &&
-                           candidate.node->Mesh()->Material() != nullptr &&
-                           SameRegistrationTarget(registration, candidate);
-                });
-            if (it == resolved_registrations.end()) return false;
-
-            // Keep the host-owned script/animation state intact. Only promote the target identity
-            // from the lightweight authored material value to the concrete effect material/uniform.
-            registration.node                   = it->node;
-            registration.property_name          = it->property_name;
-            registration.target_index           = it->target_index;
-            registration.target_id              = it->target_id;
-            registration.target_effect_index    = it->target_effect_index;
-            registration.authored_property_name = it->authored_property_name;
-            registration.value_type             = it->value_type;
-            return true;
-        };
-
     for (auto& registration : opaque->scene->bindingRegistrations) {
-        rebind_layer_registration(registration);
+        rebind_registration(registration);
     }
     for (auto& registration : opaque->scene->scriptRegistrations) {
-        rebind_layer_registration(registration);
+        rebind_registration(registration);
     }
     for (auto& registration : opaque->scene->propertyAnimationRegistrations) {
-        rebind_layer_registration(registration);
+        rebind_registration(registration);
     }
     for (auto& registration : opaque->property_bindings) {
-        if (! promote_material_registration(registration, opaque->scene->bindingRegistrations)) {
-            rebind_layer_registration(registration);
-        }
+        rebind_registration(registration);
     }
     for (auto& animation : opaque->property_animations) {
-        if (promote_material_registration(
-                animation.registration, opaque->scene->propertyAnimationRegistrations)) {
-            ApplyPropertyAnimationInstance(opaque, animation);
-        } else {
-            rebind_layer_registration(animation.registration);
-        }
+        rebind_registration(animation.registration);
     }
     for (auto& instance : opaque->instances) {
-        if (instance == nullptr) continue;
-        if (promote_material_registration(instance->registration,
-                                          opaque->scene->scriptRegistrations)) {
-            EnsureTextureAnimationStatesForNode(opaque, instance->registration.node);
-            ApplyRegistrationValue(opaque, instance->registration, instance->current_value);
-        } else {
-            rebind_layer_registration(instance->registration);
-        }
+        if (instance != nullptr) rebind_registration(instance->registration);
     }
 }
 
@@ -9365,6 +9312,41 @@ bool WPSceneScriptHost::RegisterPropertyAnimation(WPSceneScriptRegistration regi
     m_impl->property_animations.push_back(std::move(animation));
     ApplyPropertyAnimationInstance(m_impl, m_impl->property_animations.back());
     return true;
+}
+
+void WPSceneScriptHost::PromoteMaterialUniformTarget(int32_t object_id,
+                                                     int32_t target_id,
+                                                     uint32_t material_index,
+                                                     const std::string& authored_property_name,
+                                                     SceneNode* node,
+                                                     const std::string& uniform_name) {
+    if (! Ready() || node == nullptr) return;
+
+    const auto matches = [object_id,
+                          target_id,
+                          material_index,
+                          &authored_property_name](const WPSceneScriptRegistration& registration) {
+        return registration.target_kind == WPSceneScriptTargetKind::MaterialUniform &&
+               registration.object_id == object_id && registration.target_id == target_id &&
+               registration.target_index == material_index &&
+               registration.property_name == authored_property_name;
+    };
+    const auto promote = [node, &uniform_name](WPSceneScriptRegistration& registration) {
+        registration.node          = node;
+        registration.property_name = uniform_name;
+    };
+
+    for (auto& animation : m_impl->property_animations) {
+        if (! matches(animation.registration)) continue;
+        promote(animation.registration);
+        ApplyPropertyAnimationInstance(m_impl, animation);
+    }
+    for (auto& instance : m_impl->instances) {
+        if (instance == nullptr || ! matches(instance->registration)) continue;
+        promote(instance->registration);
+        EnsureTextureAnimationStatesForNode(m_impl, instance->registration.node);
+        ApplyRegistrationValue(m_impl, instance->registration, instance->current_value);
+    }
 }
 
 void WPSceneScriptHost::Initialize() {

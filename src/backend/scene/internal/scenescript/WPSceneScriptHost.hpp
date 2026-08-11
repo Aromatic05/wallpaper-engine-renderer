@@ -50,8 +50,6 @@ struct WPSceneScriptRegistration {
     WPSceneScriptTargetKind                     target_kind { WPSceneScriptTargetKind::Layer };
     uint32_t                                    target_index { 0 };
     int32_t                                     target_id { 0 };
-    uint32_t                                    target_effect_index { 0 };
-    std::string                                 authored_property_name;
     WPDynamicValue::Type                        value_type { WPDynamicValue::Type::Null };
     WPDynamicValue                              base_value {};
     std::shared_ptr<WPPropertyAnimationDefinition> animation;
@@ -73,6 +71,12 @@ public:
     bool RegisterPropertyBinding(WPSceneScriptRegistration registration);
     bool RegisterPropertyScript(WPSceneScriptRegistration registration);
     bool RegisterPropertyAnimation(WPSceneScriptRegistration registration);
+    void PromoteMaterialUniformTarget(int32_t object_id,
+                                      int32_t target_id,
+                                      uint32_t material_index,
+                                      const std::string& authored_property_name,
+                                      SceneNode* node,
+                                      const std::string& uniform_name);
     void Initialize();
     // Materialize at most one deferred hidden layer after a presented frame. Keeping this work
     // incremental removes hidden-language/resource branches from the startup critical path.
