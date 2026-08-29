@@ -265,9 +265,9 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
                 "demux.video_0 ! queue "
                 "! h264parse "
                 "! vah264dec "
-                "! vapostproc scale-method=fast "
+                "! vapostproc scale-method=fast sharpen=0 skin-tone=0 "
                 "! " + caps +
-                " ! appsink name=sink sync=true max-buffers=1 drop=true",
+                " ! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
         };
     }
 
@@ -283,7 +283,7 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
                 "! h264parse "
                 "! nvh264dec "
                 "! video/x-raw(memory:CUDAMemory),format=(string)NV12 "
-                "! appsink name=sink sync=true max-buffers=1 drop=true",
+                "! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
         };
     }
 
@@ -299,7 +299,7 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
                 "! h264parse "
                 "! nvh264sldec "
                 "! video/x-raw(memory:CUDAMemory),format=(string)NV12 "
-                "! appsink name=sink sync=true max-buffers=1 drop=true",
+                "! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
         };
     }
 
@@ -318,7 +318,7 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
             "! video/x-h264,stream-format=(string)byte-stream,alignment=(string)au "
             "! decodebin "
             "! videoconvert "
-            "! appsink name=sink sync=true max-buffers=1 drop=true",
+            "! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
     };
 }
 
@@ -1102,7 +1102,9 @@ std::optional<DmabufImportedImage> ExportVaMemoryRgbaImage(const Device& device,
 
 struct VideoTextureCache::Entry {
     std::string key;
-    std::vector<uint8_t> encoded;
+    ImageDataPtr encoded_storage;
+    const uint8_t* encoded_data { nullptr };
+    std::size_t encoded_size { 0 };
     VmaImageParameters image;
     VmaBufferParameters staging;
     CudaExternalBuffer cuda_rgba_buffer;
@@ -1233,8 +1235,8 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     }
 
     entry.memory_stream =
-        G_INPUT_STREAM(g_memory_input_stream_new_from_data(entry.encoded.data(),
-                                                           static_cast<gssize>(entry.encoded.size()),
+        G_INPUT_STREAM(g_memory_input_stream_new_from_data(entry.encoded_data,
+                                                           static_cast<gssize>(entry.encoded_size),
                                                            nullptr));
     if (entry.memory_stream == nullptr) {
         LOG_ERROR("create video memory stream for '%s' failed", entry.key.c_str());
@@ -1262,7 +1264,7 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     LOG_VERBOSE("VideoTexturePipeline key='%s' backend='%s' source=giostreamsrc bytes=%zu desc='%s'",
                 entry.key.c_str(),
                 pipeline_config.name,
-                entry.encoded.size(),
+                entry.encoded_size,
                 pipeline_config.description.c_str());
 
     GstCaps* sink_caps = gst_caps_from_string(pipeline_config.sink_caps.c_str());
@@ -1716,7 +1718,7 @@ bool VideoTextureCache::uploadSample(VideoTextureCache::Entry& entry, ::GstSampl
 
 ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
                                          const SceneTexture& texture,
-                                         const Image& image,
+                                         std::shared_ptr<Image> image,
                                          VideoTexturePlaybackState initial_state) {
     if (auto* entry = find(key)) {
         if (initial_state == VideoTexturePlaybackState::Stopped)
@@ -1728,7 +1730,8 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
         return ref;
     }
 
-    if (image.slots.empty() || image.slots[0].mipmaps.empty() || image.slots[0].mipmaps[0].data == nullptr) {
+    if (image == nullptr || image->slots.empty() || image->slots[0].mipmaps.empty() ||
+        image->slots[0].mipmaps[0].data == nullptr) {
         LOG_ERROR("video texture '%.*s' is missing embedded payload",
                   static_cast<int>(key.size()),
                   key.data());
@@ -1737,15 +1740,28 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
 
     auto entry = std::make_unique<Entry>();
     entry->key.assign(key);
-    entry->encoded.assign(image.slots[0].mipmaps[0].data.get(),
-                          image.slots[0].mipmaps[0].data.get() + image.slots[0].mipmaps[0].size);
+    const auto& encoded = image->slots[0].mipmaps[0];
+    entry->encoded_size = static_cast<std::size_t>(encoded.size);
+    // CustomShaderPass transfers the parser result when it is the sole owner. If another owner
+    // exists, preserve its Image contents and use a private copy instead.
+    if (image.use_count() == 1) {
+        entry->encoded_storage = std::move(image->slots[0].mipmaps[0].data);
+    } else {
+        entry->encoded_storage = ImageDataPtr(new uint8_t[entry->encoded_size], [](uint8_t* data) {
+            delete[] data;
+        });
+        std::copy(encoded.data.get(),
+                  encoded.data.get() + entry->encoded_size,
+                  entry->encoded_storage.get());
+    }
+    entry->encoded_data = entry->encoded_storage.get();
 
     entry->width = static_cast<uint32_t>(std::max(
         1, texture.mapWidth > 0 ? texture.mapWidth
-                                : (texture.width > 0 ? texture.width : image.slots[0].width)));
+                                : (texture.width > 0 ? texture.width : image->slots[0].width)));
     entry->height = static_cast<uint32_t>(std::max(
         1, texture.mapHeight > 0 ? texture.mapHeight
-                                 : (texture.height > 0 ? texture.height : image.slots[0].height)));
+                                 : (texture.height > 0 ? texture.height : image->slots[0].height)));
     entry->pipeline_mode = SelectVideoPipelineMode(m_device, MakeDecoderSettings(m_settings));
     // The negotiated tiled AR24 modifier is specific to Intel's VA driver. Other VA devices retain
     // the portable VAMemory export path while still benefiting from output-sized post-processing.
@@ -1782,13 +1798,16 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
         return {};
     }
 
-    if (! CreateStagingBuffer(m_device.vma_allocator(),
-                              static_cast<size_t>(entry->width) * entry->height * 4u,
-                              entry->staging)) {
-        LOG_ERROR("create video staging buffer for '%s' failed", entry->key.c_str());
-        return {};
-    }
-    {
+    // GPU-native VA/CUDA paths upload from imported external memory and never read the host
+    // staging allocation. Keep it only for the CPU RGBA fallback to avoid an unused 8 MiB buffer
+    // for every 1080p video texture.
+    if (entry->pipeline_mode == VideoPipelineMode::CpuRgba) {
+        if (! CreateStagingBuffer(m_device.vma_allocator(),
+                                  static_cast<size_t>(entry->width) * entry->height * 4u,
+                                  entry->staging)) {
+            LOG_ERROR("create video staging buffer for '%s' failed", entry->key.c_str());
+            return {};
+        }
         void* mapped = nullptr;
         if (entry->staging.handle.MapMemory(&mapped) == VK_SUCCESS) {
             entry->staging_mapped = static_cast<uint8_t*>(mapped);
@@ -2107,6 +2126,7 @@ std::size_t VideoTextureCache::GetTrackedBytes() const {
     for (const auto& entry : m_entries) {
         if (! entry) continue;
         if (entry->image.handle) total += static_cast<std::size_t>(entry->image.handle.AllocationSize());
+        total += entry->encoded_size;
         if (entry->staging.handle) total += static_cast<std::size_t>(entry->staging.handle.AllocationSize());
         if (entry->cuda_rgba_buffer.buffer != VK_NULL_HANDLE) {
             total += static_cast<std::size_t>(entry->cuda_rgba_buffer.size);
