@@ -204,6 +204,7 @@ bool HasElementFactory(const char* name) {
 enum class VideoPipelineMode
 {
     CpuRgba,
+    CpuBgra,
     VaMemoryBgra,
     NvidiaCudaNv12,
     NvidiaStatelessCudaNv12,
@@ -211,7 +212,8 @@ enum class VideoPipelineMode
 
 VideoTexturePipelineMode ToPublicPipelineMode(VideoPipelineMode mode) {
     switch (mode) {
-    case VideoPipelineMode::CpuRgba: return VideoTexturePipelineMode::CpuRgba;
+    case VideoPipelineMode::CpuRgba:
+    case VideoPipelineMode::CpuBgra: return VideoTexturePipelineMode::CpuRgba;
     case VideoPipelineMode::VaMemoryBgra: return VideoTexturePipelineMode::VaMemoryBgra;
     case VideoPipelineMode::NvidiaCudaNv12: return VideoTexturePipelineMode::NvidiaCudaNv12;
     case VideoPipelineMode::NvidiaStatelessCudaNv12:
@@ -234,11 +236,7 @@ struct VideoPipelineConfig {
     std::string description;
 };
 
-std::string MakeVaVideoCaps(uint32_t width, uint32_t height, bool direct_dmabuf) {
-    std::string caps = direct_dmabuf
-        ? "video/x-raw(memory:DMABuf),format=(string)DMA_DRM,"
-          "drm-format=(string)AR24:0x0100000000000002"
-        : "video/x-raw(memory:VAMemory),format=(string)BGRA";
+std::string AddVideoSizeToCaps(std::string caps, uint32_t width, uint32_t height) {
     if (width > 0 && height > 0) {
         caps += ",width=(int)";
         caps += std::to_string(width);
@@ -248,16 +246,65 @@ std::string MakeVaVideoCaps(uint32_t width, uint32_t height, bool direct_dmabuf)
     return caps;
 }
 
+bool SupportsVaDmabufImport(const Device& device) {
+    return device.supportExt(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) &&
+           device.supportExt(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) &&
+           device.supportExt(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
+}
+
+std::string BuildVaDirectDmabufCaps(const Device& device) {
+    if (! SupportsVaDmabufImport(device)) return {};
+
+    // The destination video image for the VA path is BGRA, so direct DMA-BUF input must expose
+    // the byte-compatible DRM ARGB8888 layout. Offer every single-plane modifier that Vulkan can
+    // consume as a transfer source; GStreamer/VA then intersects this list with the modifiers the
+    // decoder and post-processor can actually allocate on the selected DRM device.
+    const auto modifiers = device.gpu().GetDrmFormatModifierProperties2(VK_FORMAT_B8G8R8A8_UNORM);
+    std::vector<std::string> drm_formats;
+    for (const auto& modifier : modifiers) {
+        if (modifier.drmFormatModifierPlaneCount != 1 ||
+            (modifier.drmFormatModifierTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) == 0) {
+            continue;
+        }
+        gchar* text =
+            gst_video_dma_drm_fourcc_to_string(DRM_FORMAT_ARGB8888, modifier.drmFormatModifier);
+        if (text == nullptr) continue;
+        drm_formats.emplace_back(text);
+        g_free(text);
+    }
+    if (drm_formats.empty()) return {};
+
+    std::string caps =
+        "video/x-raw(memory:DMABuf),format=(string)DMA_DRM,drm-format=(string)";
+    if (drm_formats.size() == 1) {
+        caps += drm_formats.front();
+        return caps;
+    }
+
+    caps += "{ ";
+    for (std::size_t i = 0; i < drm_formats.size(); ++i) {
+        if (i != 0) caps += ", ";
+        caps += drm_formats[i];
+    }
+    caps += " }";
+    return caps;
+}
+
 VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
-                                                 uint32_t            va_width = 0,
-                                                 uint32_t            va_height = 0,
-                                                 bool                direct_va_dmabuf = false) {
+                                                 uint32_t            width = 0,
+                                                 uint32_t            height = 0,
+                                                 std::string_view    direct_va_caps = {}) {
     if (mode == VideoPipelineMode::VaMemoryBgra) {
-        const auto caps = MakeVaVideoCaps(va_width, va_height, direct_va_dmabuf);
+        const bool direct_dmabuf = ! direct_va_caps.empty();
+        const auto caps = AddVideoSizeToCaps(
+            direct_dmabuf ? std::string(direct_va_caps)
+                          : "video/x-raw(memory:VAMemory),format=(string)BGRA",
+            width,
+            height);
         return VideoPipelineConfig {
             .mode = mode,
-            .name = direct_va_dmabuf ? "va-dmabuf-bgra-vulkan-image"
-                                     : "va-vamemory-bgra-vulkan-image",
+            .name = direct_dmabuf ? "va-dmabuf-bgra-vulkan-image"
+                                  : "va-vamemory-bgra-vulkan-image",
             .sink_caps = caps,
             .description =
                 "giostreamsrc name=src "
@@ -265,7 +312,9 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
                 "demux.video_0 ! queue "
                 "! h264parse "
                 "! vah264dec "
-                "! vapostproc scale-method=fast sharpen=0 skin-tone=0 "
+                // The modern GStreamer vapostproc scales when downstream caps request a size.
+                // Do not use vaapipostproc-only properties such as scale-method/sharpen/skin-tone.
+                "! vapostproc "
                 "! " + caps +
                 " ! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
         };
@@ -303,10 +352,15 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
         };
     }
 
+    const bool bgra = mode == VideoPipelineMode::CpuBgra;
+    const auto caps = AddVideoSizeToCaps(
+        bgra ? "video/x-raw,format=(string)BGRA" : "video/x-raw,format=(string)RGBA",
+        width,
+        height);
     return VideoPipelineConfig {
-        .mode = VideoPipelineMode::CpuRgba,
-        .name = "cpu-rgba",
-        .sink_caps = "video/x-raw,format=(string)RGBA",
+        .mode = mode,
+        .name = bgra ? "cpu-bgra" : "cpu-rgba",
+        .sink_caps = caps,
         .description =
             "giostreamsrc name=src "
             "! qtdemux name=demux "
@@ -318,14 +372,10 @@ VideoPipelineConfig BuildVideoOnlyPipelineConfig(VideoPipelineMode mode,
             "! video/x-h264,stream-format=(string)byte-stream,alignment=(string)au "
             "! decodebin "
             "! videoconvert "
-            "! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
+            "! videoscale "
+            "! " + caps +
+            " ! appsink name=sink sync=true max-buffers=1 drop=true enable-last-sample=false",
     };
-}
-
-bool SupportsVaDmabufImport(const Device& device) {
-    return device.supportExt(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) &&
-           device.supportExt(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) &&
-           device.supportExt(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
 }
 
 VideoPipelineMode SelectVideoPipelineMode(const Device& device, const DecoderSettings& settings) {
@@ -370,7 +420,7 @@ VideoPipelineMode SelectVideoPipelineMode(const Device& device, const DecoderSet
 }
 
 VkFormat TargetImageFormatForPipelineMode(VideoPipelineMode mode) {
-    return mode == VideoPipelineMode::VaMemoryBgra
+    return mode == VideoPipelineMode::VaMemoryBgra || mode == VideoPipelineMode::CpuBgra
         ? VK_FORMAT_B8G8R8A8_UNORM
         : VK_FORMAT_R8G8B8A8_UNORM;
 }
@@ -1115,7 +1165,7 @@ struct VideoTextureCache::Entry {
     bool     dirty { false };
     bool     cuda_rgba_dirty { false };
     bool     va_dmabuf_dirty { false };
-    bool     direct_va_dmabuf { false };
+    std::string va_direct_caps;
     bool     warned_size_mismatch { false };
     bool     warned_unexpected_format { false };
     bool     warned_cuda_interop_failed { false };
@@ -1208,7 +1258,57 @@ void VideoTextureCache::stopPipeline(Entry& entry) {
     entry.memory_stream = nullptr;
 }
 
-bool VideoTextureCache::startPipeline(Entry& entry) {
+bool VideoTextureCache::ensureCpuStaging(Entry& entry) {
+    if (! entry.staging.handle) {
+        if (! CreateStagingBuffer(m_device.vma_allocator(),
+                                  static_cast<size_t>(entry.width) * entry.height * 4u,
+                                  entry.staging)) {
+            LOG_ERROR("create video staging buffer for '%s' failed", entry.key.c_str());
+            return false;
+        }
+    }
+    if (entry.staging_mapped == nullptr) {
+        void* mapped = nullptr;
+        if (entry.staging.handle.MapMemory(&mapped) != VK_SUCCESS || mapped == nullptr) {
+            LOG_ERROR("map video staging buffer for '%s' failed", entry.key.c_str());
+            return false;
+        }
+        entry.staging_mapped = static_cast<uint8_t*>(mapped);
+        std::memset(entry.staging_mapped, 0, entry.staging.req_size);
+        (void)vmaFlushAllocation(m_device.vma_allocator(),
+                                 entry.staging.handle.Allocation(),
+                                 0,
+                                 entry.staging.req_size);
+    }
+    return true;
+}
+
+bool VideoTextureCache::fallbackPipeline(Entry& entry, std::string_view reason) {
+    if (entry.pipeline_mode != VideoPipelineMode::VaMemoryBgra) return false;
+
+    entry.va_imported_image.reset();
+    entry.va_dmabuf_dirty = false;
+    entry.warned_va_dmabuf_import_failed = false;
+    stopPipeline(entry);
+
+    if (! entry.va_direct_caps.empty()) {
+        LOG_INFO("video texture '%s': direct VA DMA-BUF failed (%.*s); falling back to VAMemory",
+                 entry.key.c_str(),
+                 static_cast<int>(reason.size()),
+                 reason.data());
+        entry.va_direct_caps.clear();
+        return true;
+    }
+
+    LOG_INFO("video texture '%s': VA path failed (%.*s); falling back to CPU BGRA",
+             entry.key.c_str(),
+             static_cast<int>(reason.size()),
+             reason.data());
+    entry.pipeline_mode = VideoPipelineMode::CpuBgra;
+    return ensureCpuStaging(entry);
+}
+
+bool VideoTextureCache::startPipelineOnce(Entry& entry) {
     stopPipeline(entry);
     entry.eos_loop_waiting_for_sample = false;
     entry.eos_loop_rebuild_attempted = false;
@@ -1218,7 +1318,7 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     const auto pipeline_config = BuildVideoOnlyPipelineConfig(entry.pipeline_mode,
                                                               entry.width,
                                                               entry.height,
-                                                              entry.direct_va_dmabuf);
+                                                              entry.va_direct_caps);
     entry.pipeline = gst_parse_launch(pipeline_config.description.c_str(), &error);
     if (entry.pipeline == nullptr) {
         LOG_ERROR("create video pipeline for '%s' failed: %s",
@@ -1254,7 +1354,7 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     }
 
     g_object_set(entry.source_elem, "stream", entry.memory_stream, nullptr);
-    if (entry.pipeline_mode == VideoPipelineMode::VaMemoryBgra && entry.direct_va_dmabuf) {
+    if (entry.pipeline_mode == VideoPipelineMode::VaMemoryBgra && ! entry.va_direct_caps.empty()) {
         // GstVaPostProc requires downstream to advertise GstVideoMeta before it will allocate
         // DMA-BUF output. Use the callback API so appsink does not emit a signal for every frame.
         GstAppSinkCallbacks callbacks {};
@@ -1268,6 +1368,13 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
                 pipeline_config.description.c_str());
 
     GstCaps* sink_caps = gst_caps_from_string(pipeline_config.sink_caps.c_str());
+    if (sink_caps == nullptr) {
+        LOG_ERROR("video texture '%s': invalid appsink caps '%s'",
+                  entry.key.c_str(),
+                  pipeline_config.sink_caps.c_str());
+        stopPipeline(entry);
+        return false;
+    }
     g_object_set(entry.appsink_elem, "caps", sink_caps, nullptr);
     gst_caps_unref(sink_caps);
 
@@ -1280,8 +1387,13 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     if (entry.appsink_elem != nullptr) {
         GstSample* preroll = gst_app_sink_try_pull_preroll(GST_APP_SINK(entry.appsink_elem), GST_SECOND);
         if (preroll != nullptr) {
-            (void)uploadSample(entry, preroll);
+            const bool uploaded = uploadSample(entry, preroll);
             gst_sample_unref(preroll);
+            if (! uploaded) {
+                LOG_ERROR("video texture '%s': preroll upload failed", entry.key.c_str());
+                stopPipeline(entry);
+                return false;
+            }
         }
     }
 
@@ -1293,6 +1405,13 @@ bool VideoTextureCache::startPipeline(Entry& entry) {
     }
     entry.paused = false;
     entry.stopped = false;
+    return true;
+}
+
+bool VideoTextureCache::startPipeline(Entry& entry) {
+    while (! startPipelineOnce(entry)) {
+        if (! fallbackPipeline(entry, "startup or preroll failure")) return false;
+    }
     return true;
 }
 
@@ -1658,11 +1777,15 @@ bool VideoTextureCache::uploadSample(VideoTextureCache::Entry& entry, ::GstSampl
         entry.warned_size_mismatch = true;
     }
 
-    if (GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_RGBA) {
+    const auto expected_cpu_format = entry.pipeline_mode == VideoPipelineMode::CpuBgra
+        ? GST_VIDEO_FORMAT_BGRA
+        : GST_VIDEO_FORMAT_RGBA;
+    if (GST_VIDEO_INFO_FORMAT(&info) != expected_cpu_format) {
         if (! entry.warned_unexpected_format) {
-            LOG_ERROR("video texture '%s' negotiated unexpected format %d; expected RGBA",
+            LOG_ERROR("video texture '%s' negotiated unexpected format %d; expected %d",
                       entry.key.c_str(),
-                      GST_VIDEO_INFO_FORMAT(&info));
+                      GST_VIDEO_INFO_FORMAT(&info),
+                      expected_cpu_format);
             entry.warned_unexpected_format = true;
         }
         gst_video_frame_unmap(&frame);
@@ -1763,11 +1886,17 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
         1, texture.mapHeight > 0 ? texture.mapHeight
                                  : (texture.height > 0 ? texture.height : image->slots[0].height)));
     entry->pipeline_mode = SelectVideoPipelineMode(m_device, MakeDecoderSettings(m_settings));
-    // The negotiated tiled AR24 modifier is specific to Intel's VA driver. Other VA devices retain
-    // the portable VAMemory export path while still benefiting from output-sized post-processing.
+    // Keep direct DMA-BUF opt-in on Intel for now, but negotiate the modifier instead of assuming
+    // one Intel tiling layout. Other VA devices retain the portable VAMemory export path.
     constexpr uint32_t kIntelVendorId = 0x8086;
-    entry->direct_va_dmabuf = entry->pipeline_mode == VideoPipelineMode::VaMemoryBgra &&
-                              m_device.gpu().GetProperties().vendorID == kIntelVendorId;
+    if (entry->pipeline_mode == VideoPipelineMode::VaMemoryBgra &&
+        m_device.gpu().GetProperties().vendorID == kIntelVendorId) {
+        entry->va_direct_caps = BuildVaDirectDmabufCaps(m_device);
+        if (entry->va_direct_caps.empty()) {
+            LOG_INFO("video texture '%s': no Vulkan-compatible direct VA DMA-BUF modifier; using VAMemory",
+                     entry->key.c_str());
+        }
+    }
 
     if (entry->pipeline_mode == VideoPipelineMode::VaMemoryBgra) {
         const auto authored_width = entry->width;
@@ -1798,25 +1927,12 @@ ImageSlotsRef VideoTextureCache::Acquire(std::string_view key,
         return {};
     }
 
-    // GPU-native VA/CUDA paths upload from imported external memory and never read the host
-    // staging allocation. Keep it only for the CPU RGBA fallback to avoid an unused 8 MiB buffer
-    // for every 1080p video texture.
-    if (entry->pipeline_mode == VideoPipelineMode::CpuRgba) {
-        if (! CreateStagingBuffer(m_device.vma_allocator(),
-                                  static_cast<size_t>(entry->width) * entry->height * 4u,
-                                  entry->staging)) {
-            LOG_ERROR("create video staging buffer for '%s' failed", entry->key.c_str());
-            return {};
-        }
-        void* mapped = nullptr;
-        if (entry->staging.handle.MapMemory(&mapped) == VK_SUCCESS) {
-            entry->staging_mapped = static_cast<uint8_t*>(mapped);
-            std::memset(entry->staging_mapped, 0, entry->staging.req_size);
-            (void)vmaFlushAllocation(m_device.vma_allocator(),
-                                     entry->staging.handle.Allocation(),
-                                     0,
-                                     entry->staging.req_size);
-        }
+    // GPU-native VA/CUDA paths upload from imported external memory and do not need a host
+    // staging allocation. CPU modes allocate it lazily, including the VA -> CPU fallback.
+    if ((entry->pipeline_mode == VideoPipelineMode::CpuRgba ||
+         entry->pipeline_mode == VideoPipelineMode::CpuBgra) &&
+        ! ensureCpuStaging(*entry)) {
+        return {};
     }
 
     if (! m_cmd) allocateCmd();
@@ -1900,6 +2016,7 @@ void VideoTextureCache::Poll() {
         if (m_globally_paused) continue;
 
         bool should_loop = false;
+        bool pipeline_error = false;
         while (entry.bus != nullptr) {
             GstMessage* message = gst_bus_pop(entry.bus);
             if (message == nullptr) break;
@@ -1919,7 +2036,7 @@ void VideoTextureCache::Poll() {
                           debug != nullptr ? debug : "none");
                 if (error != nullptr) g_error_free(error);
                 if (debug != nullptr) g_free(debug);
-                entry.pipeline_failed = true;
+                pipeline_error = true;
                 break;
             }
             case GST_MESSAGE_EOS: should_loop = true; break;
@@ -1929,7 +2046,16 @@ void VideoTextureCache::Poll() {
             gst_message_unref(message);
         }
 
-        if (should_loop && !entry.pipeline_failed) {
+        if (pipeline_error) {
+            if (entry.pipeline_mode == VideoPipelineMode::VaMemoryBgra &&
+                fallbackPipeline(entry, "GStreamer pipeline error") && startPipeline(entry)) {
+                continue;
+            }
+            entry.pipeline_failed = true;
+            continue;
+        }
+
+        if (should_loop) {
             if (!loopPipeline(entry)) continue;
         }
 
@@ -1944,8 +2070,13 @@ void VideoTextureCache::Poll() {
         }
         if (latest_sample == nullptr) continue;
 
-        (void)uploadSample(entry, latest_sample);
+        const bool uploaded = uploadSample(entry, latest_sample);
         gst_sample_unref(latest_sample);
+        if (! uploaded && entry.pipeline_mode == VideoPipelineMode::VaMemoryBgra) {
+            if (! fallbackPipeline(entry, "frame import/upload failure") || ! startPipeline(entry)) {
+                entry.pipeline_failed = true;
+            }
+        }
     }
 }
 

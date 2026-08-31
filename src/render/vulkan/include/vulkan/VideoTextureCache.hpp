@@ -84,7 +84,10 @@ private:
     Entry*       find(std::string_view key);
     const Entry* find(std::string_view key) const;
     void         allocateCmd();
+    bool         ensureCpuStaging(Entry&);
+    bool         startPipelineOnce(Entry&);
     bool         startPipeline(Entry&);
+    bool         fallbackPipeline(Entry&, std::string_view reason);
     void         stopPipeline(Entry&);
     bool         restartPipeline(Entry&);
     bool         loopPipeline(Entry&);
