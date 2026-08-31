@@ -259,16 +259,22 @@ if(BUILD_WEWEB)
         # CEF::Library (imported, libcef.so) and CEF::Wrapper (alias
         # for libcef_dll_wrapper) and also calls add_subdirectory on
         # /usr/src/cef/libcef_dll itself.
-        # Pin CEF_API_VERSION to a numeric value because the system
-        # FindCEF.cmake defaults it to the literal symbol name
-        # "CEF_API_VERSION_EXPERIMENTAL", which is not a valid C
-        # integer when passed to the compiler as a -D value. 999999
-        # is the upstream-defined value of CEF_API_VERSION_EXPERIMENTAL
-        # and is supported by every CEF API version of recent
-        # Debian/Ubuntu libcef-dev packages.
-        if(NOT CEF_API_VERSION OR CEF_API_VERSION STREQUAL "CEF_API_VERSION_EXPERIMENTAL")
-            set(CEF_API_VERSION 999999 CACHE STRING "CEF API version" FORCE)
+        # System CEF is upgraded independently from this renderer. Never build
+        # the C++ wrapper against CEF_API_VERSION_EXPERIMENTAL: its ABI hash is
+        # intentionally unversioned and can change between CEF patch releases.
+        # Keep a project stable-API baseline instead. 13300 is the oldest API
+        # used by this renderer and remains binary-compatible across CEF releases
+        # that advertise support for it. Distributions can raise the baseline
+        # explicitly when their CEF runtime eventually drops an older stable API.
+        set(WP_SYSTEM_CEF_API_VERSION "13300" CACHE STRING
+            "Stable CEF API version used with the system CEF runtime")
+        if(WP_SYSTEM_CEF_API_VERSION STREQUAL "999999" OR
+           WP_SYSTEM_CEF_API_VERSION STREQUAL "CEF_API_VERSION_EXPERIMENTAL")
+            message(FATAL_ERROR
+                "WP_SYSTEM_CEF_API_VERSION must select an explicit stable CEF API")
         endif()
+        set(CEF_API_VERSION "${WP_SYSTEM_CEF_API_VERSION}" CACHE STRING "CEF API version" FORCE)
+        message(STATUS "Using stable system CEF API version ${CEF_API_VERSION}")
         find_package(CEF REQUIRED)
         # Surface the system FindCEF.cmake's CEF::Library as our
         # WebCef::Core so the rest of the build can use one name.
