@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <span>
 #include <thread>
+#include <utility>
 
 namespace
 {
@@ -192,8 +193,8 @@ int main() {
     auto& cache = fixture.device.video_tex_cache();
     Require(cache.GetTrackedEntryCount() == 0);
 
-    auto image = MakeEmbeddedVideoImage();
-    const auto first = cache.Acquire("movie", scene.textures.at("movie"), *image);
+    std::shared_ptr<wallpaper::Image> image = MakeEmbeddedVideoImage();
+    const auto first = cache.Acquire("movie", scene.textures.at("movie"), std::move(image));
     Require(first.slots.size() == 1);
     Require(first.slots[0].handle != VK_NULL_HANDLE);
     Require(first.slots[0].view != VK_NULL_HANDLE);
@@ -222,7 +223,7 @@ int main() {
     FlushUploads(fixture.device, cache);
     Require(!cache.GetStatus("movie")->upload_pending);
 
-    const auto second = cache.Acquire("movie", scene.textures.at("movie"), *image);
+    const auto second = cache.Acquire("movie", scene.textures.at("movie"), image);
     Require(second.slots.size() == 1);
     Require(second.slots[0].handle == first.slots[0].handle);
     Require(second.slots[0].view == first.slots[0].view);
@@ -248,7 +249,7 @@ int main() {
     FlushUploads(fixture.device, cache);
     Require(!cache.GetStatus("movie")->upload_pending);
 
-    const auto after_loop = cache.Acquire("movie", scene.textures.at("movie"), *image);
+    const auto after_loop = cache.Acquire("movie", scene.textures.at("movie"), image);
     Require(after_loop.slots.size() == 1);
     Require(after_loop.slots[0].handle == first.slots[0].handle);
     Require(after_loop.slots[0].view == first.slots[0].view);
@@ -274,8 +275,9 @@ int main() {
     VulkanFixture cpu_fixture(false, wallpaper::vulkan::VideoTextureGpuPipeline::Nvidia);
     RequireDecoderRanksUnchanged(decoder_ranks);
     auto& cpu_cache = cpu_fixture.device.video_tex_cache();
+    std::shared_ptr<wallpaper::Image> cpu_image = MakeEmbeddedVideoImage();
     const auto cpu_image_ref =
-        cpu_cache.Acquire("movie-cpu", scene.textures.at("movie"), *image);
+        cpu_cache.Acquire("movie-cpu", scene.textures.at("movie"), std::move(cpu_image));
     Require(cpu_image_ref.slots.size() == 1);
     Require(cpu_image_ref.slots[0].handle != VK_NULL_HANDLE);
 

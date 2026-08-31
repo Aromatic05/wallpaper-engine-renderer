@@ -59,9 +59,11 @@ public:
     VideoTextureCache(const Device&, VideoTexturePipelineSettings settings = {});
     ~VideoTextureCache();
 
+    // Takes ownership of the parsed video payload when the Image has a unique owner; shared
+    // Images are copied so callers that retain a parsed image remain valid.
     ImageSlotsRef Acquire(std::string_view key,
                           const SceneTexture&,
-                          const Image&,
+                          std::shared_ptr<Image>,
                           VideoTexturePlaybackState initial_state =
                               VideoTexturePlaybackState::Playing);
     void          ApplyPlaybackStates(const std::unordered_map<std::string, bool>& paused_by_key,

@@ -21,6 +21,7 @@
 #include <array>
 #include <cstdint>
 #include <sstream>
+#include <utility>
 
 using namespace wallpaper::vulkan;
 
@@ -753,7 +754,7 @@ bool RefreshCustomShaderPassTextures(wallpaper::Scene& scene, const Device& devi
                             : (initially_paused ? wallpaper::VideoTexturePlaybackState::Paused
                                                 : wallpaper::VideoTexturePlaybackState::Playing);
                     img_slots = device.video_tex_cache().Acquire(
-                        tex_name, scene.textures.at(tex_name), *image, initial_state);
+                        tex_name, scene.textures.at(tex_name), std::move(image), initial_state);
                 } else {
                     img_slots = device.tex_cache().CreateTex(*image);
                     if (static_scene_texture) {
