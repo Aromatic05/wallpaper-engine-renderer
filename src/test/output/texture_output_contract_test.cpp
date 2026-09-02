@@ -1,3 +1,4 @@
+#include "backend/video/internal/VideoFrameSwapchain.hpp"
 #include "wallpaper/OutputTargetBinding.hpp"
 #include "wallpaper/TextureOutput.hpp"
 #include "wallpaper/swapchain/ExSwapchain.hpp"
@@ -7,8 +8,10 @@
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <fcntl.h>
+#include <drm/drm_fourcc.h>
 #include <unistd.h>
 
 namespace
@@ -176,6 +179,30 @@ int main() {
     }
     RequireClosed(owned_dma_fd);
     ::close(dma_source_fd);
+
+    TestBinding dynamic_binding;
+    wallpaper::VideoFrameSwapchain dynamic_swapchain(128, 72);
+    dynamic_binding.attach(&dynamic_swapchain);
+    const int dynamic_source_fd = MakeReadableFd();
+    wallpaper::VideoDmabufFrame dynamic_frame {};
+    dynamic_frame.planes[0].fd = dynamic_source_fd;
+    dynamic_frame.planes[0].stride = 512;
+    dynamic_frame.plane_count = 1;
+    dynamic_frame.width = 128;
+    dynamic_frame.height = 72;
+    dynamic_frame.drm_fourcc = DRM_FORMAT_ARGB8888;
+    dynamic_frame.modifier = DRM_FORMAT_MOD_LINEAR;
+    assert(dynamic_swapchain.publishFrame(dynamic_frame));
+    {
+        auto acquired = dynamic_binding.acquireTexture(std::numeric_limits<std::uint32_t>::max());
+        assert(acquired);
+        auto frame = std::move(acquired.value());
+        assert(frame.valid());
+        assert(frame.bufferId == std::numeric_limits<std::uint32_t>::max());
+        assert(! frame.descriptorsOmitted);
+        assert(frame.planes[0].descriptor.valid());
+    }
+    ::close(dynamic_source_fd);
 
     const int reusable_source_fd = MakeReadableFd();
     auto* reusable_dma = swapchain.getInprogress();

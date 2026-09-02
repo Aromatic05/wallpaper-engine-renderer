@@ -98,7 +98,10 @@ Result<TextureFrame> OutputTargetBinding::acquireTexture(std::uint32_t reusableB
     TextureFrame frame;
     frame.extent.width = static_cast<std::uint32_t>(handle->width);
     frame.extent.height = static_cast<std::uint32_t>(handle->height);
-    frame.bufferId = static_cast<std::uint32_t>(handle->id());
+    const auto handle_id = handle->id();
+    frame.bufferId = handle_id >= 0
+        ? static_cast<std::uint32_t>(handle_id)
+        : std::numeric_limits<std::uint32_t>::max();
     frame.premultiplied = handle->premultiplied;
 
     if (handle->isShm()) {
