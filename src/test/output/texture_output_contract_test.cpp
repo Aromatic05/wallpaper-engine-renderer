@@ -16,6 +16,9 @@ namespace
 class TestSwapchain final : public wallpaper::ExSwapchain {
 public:
     TestSwapchain() {
+        for (std::size_t index = 0; index < m_handles.size(); ++index) {
+            m_handles[index] = wallpaper::ExHandle(static_cast<std::int32_t>(index));
+        }
         m_presented.store(&m_handles[0]);
         m_ready.store(&m_handles[1]);
         m_inprogress.store(&m_handles[2]);
@@ -174,6 +177,30 @@ int main() {
     RequireClosed(owned_dma_fd);
     ::close(dma_source_fd);
 
+    const int reusable_source_fd = MakeReadableFd();
+    auto* reusable_dma = swapchain.getInprogress();
+    assert(reusable_dma != nullptr);
+    reusable_dma->handle_type = wallpaper::ExternalFrameHandleType::DMA_BUF;
+    reusable_dma->width = 128;
+    reusable_dma->height = 72;
+    reusable_dma->drm_fourcc = 0x34325241u;
+    reusable_dma->drm_modifier = 0x1122334455667788ull;
+    reusable_dma->n_planes = 1;
+    reusable_dma->planes[0].fd = reusable_source_fd;
+    reusable_dma->planes[0].stride = 512;
+    const auto reusable_id = static_cast<std::uint32_t>(reusable_dma->id());
+    swapchain.renderFrame();
+    {
+        auto acquired = binding.acquireTexture(std::uint32_t { 1 } << reusable_id);
+        assert(acquired);
+        auto frame = std::move(acquired.value());
+        assert(frame.valid());
+        assert(frame.bufferId == reusable_id);
+        assert(frame.descriptorsOmitted);
+        assert(! frame.planes[0].descriptor.valid());
+    }
+    ::close(reusable_source_fd);
+
     TestBinding second_binding;
     TestSwapchain second_swapchain;
     second_binding.attach(&second_swapchain);
@@ -199,7 +226,7 @@ int main() {
 
     binding.attach(nullptr);
     swapchain.renderFrame();
-    assert(ready_notifications.load() == 3);
+    assert(ready_notifications.load() == 4);
     auto detached = binding.acquireTexture();
     assert(! detached);
     assert(detached.error().code == wallpaper::ResultCode::InvalidState);

@@ -59,7 +59,10 @@ bool TextureFrame::valid() const {
         return false;
     }
     for (std::uint32_t index = 0; index < planeCount; ++index) {
-        if (! planes[index].descriptor.valid() || planes[index].stride == 0) return false;
+        if ((! descriptorsOmitted && ! planes[index].descriptor.valid())
+            || planes[index].stride == 0) {
+            return false;
+        }
     }
     if (exportKind == TextureExportKind::SharedMemory) {
         return storageLayout == TextureStorageLayout::LinearRows && planeCount == 1 && shmSize > 0;
@@ -74,7 +77,7 @@ void OutputTargetBinding::setFrameReadyCallback(std::function<void()> callback) 
     if (m_textureSwapchain) m_textureSwapchain->setOnReady(m_frameReadyCallback);
 }
 
-Result<TextureFrame> OutputTargetBinding::acquireTexture() {
+Result<TextureFrame> OutputTargetBinding::acquireTexture(std::uint32_t reusableBufferMask) {
     std::scoped_lock lock(m_textureSwapchainMutex);
     auto* swapchain = m_textureSwapchain;
     if (swapchain == nullptr) {
@@ -95,6 +98,7 @@ Result<TextureFrame> OutputTargetBinding::acquireTexture() {
     TextureFrame frame;
     frame.extent.width = static_cast<std::uint32_t>(handle->width);
     frame.extent.height = static_cast<std::uint32_t>(handle->height);
+    frame.bufferId = static_cast<std::uint32_t>(handle->id());
     frame.premultiplied = handle->premultiplied;
 
     if (handle->isShm()) {
@@ -131,17 +135,21 @@ Result<TextureFrame> OutputTargetBinding::acquireTexture() {
         frame.drmFourcc = handle->drm_fourcc;
         frame.drmModifier = handle->drm_modifier;
         frame.planeCount = handle->n_planes;
+        frame.descriptorsOmitted = frame.bufferId < 32
+            && (reusableBufferMask & (std::uint32_t { 1 } << frame.bufferId)) != 0;
         for (std::uint32_t index = 0; index < handle->n_planes; ++index) {
             if (handle->planes[index].fd < 0 || handle->planes[index].stride == 0) {
                 return Result<TextureFrame>::failure(ResultCode::InternalError,
                                                      "DMA-BUF texture plane is incomplete");
             }
-            const int descriptor = ::dup(handle->planes[index].fd);
-            if (descriptor < 0) {
-                return Result<TextureFrame>::failure(ResultCode::InternalError,
-                                                     "failed to duplicate DMA-BUF texture descriptor");
+            if (! frame.descriptorsOmitted) {
+                const int descriptor = ::dup(handle->planes[index].fd);
+                if (descriptor < 0) {
+                    return Result<TextureFrame>::failure(ResultCode::InternalError,
+                                                         "failed to duplicate DMA-BUF texture descriptor");
+                }
+                frame.planes[index].descriptor.reset(descriptor);
             }
-            frame.planes[index].descriptor.reset(descriptor);
             frame.planes[index].offset = handle->planes[index].offset;
             frame.planes[index].stride = handle->planes[index].stride;
         }

@@ -84,8 +84,10 @@ struct TextureFrame final {
     std::uint32_t        drmFourcc { 0 };
     std::uint64_t        drmModifier { InvalidDrmModifier };
     std::uint32_t        planeCount { 0 };
+    std::uint32_t        bufferId { std::numeric_limits<std::uint32_t>::max() };
     std::uint64_t        shmSize { 0 };
     bool                 premultiplied { false };
+    bool                 descriptorsOmitted { false };
     std::uint64_t        revision { 0 };
     std::array<TexturePlane, MaxPlanes> planes {};
 
