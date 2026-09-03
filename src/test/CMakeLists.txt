@@ -576,7 +576,11 @@ if(WP_ENABLE_CEF_INTEGRATION_TEST AND BUILD_WEWEB)
     target_link_libraries(web-cef-integration-test PRIVATE wallpaper-engine-renderer-internal)
     target_include_directories(web-cef-integration-test PRIVATE ..)
     target_compile_options(web-cef-integration-test PRIVATE ${warn_opts})
+    add_dependencies(web-cef-integration-test we-cef-helper)
     add_test(NAME web-cef-integration-test COMMAND web-cef-integration-test)
+    set_tests_properties(
+      web-cef-integration-test
+      PROPERTIES ENVIRONMENT "WE_CEF_HELPER_PATH=$<TARGET_FILE:we-cef-helper>")
 endif()
 
 add_executable(

@@ -120,42 +120,38 @@ int main() {
     }
 
     wallpaper::WallpaperRuntime runtime;
-    auto                        session = wallpaper::CreateBuiltinSession(runtime, {});
-    if (! session) return 1;
 
-    auto rawBackend = wallpaper::CreateWebBackend(wallpaper::BackendContext {});
-    if (! rawBackend) return 1;
+    // CEF is process-global while wallpaper sessions are restartable. Exercise repeated
+    // init/play/stop lifecycles in one process so an accidental CefShutdown between sessions
+    // is caught by the next cycle instead of being hidden by process exit.
+    for (int cycle = 0; cycle < 4; ++cycle) {
+        auto session = wallpaper::CreateBuiltinSession(runtime, {});
+        if (! session) return 1;
 
-    wallpaper::WebSourceConfig config;
-    config.uri = workshop.dir.string();
-    if (! session->load(wallpaper::MakeWebWallpaperSource(config))) return 2;
+        wallpaper::WebSourceConfig config;
+        config.uri = workshop.dir.string();
+        if (! session->load(wallpaper::MakeWebWallpaperSource(config))) return 2;
 
-    wallpaper::RenderInitInfo info {};
-    info.offscreen = true;
-    info.export_mode = wallpaper::ExternalFrameExportMode::DMA_BUF;
-    info.offscreen_tiling = wallpaper::TexTiling::LINEAR;
-    info.width = 320;
-    info.height = 240;
-    auto binding = wallpaper::MakeWebOutputBinding(info);
-    wallpaper::OutputTarget target {};
-    target.type = wallpaper::OutputTargetType::Offscreen;
-    target.binding = binding;
-    target.width = 320;
-    target.height = 240;
-    if (! session->bindOutput(target)) return 3;
+        wallpaper::RenderInitInfo info {};
+        info.offscreen        = true;
+        info.export_mode      = wallpaper::ExternalFrameExportMode::DMA_BUF;
+        info.offscreen_tiling = wallpaper::TexTiling::LINEAR;
+        info.width            = 320;
+        info.height           = 240;
+        auto binding = wallpaper::MakeWebOutputBinding(info);
+        wallpaper::OutputTarget target {};
+        target.type    = wallpaper::OutputTargetType::Offscreen;
+        target.binding = binding;
+        target.width   = 320;
+        target.height  = 240;
+        if (! session->bindOutput(target)) return 3;
 
-    // The smoke check is "play succeeds and a few ticks do not
-    // deadlock". We do not assert any frame flow — that requires
-    // a real Vulkan allocator the headless test environment does
-    // not provide.
-    if (! session->play()) return 4;
-
-    for (int i = 0; i < 30; ++i) {
-        auto tickResult = session->tick();
-        if (! tickResult) return 5;
+        if (! session->play()) return 4;
+        for (int i = 0; i < 30; ++i) {
+            if (! session->tick()) return 5;
+        }
+        if (! session->stop()) return 6;
     }
-
-    if (! session->stop()) return 6;
 
     return 0;
 }
