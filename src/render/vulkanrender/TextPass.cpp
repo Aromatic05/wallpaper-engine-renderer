@@ -571,9 +571,11 @@ void TextPass::prepare(Scene& scene, const Device& device, RenderingResources& r
     }
     if (!recreateFramebuffer(device)) return;
 
-    rr.dyn_buf->allocateSubRef(sizeof(TextPassUniforms),
-                               m_desc.ubo_buf,
-                               device.limits().minUniformBufferOffsetAlignment);
+    if (!rr.dyn_buf->allocateSubRef(sizeof(TextPassUniforms),
+                                    m_desc.ubo_buf,
+                                    device.limits().minUniformBufferOffsetAlignment)) {
+        return;
+    }
 
     if (primitive->background_mesh != nullptr) {
         m_background_buffers.force_upload = true;
@@ -876,18 +878,18 @@ void TextPass::destory(const Device&, RenderingResources& rr) {
     m_desc.background_texture = {};
     m_desc.page_textures.clear();
     for (auto& subref : m_background_buffers.vertex_bufs) {
-        rr.dyn_buf->unallocateSubRef(subref);
+        if (subref) rr.dyn_buf->unallocateSubRef(subref);
     }
     if (m_background_buffers.index_buf) rr.dyn_buf->unallocateSubRef(m_background_buffers.index_buf);
     m_background_buffers = {};
     for (auto& page_buffers : m_page_buffers) {
         for (auto& subref : page_buffers.vertex_bufs) {
-            rr.dyn_buf->unallocateSubRef(subref);
+            if (subref) rr.dyn_buf->unallocateSubRef(subref);
         }
         if (page_buffers.index_buf) rr.dyn_buf->unallocateSubRef(page_buffers.index_buf);
     }
     m_page_buffers.clear();
-    rr.dyn_buf->unallocateSubRef(m_desc.ubo_buf);
+    if (m_desc.ubo_buf) rr.dyn_buf->unallocateSubRef(m_desc.ubo_buf);
     m_desc.ubo_buf = {};
     setPrepared(false);
 }

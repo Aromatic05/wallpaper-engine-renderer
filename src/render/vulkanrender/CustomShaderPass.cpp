@@ -1087,8 +1087,10 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
         if (block.size >= 1024 * 1024) {
             LogStagingAllocRequest("ubo", m_desc, block.size);
         }
-        rr.dyn_buf->allocateSubRef(
-            block.size, m_desc.ubo_buf, device.limits().minUniformBufferOffsetAlignment);
+        if (!rr.dyn_buf->allocateSubRef(
+                block.size, m_desc.ubo_buf, device.limits().minUniformBufferOffsetAlignment)) {
+            return;
+        }
     }
 
     if (! ref.blocks.empty()) {
@@ -1773,7 +1775,7 @@ void CustomShaderPass::destory(const Device&, RenderingResources& rr) {
     {
         auto& buf = m_desc.dyn_vertex ? rr.dyn_buf : rr.vertex_buf;
         for (auto& bufref : m_desc.vertex_bufs) {
-            buf->unallocateSubRef(bufref);
+            if (bufref) buf->unallocateSubRef(bufref);
         }
         m_desc.vertex_bufs.clear();
     }
@@ -1782,7 +1784,7 @@ void CustomShaderPass::destory(const Device&, RenderingResources& rr) {
         buf->unallocateSubRef(m_desc.index_buf);
         m_desc.index_buf = {};
     }
-    rr.dyn_buf->unallocateSubRef(m_desc.ubo_buf);
+    if (m_desc.ubo_buf) rr.dyn_buf->unallocateSubRef(m_desc.ubo_buf);
     m_desc.ubo_buf = {};
     // Resource-only render-graph refreshes keep the pass objects alive inside the graph, so the
     // only signal that forces a new Vulkan preparation round is the prepared flag. Leaving it set
