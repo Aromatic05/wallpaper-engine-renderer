@@ -25,6 +25,23 @@ struct legacy_we_render_config_v1 {
     bool allow_shm_fallback;
 };
 
+struct legacy_we_frame_v1 {
+    uint32_t size;
+    uint32_t version;
+    we_frame_kind_v1 kind;
+    uint32_t width;
+    uint32_t height;
+    uint32_t drm_fourcc;
+    uint64_t drm_modifier;
+    uint32_t n_planes;
+    uint32_t flags;
+    uint64_t serial;
+    uint64_t pts_ns;
+    uint32_t shm_stride;
+    uint32_t shm_size;
+    we_dmabuf_plane_v1 planes[4];
+};
+
 _Static_assert(offsetof(we_source_v1, options_json) >= sizeof(struct legacy_we_source_v1),
                "we_source_v1 optional fields must remain append-only");
 _Static_assert(offsetof(we_render_config_v1, allow_shm_fallback)
@@ -33,6 +50,10 @@ _Static_assert(offsetof(we_render_config_v1, allow_shm_fallback)
 _Static_assert(offsetof(we_render_config_v1, msaa_samples)
                    >= sizeof(struct legacy_we_render_config_v1),
                "we_render_config_v1 optional fields must remain append-only");
+_Static_assert(sizeof(struct legacy_we_frame_v1) == 112,
+               "legacy we_frame_v1 layout changed");
+_Static_assert(offsetof(we_frame_v1, buffer_id) == sizeof(struct legacy_we_frame_v1),
+               "we_frame_v1 reuse fields must remain an append-only tail");
 
 int main(void) {
     we_session_t* session = we_session_create();
