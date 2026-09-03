@@ -282,6 +282,8 @@ struct VulkanRender::Impl {
 
     std::unique_ptr<VulkanExSwapchain> m_ex_swapchain;
     std::unique_ptr<ShmFrameSwapchain> m_shm_swapchain;
+    VmaBufferParameters                m_shm_readback_buffer;
+    std::vector<std::uint8_t>          m_shm_readback_pixels;
     RenderingResources                 m_rendering_resources;
 
     std::vector<VulkanPass*>               m_passes;
@@ -580,6 +582,11 @@ bool VulkanRender::Impl::reconfigureOutput(RenderInitInfo next_info) {
 
     m_ex_swapchain     = std::move(next_ex_swapchain);
     m_shm_swapchain    = std::move(next_shm_swapchain);
+    // Reconfiguration is infrequent and occurs after WaitIdle(). Drop cached SHM readback storage
+    // here so a size/mode change cannot pin the previous output's full-frame allocation.
+    m_shm_readback_buffer = {};
+    m_shm_readback_pixels.clear();
+    m_shm_readback_pixels.shrink_to_fit();
     m_render_init_info = std::move(next_info);
     m_device->set_out_extent(next_extent);
     if (m_finpass) {
@@ -691,6 +698,7 @@ void VulkanRender::Impl::abandonDeviceOwnedResourcesAfterFault() {
     m_deferred_waiting_indices_logged.clear();
 
     m_render_cmd.abandon();
+    m_shm_readback_buffer.handle.abandon();
     m_compiled_pass_refs.clear();
     m_passes.clear();
     (void)m_prepass.release();
@@ -1060,15 +1068,18 @@ void VulkanRender::Impl::drawFrameOffscreen() {
         m_pending_frame_capture->completed = true;
     }
     if (m_shm_swapchain) {
-        std::vector<std::uint8_t> bgra;
-        std::uint32_t             stride_bytes { 0 };
-        std::string               error_message;
-        if (! readbackOffscreenFrameBgra(image, &bgra, &stride_bytes, &error_message)) {
+        std::uint32_t stride_bytes { 0 };
+        std::string   error_message;
+        if (! readbackOffscreenFrameBgra(
+                image, &m_shm_readback_pixels, &stride_bytes, &error_message)) {
             LOG_ERROR("offscreen shm readback failed: %s", error_message.c_str());
             return;
         }
-        if (! m_shm_swapchain->publishFrame(
-                bgra.data(), image.extent.width, image.extent.height, stride_bytes, false)) {
+        if (! m_shm_swapchain->publishFrame(m_shm_readback_pixels.data(),
+                                            image.extent.width,
+                                            image.extent.height,
+                                            stride_bytes,
+                                            false)) {
             LOG_ERROR("offscreen shm publish failed");
             return;
         }
@@ -1282,11 +1293,18 @@ bool VulkanRender::Impl::readbackOffscreenFrameBgra(const ImageParameters&     i
         return false;
     }
 
-    VmaBufferParameters readback_buffer;
-    if (! CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
-        if (error_message) *error_message = "failed to allocate readback buffer";
-        return false;
+    // This is the steady-state SHM present path. Recreating a host-visible VMA buffer for every
+    // frame makes allocator/driver retention scale with frame_size * fps; keep one allocation and
+    // replace it only when the output grows.
+    if (! m_shm_readback_buffer.handle || m_shm_readback_buffer.req_size < pixel_bytes) {
+        VmaBufferParameters readback_buffer;
+        if (! CreateReadbackBuffer(m_device->vma_allocator(), pixel_bytes, readback_buffer)) {
+            if (error_message) *error_message = "failed to allocate readback buffer";
+            return false;
+        }
+        m_shm_readback_buffer = std::move(readback_buffer);
     }
+    auto& readback_buffer = m_shm_readback_buffer;
 
     vvk::CommandBuffers command_buffers;
     VVK_CHECK_BOOL_RE(
