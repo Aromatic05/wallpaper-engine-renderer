@@ -17,6 +17,7 @@ namespace
 struct CefRuntimeState {
     std::mutex  mutex;
     std::size_t ref_count { 0 };
+    bool        initialized { false };
 };
 
 CefRuntimeState& runtimeState() {
@@ -27,7 +28,7 @@ CefRuntimeState& runtimeState() {
 bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOptions& opts) {
     auto&                       state = runtimeState();
     std::lock_guard<std::mutex> lock(state.mutex);
-    if (state.ref_count > 0) {
+    if (state.initialized) {
         ++state.ref_count;
         return true;
     }
@@ -67,7 +68,8 @@ bool acquireCefRuntime(CefRefPtr<AppHandler> app, const WebBrowserHost::InitOpti
         return false;
     }
 
-    state.ref_count = 1;
+    state.initialized = true;
+    state.ref_count   = 1;
     return true;
 }
 
@@ -76,9 +78,8 @@ void releaseCefRuntime() {
     std::lock_guard<std::mutex> lock(state.mutex);
     if (state.ref_count == 0) return;
     --state.ref_count;
-    if (state.ref_count == 0) {
-        CefShutdown();
-    }
+    // CEF is process-global. Wallpaper sessions may come and go, but cycling
+    // CefInitialize/CefShutdown inside one daemon process is unsupported.
 }
 } // namespace
 
