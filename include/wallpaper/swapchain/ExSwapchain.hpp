@@ -36,6 +36,7 @@ struct ExPlane {
 
 struct ExHandle {
     constexpr static std::size_t MAX_PLANES { 4 };
+    constexpr static int32_t     INVALID_ID { -1 };
     constexpr static uint64_t    INVALID_DRM_MODIFIER { std::numeric_limits<uint64_t>::max() };
 
     ExternalFrameHandleType          handle_type { ExternalFrameHandleType::NONE };
@@ -63,7 +64,9 @@ struct ExHandle {
     }
 
 private:
-    int32_t m_id { 0 };
+    // Dynamic host-provided frames do not identify a stable backing buffer. Only
+    // swapchains with stable allocations should assign a non-negative ID.
+    int32_t m_id { INVALID_ID };
 };
 
 // class ExSwapchain : public TripleSwapchain<ExHandle> {};

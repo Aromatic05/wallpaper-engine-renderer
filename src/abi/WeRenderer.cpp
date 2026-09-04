@@ -227,16 +227,20 @@ wallpaper::Result<std::shared_ptr<wallpaper::OutputTargetBinding>> bind_current_
         "source backend does not expose a texture output");
 }
 
-bool move_texture_frame_to_abi(wallpaper::TextureFrame frame, we_frame_v1* out_frame) {
+bool move_texture_frame_to_abi(wallpaper::TextureFrame frame,
+                               we_frame_v1* out_frame,
+                               std::size_t output_size) {
     if (! out_frame || ! frame.valid()) return false;
     if (frame.shmSize > std::numeric_limits<std::uint32_t>::max()) return false;
 
-    std::memset(out_frame, 0, sizeof(*out_frame));
-    out_frame->size = sizeof(*out_frame);
+    const auto writable_size = std::min(output_size, sizeof(*out_frame));
+    std::memset(out_frame, 0, writable_size);
+    out_frame->size = static_cast<std::uint32_t>(writable_size);
     out_frame->version = 1;
     out_frame->width = frame.extent.width;
     out_frame->height = frame.extent.height;
-    out_frame->flags = frame.premultiplied ? 1u : 0u;
+    out_frame->flags = frame.premultiplied ? WE_FRAME_FLAG_PREMULTIPLIED : 0u;
+    if (frame.descriptorsOmitted) out_frame->flags |= WE_FRAME_FLAG_FDS_OMITTED;
 
     if (frame.exportKind == wallpaper::TextureExportKind::DmaBuf) {
         out_frame->kind = WE_FRAME_KIND_DMABUF;
@@ -254,6 +258,9 @@ bool move_texture_frame_to_abi(wallpaper::TextureFrame frame, we_frame_v1* out_f
         out_frame->planes[index].fd = frame.planes[index].descriptor.release();
         out_frame->planes[index].offset = frame.planes[index].offset;
         out_frame->planes[index].stride = frame.planes[index].stride;
+    }
+    if (output_size >= offsetof(we_frame_v1, buffer_id) + sizeof(out_frame->buffer_id)) {
+        out_frame->buffer_id = frame.bufferId;
     }
     return true;
 }
@@ -627,11 +634,18 @@ int32_t we_session_get_frame_ready_fd(we_session_t* session) {
 int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) {
     auto* state = as_state(session);
     if (!state || !state->session || !out_frame) return -1;
-    if (out_frame->size != 0 && out_frame->size < sizeof(we_frame_v1)) return -1;
+    constexpr std::size_t base_frame_size = offsetof(we_frame_v1, buffer_id);
+    const std::size_t output_size = out_frame->size == 0 ? base_frame_size : out_frame->size;
+    if (output_size < base_frame_size) return -1;
+    const auto reusable_buffer_mask =
+        output_size >= offsetof(we_frame_v1, reusable_buffer_mask)
+                + sizeof(out_frame->reusable_buffer_mask)
+        ? out_frame->reusable_buffer_mask
+        : 0u;
     if (!state->binding) return 1;
 
     if (state->frameReadySignal) state->frameReadySignal->consume();
-    auto acquired = state->binding->acquireTexture();
+    auto acquired = state->binding->acquireTexture(reusable_buffer_mask);
     if (! acquired) {
         const auto status =
             wallpaper::MapTextureAcquireErrorToAbiStatus(acquired.error().code);
@@ -640,13 +654,14 @@ int32_t we_session_acquire_frame(we_session_t* session, we_frame_v1* out_frame) 
         }
         return status.abiStatus;
     }
-    if (! move_texture_frame_to_abi(std::move(acquired.value()), out_frame)) return -1;
+    if (! move_texture_frame_to_abi(std::move(acquired.value()), out_frame, output_size)) return -1;
     out_frame->serial = ++state->frameSerial;
     return 0;
 }
 
 void we_frame_release(we_frame_v1* frame) {
     if (!frame) return;
+    if ((frame->flags & WE_FRAME_FLAG_FDS_OMITTED) != 0) return;
     if (frame->kind == WE_FRAME_KIND_SHM) {
         if (frame->planes[0].fd >= 0) {
             ::close(frame->planes[0].fd);

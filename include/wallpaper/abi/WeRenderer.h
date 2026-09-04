@@ -98,6 +98,15 @@ typedef struct we_input_event_v2 {
     bool focused;
 } we_input_event_v2;
 
+typedef enum we_frame_flags_v1 {
+    WE_FRAME_FLAG_PREMULTIPLIED = 1u << 0,
+    // The consumer marked this stable swapchain buffer_id reusable before acquire,
+    // so no DMA-BUF descriptors were duplicated into this frame.
+    WE_FRAME_FLAG_FDS_OMITTED   = 1u << 1,
+} we_frame_flags_v1;
+
+#define WE_FRAME_BUFFER_ID_INVALID UINT32_MAX
+
 typedef struct we_dmabuf_plane_v1 {
     int32_t  fd;
     uint32_t offset;
@@ -119,6 +128,11 @@ typedef struct we_frame_v1 {
     uint32_t shm_stride;
     uint32_t shm_size;
     we_dmabuf_plane_v1 planes[4];
+    // Append-only v1 tail. DMA-BUF swapchain slot identity remains stable until
+    // output reconfiguration. Set the corresponding reusable_buffer_mask bit to
+    // request metadata-only acquisition for a wl_buffer already owned by the consumer.
+    uint32_t buffer_id;
+    uint32_t reusable_buffer_mask;
 } we_frame_v1;
 
 typedef struct we_source_v1 {

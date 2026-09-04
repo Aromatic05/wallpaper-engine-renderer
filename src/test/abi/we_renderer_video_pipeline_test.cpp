@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -19,6 +20,34 @@
 
 namespace
 {
+struct LegacyWeFrameV1 {
+    std::uint32_t      size;
+    std::uint32_t      version;
+    we_frame_kind_v1   kind;
+    std::uint32_t      width;
+    std::uint32_t      height;
+    std::uint32_t      drm_fourcc;
+    std::uint64_t      drm_modifier;
+    std::uint32_t      n_planes;
+    std::uint32_t      flags;
+    std::uint64_t      serial;
+    std::uint64_t      pts_ns;
+    std::uint32_t      shm_stride;
+    std::uint32_t      shm_size;
+    we_dmabuf_plane_v1 planes[4];
+};
+
+constexpr std::uint64_t kLegacyFrameCanary = 0xfeedfacecafebeefULL;
+
+struct LegacyFrameStorage {
+    LegacyWeFrameV1 frame {};
+    std::uint64_t   canary { kLegacyFrameCanary };
+};
+
+static_assert(sizeof(LegacyWeFrameV1) == 112);
+static_assert(sizeof(LegacyWeFrameV1) == offsetof(we_frame_v1, buffer_id));
+static_assert(offsetof(LegacyFrameStorage, canary) == sizeof(LegacyWeFrameV1));
+
 constexpr std::string_view kFixtureMp4Base64 =
     "AAAAFGZ0eXBxdCAgIAUDAHF0ICAAAAAIZnJlZQAAAwdtZGF0AAAAAgkQAAAAG2dCwAraEJsBagwMDUoAAAMAAgAAAwAJHi"
     "RNQAAAAARozjyAAAACogYF//"
@@ -165,6 +194,32 @@ void RequireSessionSuccess(we_session_t* session, int result, const char* operat
     assert(false);
 }
 
+LegacyFrameStorage WaitForLegacyFrame(we_session_t* session, we_frame_kind_v1 expected_kind) {
+    using namespace std::chrono_literals;
+
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        assert(we_session_tick(session) == 0);
+
+        LegacyFrameStorage storage;
+        storage.frame.size    = sizeof(storage.frame);
+        storage.frame.version = 1;
+        const int acquire_result =
+            we_session_acquire_frame(session, reinterpret_cast<we_frame_v1*>(&storage.frame));
+        if (acquire_result == 0) {
+            assert(storage.canary == kLegacyFrameCanary);
+            assert(storage.frame.kind == expected_kind);
+            assert(storage.frame.width > 0);
+            assert(storage.frame.height > 0);
+            return storage;
+        }
+        assert(acquire_result == 1);
+        std::this_thread::sleep_for(10ms);
+    }
+
+    assert(false && "timed out waiting for decoded legacy frame");
+    return {};
+}
+
 we_frame_v1 WaitForFrame(we_session_t* session, we_frame_kind_v1 expected_kind) {
     using namespace std::chrono_literals;
 
@@ -216,17 +271,18 @@ void RunShmPipelineTest(const WorkshopFixture& fixture) {
         session, we_session_set_render_config(session, &config), "set SHM render config");
     RequireSessionSuccess(session, we_session_play(session), "play SHM video");
 
-    we_frame_v1 frame = WaitForFrame(session, WE_FRAME_KIND_SHM);
-    assert(frame.width == config.width);
-    assert(frame.height == config.height);
-    assert(frame.shm_stride > 0);
-    assert(frame.shm_size > 0);
-    assert(frame.planes[0].fd >= 0);
-    we_frame_release(&frame);
+    auto legacy_frame = WaitForLegacyFrame(session, WE_FRAME_KIND_SHM);
+    assert(legacy_frame.frame.width == config.width);
+    assert(legacy_frame.frame.height == config.height);
+    assert(legacy_frame.frame.shm_stride > 0);
+    assert(legacy_frame.frame.shm_size > 0);
+    assert(legacy_frame.frame.planes[0].fd >= 0);
+    we_frame_release(reinterpret_cast<we_frame_v1*>(&legacy_frame.frame));
+    assert(legacy_frame.canary == kLegacyFrameCanary);
 
     RequireSessionSuccess(session, we_session_stop(session), "stop SHM video");
     RequireSessionSuccess(session, we_session_play(session), "restart SHM video");
-    frame = WaitForFrame(session, WE_FRAME_KIND_SHM);
+    we_frame_v1 frame = WaitForFrame(session, WE_FRAME_KIND_SHM);
     assert(frame.width == config.width);
     assert(frame.height == config.height);
     we_frame_release(&frame);

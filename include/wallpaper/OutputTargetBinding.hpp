@@ -28,7 +28,7 @@ public:
     virtual ~OutputTargetBinding() = default;
 
     virtual OutputTargetBindingKind kind() const = 0;
-    Result<TextureFrame> acquireTexture();
+    Result<TextureFrame> acquireTexture(std::uint32_t reusableBufferMask = 0);
     void setFrameReadyCallback(std::function<void()> callback);
 
 protected:
