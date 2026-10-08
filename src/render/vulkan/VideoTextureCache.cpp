@@ -20,7 +20,7 @@
 #include <drm_fourcc.h>
 #include <gst/cuda/gstcudaloader.h>
 #if HANABI_HAS_CUDA_INTEROP
-#include <gst/cuda/cuda-gst.h>
+#include <gst/cuda/gstcuda.h>
 #endif
 #include <gio/gio.h>
 #include <gst/app/gstappsink.h>
