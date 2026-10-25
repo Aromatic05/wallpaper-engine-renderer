@@ -11,6 +11,7 @@
 #include "wpscene/WPMaterial.h"
 #include "WPShaderParser.hpp"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 using namespace wallpaper;
@@ -651,6 +652,88 @@ Result<void> ParseAttachmentSection(fs::IBinaryStream& f,
     return SeekToWPMdlSectionEnd(f, section);
 }
 
+bool SkipAnimationTrack(fs::IBinaryStream& f, const WPMdlSectionHeader& section) {
+    if (! CanReadSectionBytes(f, section, 4)) return false;
+    const uint32_t bytes = f.ReadUint32();
+    return bytes % sizeof(float) == 0 && CanReadSectionBytes(f, section, bytes)
+           && f.SeekSet(f.Tell() + bytes);
+}
+
+bool ReadAnimationCurves(fs::IBinaryStream& f, const WPMdlSectionHeader& section,
+                        uint32_t boneCount, std::vector<std::vector<float>>* curves = nullptr) {
+    if (! CanReadSectionBytes(f, section, 1)) return false;
+    const auto present = f.ReadUint8();
+    if (present > 1) return false;
+    if (present == 0) return true;
+    if (curves) curves->resize(boneCount);
+    for (uint32_t bone = 0; bone < boneCount; ++bone) {
+        if (! CanReadSectionBytes(f, section, 8)) return false;
+        f.ReadUint32();
+        const auto bytes = f.ReadUint32();
+        if (bytes % sizeof(float) != 0 || ! CanReadSectionBytes(f, section, bytes)) return false;
+        if (curves) {
+            auto& values = (*curves)[bone];
+            values.resize(bytes / sizeof(float));
+            for (auto& value : values) {
+                value = f.ReadFloat();
+                if (! std::isfinite(value)) return false;
+            }
+        } else if (! f.SeekSet(f.Tell() + bytes)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ParseAnimationExtras(fs::IBinaryStream& f, const WPMdlSectionHeader& section,
+                         WPPuppet::Animation& animation) {
+    const auto boneCount = static_cast<uint32_t>(animation.bframes_array.size());
+    if (! CanReadSectionBytes(f, section, 4)) return false;
+    const auto transform = f.ReadUint32();
+    if (transform > 1) return false;
+    if (transform != 0) {
+        if (! CanReadSectionBytes(f, section, 4)) return false;
+        const auto start = f.Tell();
+        const bool extra = f.ReadUint32() != 0;
+        if (! f.SeekSet(start) || ! SkipAnimationTrack(f, section)) return false;
+        if (extra) {
+            if (! CanReadSectionBytes(f, section, 4)) return false;
+            f.ReadUint32();
+        }
+        if (! SkipAnimationTrack(f, section)) return false;
+        if (extra) {
+            if (! CanReadSectionBytes(f, section, 4)) return false;
+            f.ReadUint32();
+        }
+    }
+    if (! ReadAnimationCurves(f, section, boneCount, &animation.alpha_frames)
+        || ! CanReadSectionBytes(f, section, 1)) return false;
+    const auto morph = f.ReadUint8();
+    if (morph > 1) return false;
+    if (morph != 0) {
+        if (! CanReadSectionBytes(f, section, 4)) return false;
+        const auto count = f.ReadUint32();
+        if (count > 65536) return false;
+        for (uint32_t event = 0; event < count; ++event) {
+            if (! CanReadSectionBytes(f, section, 8)) return false;
+            f.ReadFloat();
+            const auto curves = f.ReadUint16();
+            f.ReadUint16();
+            if (curves == 0) return false;
+            for (uint32_t curve = 0; curve < curves; ++curve) {
+                if (curve != 0) {
+                    if (! CanReadSectionBytes(f, section, 2)) return false;
+                    f.ReadUint16();
+                }
+                if (! SkipAnimationTrack(f, section)) return false;
+            }
+        }
+    }
+    if (! CanReadSectionBytes(f, section, 24) || ! f.SeekSet(f.Tell() + 24)) return false;
+    // Final records may omit scalar curves.
+    return section.end_offset - f.Tell() == 4 || ReadAnimationCurves(f, section, boneCount);
+}
+
 Result<void> ParseAnimationSection(fs::IBinaryStream& f,
                                    WPMdl& mdl,
                                    const WPMdlSectionHeader& section,
@@ -723,14 +806,18 @@ Result<void> ParseAnimationSection(fs::IBinaryStream& f,
                 for (auto& value : frame.scale) value = f.ReadFloat();
             }
         }
-        if (alternativeFormat) {
+        if (mdl.mdla == 6 && ! ParseAnimationExtras(f, section, animation)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "invalid MDLA animation extension");
+        }
+        if (alternativeFormat && mdl.mdla != 6) {
             const uint32_t separatorBytes = mdl.mdla >= 3 ? 3u : 2u;
             if (! CanReadSectionBytes(f, section, separatorBytes)) {
                 return Result<void>::failure(ResultCode::InvalidArgument,
                                              "truncated alternative MDLA separator");
             }
             for (uint32_t index = 0; index < separatorBytes; ++index) f.ReadUint8();
-        } else if (mdl.mdla >= 3) {
+        } else if (mdl.mdla >= 3 && mdl.mdla != 6) {
             if (! CanReadSectionBytes(f, section, 1)) {
                 return Result<void>::failure(ResultCode::InvalidArgument,
                                              "truncated MDLA separator");
@@ -1138,10 +1225,12 @@ void WPMdlParser::GenStaticMesh(SceneMesh& mesh, const WPMdl::StaticChunk& chunk
 void WPMdlParser::AddPuppetShaderInfo(WPShaderInfo& info, const WPMdl& mdl) {
     info.combos[std::string(WE_CB_SKINNING)]  = "1";
     info.combos[std::string(WE_CB_BONECOUNT)] = std::to_string(mdl.puppet->bones.size());
+    if (mdl.mdla == 6) info.combos["SKINNING_ALPHA"] = "1";
 }
 
 void WPMdlParser::AddPuppetMatInfo(wpscene::WPMaterial& mat, const WPMdl& mdl) {
     mat.combos[std::string(WE_CB_SKINNING)]  = 1;
     mat.combos[std::string(WE_CB_BONECOUNT)] = (i32)mdl.puppet->bones.size();
+    if (mdl.mdla == 6) mat.combos["SKINNING_ALPHA"] = 1;
     mat.use_puppet          = true;
 }

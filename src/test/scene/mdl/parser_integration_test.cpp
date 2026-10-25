@@ -166,8 +166,46 @@ void AppendGenericPuppetMesh(Bytes& bytes) {
     AppendPod<std::uint16_t>(bytes, 2);
 }
 
+void AppendModernAnimation(Bytes& bytes, int id, bool malformed) {
+    AppendPod(bytes, id);
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendCString(bytes, id == 1 ? "HEAD1" : "IDLE");
+    AppendCString(bytes, "loop");
+    AppendPod<float>(bytes, 30.0f);
+    AppendPod<std::uint32_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 36);
+    AppendPod(bytes, std::array<float, 9> { float(id), 0, 0, 0, 0, 0, 1, 1, 1 });
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint8_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, malformed ? 0xfffffffcu : 4u);
+    AppendPod<float>(bytes, 1.0f);
+    AppendPod<std::uint8_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 1);
+    AppendPod<float>(bytes, 0.0f);
+    AppendPod<std::uint16_t>(bytes, 2);
+    AppendPod<std::uint16_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, 4);
+    AppendPod<float>(bytes, 0.0f);
+    AppendPod<std::uint16_t>(bytes, 7);
+    AppendPod<std::uint32_t>(bytes, 4);
+    AppendPod<float>(bytes, 1.0f);
+    AppendPod(bytes, std::array<float, 6> {});
+    if (id == 1) {
+        AppendPod<std::uint8_t>(bytes, 1);
+        AppendPod<std::uint32_t>(bytes, 0);
+        AppendPod<std::uint32_t>(bytes, 4);
+        AppendPod<float>(bytes, 2.0f);
+    }
+    AppendPod<std::uint32_t>(bytes, 0);
+}
+
 Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
-                           bool malformedAnimation = false) {
+                           bool malformedAnimation = false,
+                           bool modernAnimation = false) {
     Bytes bytes;
     constexpr std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
@@ -198,8 +236,12 @@ Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
     AppendPod<std::uint32_t>(bytes, 0xdeadbeefu);
     EndSection(bytes, unknownEnd);
 
-    const auto animationEnd = BeginSection(bytes, "MDLA", 1);
-    AppendPod<std::uint32_t>(bytes, malformedAnimation ? 1u : 0u);
+    const auto animationEnd = BeginSection(bytes, "MDLA", modernAnimation ? 6 : 1);
+    AppendPod<std::uint32_t>(bytes, modernAnimation ? 2u : malformedAnimation ? 1u : 0u);
+    if (modernAnimation) {
+        AppendModernAnimation(bytes, 1, malformedAnimation);
+        AppendModernAnimation(bytes, 2, false);
+    }
     EndSection(bytes, animationEnd);
 
     const auto morphEnd = BeginSection(bytes, "MDMP", 1);
@@ -359,6 +401,38 @@ void TestInvalidWorldBindRejected() {
             "MDLE payload size mismatch must reject the model");
 }
 
+void TestModernAnimationRecords() {
+    auto mdl = ParseModel("models/modern.mdl", BuildSectionedPuppet(false, false, true));
+    Require(mdl.puppet->anims.size() == 2, "MDLA6 extensions must preserve later animations");
+    const auto& idle = mdl.puppet->anims.back();
+    Require(idle.id == 2 && idle.name == "IDLE"
+                && idle.bframes_array[0].frames[0].position.x() == 2.0f,
+            "MDLA6 animation header and pose must stay aligned");
+    Require(idle.alpha_frames == std::vector<std::vector<float>> { { 1.0f } },
+            "MDLA6 bone opacity curves must be retained");
+    Require(mdl.mdmp == 1 && mdl.mdle == 1, "MDLA6 must preserve following sections");
+    auto& animation = mdl.puppet->anims.back();
+    animation.length = 2;
+    animation.bframes_array[0].frames.resize(2, animation.bframes_array[0].frames[0]);
+    animation.alpha_frames[0] = { 0.0f, 1.0f };
+    mdl.puppet->prepared();
+    wallpaper::WPPuppetLayer layer(mdl.puppet);
+    std::array<wallpaper::WPPuppetLayer::AnimationLayer, 1> layers {};
+    layers[0].id = 2;
+    layer.prepared(layers);
+    layer.genFrame(0.0);
+    Require(layer.BoneAlpha()[0] == 0.0f, "zero opacity must hide alternate puppet parts");
+    layer.genFrame(1.0 / 60.0);
+    Require(std::abs(layer.BoneAlpha()[0] - 0.5f) < 0.0001f,
+            "bone opacity must interpolate with the animation pose");
+    layer.AnimationLayerState(0)->visible = false;
+    layer.genFrame(0.0);
+    Require(layer.BoneAlpha()[0] == 1.0f, "hidden animation layers must not affect opacity");
+    auto invalid = ParseModel("models/invalid-modern.mdl", BuildSectionedPuppet(false, true, true));
+    Require(invalid.puppet->anims.empty() && invalid.mdmp == 1,
+            "oversized MDLA6 curves must recover within section bounds");
+}
+
 void TestRuntimeUint32IndexUpload() {
     wallpaper::WPMdl mdl;
     mdl.vertexs.resize(65'537);
@@ -407,6 +481,7 @@ int main() {
     TestRuntimeUint32IndexUpload();
     TestSectionDispatchIntegration();
     TestMalformedAnimationRecovery();
+    TestModernAnimationRecords();
     TestInvalidWorldBindRejected();
     TestRuntimePositionOffset();
     return 0;
