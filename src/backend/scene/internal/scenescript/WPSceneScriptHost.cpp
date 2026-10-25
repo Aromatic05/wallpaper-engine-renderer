@@ -189,6 +189,7 @@ struct ScriptInstance {
     JSValue                   cursor_down_fn { JS_UNDEFINED };
     JSValue                   cursor_up_fn { JS_UNDEFINED };
     JSValue                   cursor_click_fn { JS_UNDEFINED };
+    JSValue                   animation_event_fn { JS_UNDEFINED };
     JSValue                   media_thumbnail_changed_fn { JS_UNDEFINED };
     JSValue                   media_properties_changed_fn { JS_UNDEFINED };
     JSValue                   media_playback_changed_fn { JS_UNDEFINED };
@@ -1709,6 +1710,7 @@ std::string BuildPersistentScript(std::string_view script_source) {
         << "    cursorDown: typeof cursorDown === 'function' ? cursorDown : undefined,\n"
         << "    cursorUp: typeof cursorUp === 'function' ? cursorUp : undefined,\n"
         << "    cursorClick: typeof cursorClick === 'function' ? cursorClick : undefined,\n"
+        << "    animationEvent: typeof animationEvent === 'function' ? animationEvent : undefined,\n"
         << "    mediaThumbnailChanged: typeof mediaThumbnailChanged === 'function' ? "
            "mediaThumbnailChanged : undefined,\n"
         << "    mediaPropertiesChanged: typeof mediaPropertiesChanged === 'function' ? "
@@ -3878,6 +3880,7 @@ void FreeScriptInstance(JSContext* context, ScriptInstance& instance) {
     FreeJSValue(context, instance.cursor_down_fn);
     FreeJSValue(context, instance.cursor_up_fn);
     FreeJSValue(context, instance.cursor_click_fn);
+    FreeJSValue(context, instance.animation_event_fn);
     FreeJSValue(context, instance.media_thumbnail_changed_fn);
     FreeJSValue(context, instance.media_properties_changed_fn);
     FreeJSValue(context, instance.media_playback_changed_fn);
@@ -5063,8 +5066,33 @@ bool InstanceReceivesCursor(const WPSceneScriptHost::Opaque* opaque, const Scrip
            cursor.world_y >= (*bounds)[1] && cursor.world_y <= (*bounds)[3];
 }
 
-JSValue MakeCursorEventObject(JSContext* context, const CursorPositionState& cursor,
-                              bool left_down) {
+JSValue MakeCursorEventObject(const WPSceneScriptHost::Opaque* opaque,
+                              const WPSceneScriptRegistration& registration,
+                              const CursorPositionState& cursor, bool left_down) {
+    JSContext* context = opaque->runtime.context;
+    const Eigen::Matrix4d model = ResolveCursorHitModelTransform(opaque, registration.node);
+    Eigen::Matrix2d inverse;
+    bool invertible = false;
+    model.topLeftCorner<2, 2>().computeInverseWithCheck(inverse, invertible);
+    Eigen::Vector2d local = Eigen::Vector2d::Zero();
+    if (invertible) {
+        local = inverse * (Eigen::Vector2d(cursor.world_x, cursor.world_y) -
+                           model.topRightCorner<2, 1>());
+        Eigen::Vector2d top_left = Eigen::Vector2d::Zero();
+        if (const auto* image = FindImageLayerById(opaque, registration.object_id)) {
+            const Eigen::Vector3d alignment =
+                ResolveImageAlignmentOffset(image->alignment, image->size).cast<double>();
+            top_left = { alignment.x() - image->size[0] * 0.5,
+                         alignment.y() + image->size[1] * 0.5 };
+        } else if (const auto* text = FindTextLayerById(opaque, registration.object_id)) {
+            const auto size = text->primitive != nullptr ? text->primitive->VisibleDisplaySize()
+                                                         : text->object.size;
+            top_left = { -size[0] * 0.5, size[1] * 0.5 };
+        }
+        // Image coordinates start at top-left.
+        local = { local.x() - top_left.x(), top_left.y() - local.y() };
+        if (! local.allFinite()) local.setZero();
+    }
     JSValue event  = JS_NewObject(context);
     // Cursor event positions must be real WE-style Vec instances rather than plain objects:
     // draggable scene scripts call event.worldPosition.add()/subtract() while computing offsets.
@@ -5072,6 +5100,8 @@ JSValue MakeCursorEventObject(JSContext* context, const CursorPositionState& cur
     JSValue screen = NumericVectorToJS(context, { cursor.screen_x, cursor.screen_y });
 
     JS_SetPropertyStr(context, event, "worldPosition", world);
+    JS_SetPropertyStr(context, event, "localPosition",
+                      NumericVectorToJS(context, { local.x(), local.y(), 0.0 }));
     JS_SetPropertyStr(context, event, "screenPosition", screen);
     JS_SetPropertyStr(context, event, "leftDown", JS_NewBool(context, left_down));
     JS_SetPropertyStr(context, event, "button", JS_NewInt32(context, 0));
@@ -7920,7 +7950,7 @@ JSValue NativeResolveAnimationLayer(JSContext* context, JSValueConst, int argc,
     if (node == nullptr) return JS_NewInt32(context, -1);
 
     int32_t index = 0;
-    if (JS_ToInt32(context, &index, argv[1]) == 0) {
+    if (JS_IsNumber(argv[1]) && JS_ToInt32(context, &index, argv[1]) == 0) {
         return JS_NewInt32(context, index);
     }
 
@@ -7931,6 +7961,10 @@ JSValue NativeResolveAnimationLayer(JSContext* context, JSValueConst, int argc,
     if (data == nullptr || ! data->puppet_layer.hasPuppet()) return JS_NewInt32(context, -1);
 
     for (usize i = 0; i < data->puppet_layer.AnimationLayerCount(); i++) {
+        if (const auto* layer = data->puppet_layer.AnimationLayerState(i);
+            layer != nullptr && layer->name == name) {
+            return JS_NewInt32(context, static_cast<int32_t>(i));
+        }
         if (const auto* anim = data->puppet_layer.AnimationDefinition(i);
             anim != nullptr && anim->name == name) {
             return JS_NewInt32(context, static_cast<int32_t>(i));
@@ -8749,6 +8783,7 @@ bool InitializeScriptInstance(WPSceneScriptHost::Opaque* opaque, ScriptInstance&
     FreeJSValue(context, instance.cursor_down_fn);
     FreeJSValue(context, instance.cursor_up_fn);
     FreeJSValue(context, instance.cursor_click_fn);
+    FreeJSValue(context, instance.animation_event_fn);
     FreeJSValue(context, instance.media_thumbnail_changed_fn);
     FreeJSValue(context, instance.media_properties_changed_fn);
     FreeJSValue(context, instance.media_playback_changed_fn);
@@ -8767,6 +8802,7 @@ bool InitializeScriptInstance(WPSceneScriptHost::Opaque* opaque, ScriptInstance&
     instance.cursor_down_fn  = JS_GetPropertyStr(context, exports, "cursorDown");
     instance.cursor_up_fn    = JS_GetPropertyStr(context, exports, "cursorUp");
     instance.cursor_click_fn = JS_GetPropertyStr(context, exports, "cursorClick");
+    instance.animation_event_fn = JS_GetPropertyStr(context, exports, "animationEvent");
     instance.media_thumbnail_changed_fn =
         JS_GetPropertyStr(context, exports, "mediaThumbnailChanged");
     instance.media_properties_changed_fn =
@@ -9189,6 +9225,7 @@ WPSceneScriptHost::~WPSceneScriptHost() {
             FreeJSValue(m_impl->runtime.context, instance->cursor_down_fn);
             FreeJSValue(m_impl->runtime.context, instance->cursor_up_fn);
             FreeJSValue(m_impl->runtime.context, instance->cursor_click_fn);
+            FreeJSValue(m_impl->runtime.context, instance->animation_event_fn);
             FreeJSValue(m_impl->runtime.context, instance->media_thumbnail_changed_fn);
             FreeJSValue(m_impl->runtime.context, instance->media_properties_changed_fn);
             FreeJSValue(m_impl->runtime.context, instance->media_playback_changed_fn);
@@ -9774,7 +9811,7 @@ void WPSceneScriptHost::HandleCursorMove() {
         const bool is_hovered  = next_hovered.contains(instance.instance_id);
         if (was_hovered == is_hovered) continue;
 
-        JSValue event = MakeCursorEventObject(context, cursor, left_down);
+        JSValue event = MakeCursorEventObject(m_impl, instance.registration, cursor, left_down);
         if (is_hovered && ! JS_IsUndefined(instance.cursor_enter_fn)) {
             CallScriptEvent(context, instance.cursor_enter_fn, event, "cursorEnter");
         } else if (! is_hovered && ! JS_IsUndefined(instance.cursor_leave_fn)) {
@@ -9792,7 +9829,7 @@ void WPSceneScriptHost::HandleCursorMove() {
             continue;
         }
 
-        JSValue event = MakeCursorEventObject(context, cursor, left_down);
+        JSValue event = MakeCursorEventObject(m_impl, instance.registration, cursor, left_down);
         CallScriptEvent(context, instance.cursor_move_fn, event, "cursorMove");
         JS_FreeValue(context, event);
     }
@@ -9818,7 +9855,7 @@ void WPSceneScriptHost::HandleCursorButton(bool down) {
                 continue;
             }
 
-            JSValue event = MakeCursorEventObject(context, cursor, true);
+            JSValue event = MakeCursorEventObject(m_impl, instance.registration, cursor, true);
             CallScriptEvent(context, instance.cursor_down_fn, event, "cursorDown");
             JS_FreeValue(context, event);
         }
@@ -9832,7 +9869,7 @@ void WPSceneScriptHost::HandleCursorButton(bool down) {
         auto& instance = *instance_ptr;
         if (! instance.initialized || ! pressed.contains(instance.instance_id)) continue;
 
-        JSValue event = MakeCursorEventObject(context, cursor, false);
+        JSValue event = MakeCursorEventObject(m_impl, instance.registration, cursor, false);
         if (! JS_IsUndefined(instance.cursor_up_fn)) {
             CallScriptEvent(context, instance.cursor_up_fn, event, "cursorUp");
         }
@@ -9894,6 +9931,47 @@ void WPSceneScriptHost::NotifyAnimationLayersAdvanced(SceneNode* node) {
     for (usize index = 0; index < data->puppet_layer.AnimationLayerCount(); index++) {
         auto* layer = data->puppet_layer.AnimationLayerState(index);
         if (layer == nullptr || data->puppet_layer.AnimationDefinition(index) == nullptr) continue;
+
+        const auto pending = std::move(layer->pending_events);
+        layer->pending_events.clear();
+        const auto* animation = data->puppet_layer.AnimationDefinition(index);
+        for (const auto event_index : pending) {
+            const auto& json = animation->events[event_index].json;
+            JSValue event = JS_ParseJSON(context, json.data(), json.size(), "<animation-event>");
+            if (JS_IsException(event)) {
+                LogQuickJSException(context, "animationEvent JSON");
+                JS_FreeValue(context, event);
+                continue;
+            }
+            for (const auto& instance_ptr : m_impl->instances) {
+                auto& instance = *instance_ptr;
+                if (!instance.initialized || JS_IsUndefined(instance.animation_event_fn) ||
+                    ResolvePuppetLayerNode(m_impl, instance.registration.node) != node) continue;
+                if (instance.registration.target_kind == WPSceneScriptTargetKind::AnimationLayer &&
+                    instance.registration.target_index != index) continue;
+                const auto current = ReadRegistrationValue(m_impl, instance.registration)
+                                         .value_or(instance.current_value);
+                const auto script_value = ToScriptFacingRegistrationValue(instance.registration, current)
+                                              .toScriptValue();
+                JSValue args[] { JS_DupValue(context, event),
+                                 script_value ? ScriptValueToJS(context, *script_value) : JS_UNDEFINED };
+                JSValue result = JS_Call(context, instance.animation_event_fn, JS_UNDEFINED, 2, args);
+                for (auto arg : args) JS_FreeValue(context, arg);
+                if (JS_IsException(result)) {
+                    LogQuickJSException(context, "animationEvent");
+                } else if (!JS_IsUndefined(result)) {
+                    const auto hint = RegistrationValueType(instance.registration);
+                    const auto value = ReadDynamicValueFromJS(
+                        context, result, hint.supported ? hint.type : current.type());
+                    if (value) {
+                        instance.current_value = FromScriptFacingRegistrationValue(instance.registration, *value);
+                        ApplyRegistrationValue(m_impl, instance.registration, instance.current_value);
+                    }
+                }
+                JS_FreeValue(context, result);
+            }
+            JS_FreeValue(context, event);
+        }
 
         auto& state = states[index];
         if (! state.seen) {

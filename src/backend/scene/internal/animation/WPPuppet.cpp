@@ -349,6 +349,7 @@ std::span<const Eigen::Affine3f> WPPuppetLayer::AdvanceIfNeeded(double time,
 
 void WPPuppetLayer::updateInterpolation(double time) noexcept {
     for (auto& layer : m_layers) {
+        layer.anim_layer.pending_events.clear();
         if (layer) {
             double current_time = layer.anim_layer.cur_time;
             if (layer.anim_layer.playing) {
@@ -364,6 +365,30 @@ void WPPuppetLayer::updateInterpolation(double time) noexcept {
                         layer.anim_layer.playing = false;
                         layer.anim_layer.pending_ended_callback = true;
                     }
+                }
+                const double previous = layer.anim_layer.cur_time;
+                const double delta = current_time - previous;
+                const double period = layer.anim->mode == WPPuppet::PlayMode::Loop
+                                          ? layer.anim->max_time
+                                          : layer.anim->mode == WPPuppet::PlayMode::Mirror
+                                                ? 2.0 * layer.anim->max_time : 0.0;
+                const auto crossed = [&](double event_time) {
+                    if (period > 0.0) {
+                        if (delta > 0.0)
+                            event_time += (std::floor((previous - event_time) / period) + 1.0) * period;
+                        else
+                            event_time += (std::ceil((previous - event_time) / period) - 1.0) * period;
+                    }
+                    constexpr double epsilon = 1e-6;
+                    return delta > 0.0 ? event_time > previous + epsilon && event_time <= current_time + epsilon
+                                       : delta < 0.0 && event_time < previous - epsilon && event_time >= current_time - epsilon;
+                };
+                for (usize i = 0; i < layer.anim->events.size(); ++i) {
+                    const auto event_time = layer.anim->events[i].time;
+                    const bool mirrored = layer.anim->mode == WPPuppet::PlayMode::Mirror &&
+                        crossed(period - layer.anim->frame_time - event_time);
+                    if (crossed(event_time) || mirrored)
+                        layer.anim_layer.pending_events.push_back(i);
                 }
             }
             layer.interp_info = layer.anim->getInterpolationInfo(&current_time);
