@@ -4873,6 +4873,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
     if (hasAnimatedPuppetMesh) {
         svData.puppet_layer = WPPuppetLayer(puppet->puppet);
         svData.puppet_layer.prepared(wpimgobj.puppet_layers);
+        svData.puppet_vertex_offset = alignment_offset;
     }
 
     ConfigureBoneAttachment(context,
@@ -5244,6 +5245,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
                     if (hasAnimatedPuppetMesh && wpmat.use_puppet) {
                         svData.puppet_layer = WPPuppetLayer(puppet->puppet);
                         svData.puppet_layer.prepared(wpimgobj.puppet_layers);
+                        svData.puppet_vertex_offset = alignment_offset;
                     }
                 }
                 const auto authored_textures = material.textures;

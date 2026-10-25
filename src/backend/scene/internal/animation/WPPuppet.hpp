@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -13,6 +14,7 @@ namespace wallpaper
 {
 
 class WPPuppetLayer;
+class SceneMesh;
 
 class WPPuppet {
 public:
@@ -76,6 +78,13 @@ public:
         };
         std::vector<BoneFrames> bframes_array;
         std::vector<std::vector<float>> alpha_frames;
+        struct MorphCurve {
+            float scale { 0 };
+            uint16_t index { 0 };
+            usize target { std::numeric_limits<usize>::max() };
+            std::vector<float> values;
+        };
+        std::vector<MorphCurve> morph_curves;
 
         // prepared
         double max_time;
@@ -95,6 +104,12 @@ public:
     std::vector<Bone>      bones;
     std::vector<Attachment> attachments;
     std::vector<Animation> anims;
+    struct MorphVertex {
+        std::array<float, 3> position;
+        uint32_t index { 0 };
+    };
+    std::vector<MorphVertex> morph_vertices;
+    std::vector<std::vector<std::array<float, 4>>> morph_targets;
     bool                      world_anchored_bones { false };
 
     std::span<const Eigen::Affine3f> genFrame(WPPuppetLayer&, double time) noexcept;
@@ -156,6 +171,7 @@ public:
     AnimationLayer*                  AnimationLayerState(usize index) noexcept;
     const WPPuppet::Animation*       AnimationDefinition(usize index) const noexcept;
     bool SetLocalBoneTransform(usize index, const Eigen::Affine3f& transform) noexcept;
+    void ApplyMorphs(SceneMesh&, const Eigen::Vector3f& offset) const;
 
     void updateInterpolation(double time) noexcept;
 
@@ -178,6 +194,7 @@ private:
 
     std::vector<Layer>              m_layers;
     std::vector<float>              m_bone_alpha;
+    std::vector<std::array<float, 4>> m_morph_deltas;
     std::vector<BoneOverride>       m_bone_overrides;
     std::shared_ptr<WPPuppet>       m_puppet;
     std::span<const Eigen::Affine3f> m_cached_skinning {};

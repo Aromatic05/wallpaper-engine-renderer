@@ -24,7 +24,7 @@ inline constexpr u32 WPMDL_FLAG_NORMAL = 0x00000002u;
 inline constexpr u32 WPMDL_FLAG_TANGENT = 0x00000004u;
 inline constexpr u32 WPMDL_FLAG_UV = 0x00000008u;
 inline constexpr u32 WPMDL_FLAG_UV2 = 0x00000020u;
-inline constexpr u32 WPMDL_FLAG_EXTRA4 = 0x00010000u;
+inline constexpr u32 WPMDL_FLAG_POSITION4 = 0x00010000u;
 inline constexpr u32 WPMDL_FLAG_SKIN_BLEND = 0x00800000u;
 inline constexpr u32 WPMDL_FLAG_SKIN_WEIGHT = 0x01000000u;
 

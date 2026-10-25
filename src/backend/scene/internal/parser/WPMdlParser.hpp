@@ -73,6 +73,7 @@ struct WPMdl {
 
     struct Vertex {
         std::array<float, 3>    position;
+        uint32_t               morph_index { 0 };
         std::array<uint32_t, 4> blend_indices;
         std::array<float, 4>    weight;
         std::array<float, 2>    texcoord;
@@ -83,14 +84,13 @@ struct WPMdl {
     struct MorphSectionData {
         uint32_t shape_id { 0 };
         std::string tag;
-        uint32_t hash { 0 };
         std::vector<std::array<uint16_t, 3>> vertices;
         std::vector<uint8_t> trailer;
         std::vector<uint16_t> vertex_trailers;
     };
     struct MorphSection {
-        float event_time { 0.0f };
-        uint16_t event_id { 0 };
+        float scale { 0.0f };
+        uint32_t vertex_count { 0 };
         std::vector<MorphSectionData> sections;
     };
     std::vector<MorphSection> morph_sections;

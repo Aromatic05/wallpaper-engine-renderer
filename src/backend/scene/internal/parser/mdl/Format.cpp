@@ -33,7 +33,7 @@ u32 WPMdlVertexStride(u32 flags) {
     u32 stride = 3u * sizeof(float);
     if ((flags & WPMDL_FLAG_NORMAL) != 0) stride += 3u * sizeof(float);
     if ((flags & WPMDL_FLAG_TANGENT) != 0) stride += 4u * sizeof(float);
-    if ((flags & WPMDL_FLAG_EXTRA4) != 0) stride += 4u * sizeof(std::uint8_t);
+    if ((flags & WPMDL_FLAG_POSITION4) != 0) stride += sizeof(float);
     if ((flags & WPMDL_FLAG_SKIN_BLEND) != 0) stride += 4u * sizeof(u32);
     if ((flags & WPMDL_FLAG_SKIN_WEIGHT) != 0) stride += 4u * sizeof(float);
     if ((flags & (WPMDL_FLAG_UV | WPMDL_FLAG_UV2)) != 0) stride += 2u * sizeof(float);

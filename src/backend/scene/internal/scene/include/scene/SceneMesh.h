@@ -23,6 +23,7 @@ public:
 	uint32_t PointSize() const { return m_pointSize; }
 
 	bool Dynamic() const { return m_dynamic; }
+	void SetDynamic() { m_dynamic = true; }
 	const auto& Dirty() const { return m_dirty; }
 	auto& Dirty() { return m_dirty; }
 	void SetDirty() { m_dirty.store(true); }
@@ -55,6 +56,7 @@ public:
 
 	void ChangeMeshDataFrom(const SceneMesh& o) {
 		m_data = o.m_data;
+		m_dynamic = m_dynamic || o.m_dynamic;
 	}
 
 private:

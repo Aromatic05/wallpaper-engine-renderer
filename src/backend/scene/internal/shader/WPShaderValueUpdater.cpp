@@ -283,6 +283,9 @@ void WPShaderValueUpdater::AdvanceAllPuppets() {
     for (auto& [addr, nodeData] : m_nodeDataMap) {
         if (!nodeData.puppet_layer.hasPuppet()) continue;
         nodeData.puppet_layer.AdvanceIfNeeded(frame_time, m_puppet_frame_serial);
+        auto* node = static_cast<SceneNode*>(addr);
+        if (node && node->Mesh())
+            nodeData.puppet_layer.ApplyMorphs(*node->Mesh(), nodeData.puppet_vertex_offset);
 
         if (nodeData.transform_binding.IsBoneAttachment()) {
             auto* parent = nodeData.transform_binding.parent;

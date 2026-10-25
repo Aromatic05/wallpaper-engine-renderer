@@ -143,10 +143,10 @@ Bytes BuildLegacyStaticImageMesh() {
     return bytes;
 }
 
-void AppendGenericPuppetMesh(Bytes& bytes) {
-    constexpr std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
+void AppendGenericPuppetMesh(Bytes& bytes, bool morph = false) {
+    const std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
-        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT;
+        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT | (morph ? wallpaper::WPMDL_FLAG_POSITION4 : 0);
     AppendCString(bytes, "materials/puppet.json");
     AppendPod<std::uint32_t>(bytes, 0);
     AppendPod<std::uint32_t>(bytes, 3 * wallpaper::WPMdlVertexStride(flags));
@@ -154,6 +154,7 @@ void AppendGenericPuppetMesh(Bytes& bytes) {
         AppendPod(bytes, std::array<float, 3> {
             static_cast<float>(index), static_cast<float>(index), 0.0f
         });
+        if (morph) AppendPod<float>(bytes, index == 0 ? 1.0f : 0.0f);
         AppendPod(bytes, std::array<std::uint32_t, 4> { 0, 0, 0, 0 });
         AppendPod(bytes, std::array<float, 4> { 1.0f, 0.0f, 0.0f, 0.0f });
         AppendPod(bytes, std::array<float, 2> {
@@ -185,14 +186,14 @@ void AppendModernAnimation(Bytes& bytes, int id, bool malformed) {
     AppendPod<float>(bytes, 1.0f);
     AppendPod<std::uint8_t>(bytes, 1);
     AppendPod<std::uint32_t>(bytes, 1);
-    AppendPod<float>(bytes, 0.0f);
+    AppendPod<float>(bytes, 0.5f);
     AppendPod<std::uint16_t>(bytes, 2);
+    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<std::uint32_t>(bytes, 4);
+    AppendPod<float>(bytes, 1.0f);
     AppendPod<std::uint16_t>(bytes, 0);
     AppendPod<std::uint32_t>(bytes, 4);
     AppendPod<float>(bytes, 0.0f);
-    AppendPod<std::uint16_t>(bytes, 7);
-    AppendPod<std::uint32_t>(bytes, 4);
-    AppendPod<float>(bytes, 1.0f);
     AppendPod(bytes, std::array<float, 6> {});
     if (id == 1) {
         AppendPod<std::uint8_t>(bytes, 1);
@@ -200,18 +201,22 @@ void AppendModernAnimation(Bytes& bytes, int id, bool malformed) {
         AppendPod<std::uint32_t>(bytes, 4);
         AppendPod<float>(bytes, 2.0f);
     }
-    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod<std::uint32_t>(bytes, id == 1 ? 1 : 0);
+    if (id == 1) {
+        AppendPod<float>(bytes, 0.25f);
+        AppendCString(bytes, R"({"frame":7,"name":"end"})");
+    }
 }
 
 Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
                            bool malformedAnimation = false,
                            bool modernAnimation = false) {
     Bytes bytes;
-    constexpr std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
+    const std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
-        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT;
+        | wallpaper::WPMDL_FLAG_SKIN_WEIGHT | (modernAnimation ? wallpaper::WPMDL_FLAG_POSITION4 : 0);
     AppendHeader(bytes, 13, flags, 1);
-    AppendGenericPuppetMesh(bytes);
+    AppendGenericPuppetMesh(bytes, modernAnimation);
 
     bytes.insert(bytes.end(), { 0, 0x7f, 0 });
     const auto skeletonEnd = BeginSection(bytes, "MDLS", 1);
@@ -245,19 +250,30 @@ Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
     EndSection(bytes, animationEnd);
 
     const auto morphEnd = BeginSection(bytes, "MDMP", 1);
-    AppendPod<std::uint16_t>(bytes, 1);
+    AppendPod<std::uint16_t>(bytes, modernAnimation ? 2 : 1);
     AppendPod<float>(bytes, 0.5f);
-    AppendPod<std::uint16_t>(bytes, 7);
+    AppendPod<std::uint16_t>(bytes, 1);
     AppendPod<std::uint16_t>(bytes, 0);
     AppendPod<std::uint32_t>(bytes, 1);
     AppendPod<std::uint32_t>(bytes, 0);
     AppendCString(bytes, "shape");
     AppendPod<std::uint32_t>(bytes, 6);
-    AppendPod<std::uint32_t>(bytes, 123);
     AppendPod<std::uint16_t>(bytes, 10);
     AppendPod<std::uint16_t>(bytes, 20);
     AppendPod<std::uint16_t>(bytes, 30);
+    AppendPod<std::uint32_t>(bytes, 2);
     AppendPod<std::uint16_t>(bytes, 40);
+    if (modernAnimation) {
+        AppendPod<std::uint32_t>(bytes, 2);
+        AppendPod<std::uint32_t>(bytes, 0);
+        AppendCString(bytes, "blink");
+        AppendPod<std::uint32_t>(bytes, 6);
+        AppendPod<std::int16_t>(bytes, -32767);
+        AppendPod<std::int16_t>(bytes, 0);
+        AppendPod<std::int16_t>(bytes, 0);
+        AppendPod<std::uint32_t>(bytes, 2);
+        AppendPod<std::int16_t>(bytes, 16384);
+    }
     EndSection(bytes, morphEnd);
 
     const auto worldBindEnd = BeginSection(bytes, "MDLE", 1);
@@ -362,11 +378,11 @@ void TestSectionDispatchIntegration() {
     Require(mdl.morph_sections.size() == 1,
             "MDMP event count mismatch");
     const auto& morphEvent = mdl.morph_sections.front();
-    Require(std::abs(morphEvent.event_time - 0.5f) < 0.0001f
-                && morphEvent.event_id == 7 && morphEvent.sections.size() == 1,
+    Require(std::abs(morphEvent.scale - 0.5f) < 0.0001f
+                && morphEvent.vertex_count == 1 && morphEvent.sections.size() == 1,
             "MDMP event metadata mismatch");
     const auto& morphData = morphEvent.sections.front();
-    Require(morphData.shape_id == 1 && morphData.tag == "shape" && morphData.hash == 123,
+    Require(morphData.shape_id == 1 && morphData.tag == "shape",
             "MDMP section metadata mismatch");
     Require(morphData.vertices
                 == std::vector<std::array<std::uint16_t, 3>> { { 10, 20, 30 } }
@@ -404,6 +420,10 @@ void TestInvalidWorldBindRejected() {
 void TestModernAnimationRecords() {
     auto mdl = ParseModel("models/modern.mdl", BuildSectionedPuppet(false, false, true));
     Require(mdl.puppet->anims.size() == 2, "MDLA6 extensions must preserve later animations");
+    Require(mdl.puppet->anims[0].events.size() == 1 &&
+                mdl.puppet->anims[0].events[0].time == 0.25 &&
+                mdl.puppet->anims[0].events[0].json == R"({"frame":7,"name":"end"})",
+            "MDLA must retain authored script events");
     const auto& idle = mdl.puppet->anims.back();
     Require(idle.id == 2 && idle.name == "IDLE"
                 && idle.bframes_array[0].frames[0].position.x() == 2.0f,
@@ -415,19 +435,39 @@ void TestModernAnimationRecords() {
     animation.length = 2;
     animation.bframes_array[0].frames.resize(2, animation.bframes_array[0].frames[0]);
     animation.alpha_frames[0] = { 0.0f, 1.0f };
+    Require(animation.morph_curves.size() == 2 && animation.morph_curves[0].index == 1,
+            "the first morph curve must retain its target index");
+    animation.morph_curves[0].values = { 0.0f, 1.0f };
     mdl.puppet->prepared();
     wallpaper::WPPuppetLayer layer(mdl.puppet);
     std::array<wallpaper::WPPuppetLayer::AnimationLayer, 1> layers {};
     layers[0].id = 2;
     layer.prepared(layers);
+    wallpaper::SceneMesh mesh;
+    const Eigen::Vector3f offset { 10, -5, 2 };
+    wallpaper::WPMdlParser::GenPuppetMesh(mesh, mdl, offset);
+    Require(mesh.Dynamic(), "morph meshes must upload changed vertices");
+    wallpaper::SceneMesh copied;
+    copied.ChangeMeshDataFrom(mesh);
+    Require(copied.Dynamic(), "effect meshes must retain dynamic uploads");
     layer.genFrame(0.0);
     Require(layer.BoneAlpha()[0] == 0.0f, "zero opacity must hide alternate puppet parts");
     layer.genFrame(1.0 / 60.0);
     Require(std::abs(layer.BoneAlpha()[0] - 0.5f) < 0.0001f,
             "bone opacity must interpolate with the animation pose");
+    layer.ApplyMorphs(mesh, offset);
+    layer.ApplyMorphs(mesh, offset);
+    const auto* vertices = mesh.GetVertexArray(0).Data();
+    Require(std::abs(vertices[0] - 9.75f) < 0.0001f && vertices[1] == -5 && vertices[2] == 2,
+            "signed morph deltas must interpolate without accumulating");
+    Require(std::abs(vertices[19] - 0.75f) < 0.0001f && vertices[20] == 11,
+            "morph opacity must interpolate and index-zero vertices must remain fixed");
     layer.AnimationLayerState(0)->visible = false;
     layer.genFrame(0.0);
     Require(layer.BoneAlpha()[0] == 1.0f, "hidden animation layers must not affect opacity");
+    layer.ApplyMorphs(mesh, offset);
+    Require(vertices[0] == 10 && vertices[19] == 1,
+            "hidden morph layers must restore the base mesh");
     auto invalid = ParseModel("models/invalid-modern.mdl", BuildSectionedPuppet(false, true, true));
     Require(invalid.puppet->anims.empty() && invalid.mdmp == 1,
             "oversized MDLA6 curves must recover within section bounds");

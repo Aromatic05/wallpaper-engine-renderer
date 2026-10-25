@@ -11,6 +11,7 @@
 #include "wpscene/WPMaterial.h"
 #include "WPShaderParser.hpp"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -369,6 +370,12 @@ bool AppendGenericMeshToLegacyView(WPMdl& mdl, const WPMdlMesh& mesh) {
     for (usize index = 0; index < mesh.positions.size(); ++index) {
         WPMdl::Vertex vertex {};
         vertex.position = mesh.positions[index];
+        if (index < mesh.position_w.size()) {
+            const float value = mesh.position_w[index];
+            if (! std::isfinite(value) || value < 0 || value > 2'000'000 ||
+                value != std::floor(value)) return false;
+            vertex.morph_index = static_cast<uint32_t>(value);
+        }
         vertex.blend_indices = index < mesh.blend_indices.size()
             ? mesh.blend_indices[index]
             : std::array<uint32_t, 4> { 0, 0, 0, 0 };
@@ -652,11 +659,18 @@ Result<void> ParseAttachmentSection(fs::IBinaryStream& f,
     return SeekToWPMdlSectionEnd(f, section);
 }
 
-bool SkipAnimationTrack(fs::IBinaryStream& f, const WPMdlSectionHeader& section) {
+bool ReadAnimationTrack(fs::IBinaryStream& f, const WPMdlSectionHeader& section,
+                        std::vector<float>* values = nullptr) {
     if (! CanReadSectionBytes(f, section, 4)) return false;
     const uint32_t bytes = f.ReadUint32();
-    return bytes % sizeof(float) == 0 && CanReadSectionBytes(f, section, bytes)
-           && f.SeekSet(f.Tell() + bytes);
+    if (bytes % sizeof(float) != 0 || ! CanReadSectionBytes(f, section, bytes)) return false;
+    if (! values) return f.SeekSet(f.Tell() + bytes);
+    values->resize(bytes / sizeof(float));
+    for (auto& value : *values) {
+        value = f.ReadFloat();
+        if (! std::isfinite(value)) return false;
+    }
+    return true;
 }
 
 bool ReadAnimationCurves(fs::IBinaryStream& f, const WPMdlSectionHeader& section,
@@ -695,12 +709,12 @@ bool ParseAnimationExtras(fs::IBinaryStream& f, const WPMdlSectionHeader& sectio
         if (! CanReadSectionBytes(f, section, 4)) return false;
         const auto start = f.Tell();
         const bool extra = f.ReadUint32() != 0;
-        if (! f.SeekSet(start) || ! SkipAnimationTrack(f, section)) return false;
+        if (! f.SeekSet(start) || ! ReadAnimationTrack(f, section)) return false;
         if (extra) {
             if (! CanReadSectionBytes(f, section, 4)) return false;
             f.ReadUint32();
         }
-        if (! SkipAnimationTrack(f, section)) return false;
+        if (! ReadAnimationTrack(f, section)) return false;
         if (extra) {
             if (! CanReadSectionBytes(f, section, 4)) return false;
             f.ReadUint32();
@@ -716,16 +730,16 @@ bool ParseAnimationExtras(fs::IBinaryStream& f, const WPMdlSectionHeader& sectio
         if (count > 65536) return false;
         for (uint32_t event = 0; event < count; ++event) {
             if (! CanReadSectionBytes(f, section, 8)) return false;
-            f.ReadFloat();
+            const float scale = f.ReadFloat();
             const auto curves = f.ReadUint16();
-            f.ReadUint16();
-            if (curves == 0) return false;
+            if (! std::isfinite(scale) || scale < 0 || curves == 0) return false;
             for (uint32_t curve = 0; curve < curves; ++curve) {
-                if (curve != 0) {
-                    if (! CanReadSectionBytes(f, section, 2)) return false;
-                    f.ReadUint16();
-                }
-                if (! SkipAnimationTrack(f, section)) return false;
+                if (! CanReadSectionBytes(f, section, 2)) return false;
+                WPPuppet::Animation::MorphCurve track;
+                track.scale = scale;
+                track.index = f.ReadUint16();
+                if (! ReadAnimationTrack(f, section, &track.values)) return false;
+                animation.morph_curves.push_back(std::move(track));
             }
         }
     }
@@ -864,9 +878,8 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
         }
         WPMdl::MorphSection event;
         const uint16_t sectionCount = f.ReadUint16();
-        event.event_time = f.ReadFloat();
-        event.event_id = f.ReadUint16();
-        f.ReadUint16();
+        event.scale = f.ReadFloat();
+        event.vertex_count = f.ReadUint32();
         event.sections.resize(sectionCount);
         for (auto& data : event.sections) {
             if (! CanReadSectionBytes(f, section, 8)) {
@@ -876,15 +889,14 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
             data.shape_id = f.ReadUint32();
             f.ReadUint32();
             if (! ReadSectionCString(f, section, data.tag)
-                || ! CanReadSectionBytes(f, section, 8)) {
+                || ! CanReadSectionBytes(f, section, 4)) {
                 return Result<void>::failure(ResultCode::InvalidArgument,
                                              "truncated MDMP section metadata");
             }
             const uint32_t length = f.ReadUint32();
-            data.hash = f.ReadUint32();
-            if (length % 6u != 0) {
+            if (length % 6u != 0 || length / 6u != event.vertex_count) {
                 return Result<void>::failure(ResultCode::InvalidArgument,
-                                             "MDMP vertex payload is not divisible by six");
+                                             "MDMP vertex count does not match payload");
             }
             const uint32_t vertexCount = length / 6u;
             if (! CanReadSectionBytes(f, section, length)) {
@@ -894,6 +906,11 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
             data.vertices.resize(vertexCount);
             for (auto& vertex : data.vertices)
                 for (auto& value : vertex) value = f.ReadUint16();
+            const auto trailerBytes = data.shape_id == 0 ? length : vertexCount * 2u;
+            if (! CanReadSectionBytes(f, section, 4) || f.ReadUint32() != trailerBytes) {
+                return Result<void>::failure(ResultCode::InvalidArgument,
+                                             "MDMP trailer length does not match vertices");
+            }
             if (data.shape_id == 0) {
                 if (! CanReadSectionBytes(f, section, length)) {
                     return Result<void>::failure(ResultCode::InvalidArgument,
@@ -902,7 +919,6 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
                 data.trailer.resize(length);
                 for (auto& value : data.trailer) value = f.ReadUint8();
             } else {
-                const auto trailerBytes = static_cast<std::uint64_t>(vertexCount) * 2u;
                 if (! CanReadSectionBytes(f, section, trailerBytes)) {
                     return Result<void>::failure(ResultCode::InvalidArgument,
                                                  "MDMP vertex trailer exceeds section bounds");
@@ -914,6 +930,45 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
         mdl.morph_sections.push_back(std::move(event));
     }
     return SeekToWPMdlSectionEnd(f, section);
+}
+
+bool PrepareMorphs(WPMdl& mdl) {
+    uint32_t count = 0;
+    for (const auto& vertex : mdl.vertexs) count = std::max(count, vertex.morph_index);
+    if (count == 0) return true;
+    auto& puppet = *mdl.puppet;
+    for (const auto& group : mdl.morph_sections) {
+        if (! std::isfinite(group.scale) || group.scale < 0) return false;
+        for (usize index = 0; index < group.sections.size(); ++index) {
+            const auto& shape = group.sections[index];
+            if (shape.vertices.size() != count || shape.vertex_trailers.size() != count)
+                return false;
+            const auto target = puppet.morph_targets.size();
+            auto& values = puppet.morph_targets.emplace_back(count);
+            for (usize vertex = 0; vertex < count; ++vertex) {
+                for (usize axis = 0; axis < 3; ++axis)
+                    values[vertex][axis] = std::bit_cast<int16_t>(shape.vertices[vertex][axis])
+                                           * (group.scale / 32767.0f);
+                values[vertex][3] = std::clamp(
+                    std::bit_cast<int16_t>(shape.vertex_trailers[vertex]) / 32767.0f, 0.0f, 1.0f);
+            }
+            for (auto& animation : puppet.anims) {
+                for (auto& curve : animation.morph_curves) {
+                    if (curve.scale == group.scale && curve.index == index) {
+                        if (curve.target != std::numeric_limits<usize>::max()) return false;
+                        curve.target = target;
+                    }
+                }
+            }
+        }
+    }
+    for (const auto& animation : puppet.anims)
+        for (const auto& curve : animation.morph_curves)
+            if (curve.target >= puppet.morph_targets.size()) return false;
+    if (puppet.morph_targets.empty()) return false;
+    for (const auto& vertex : mdl.vertexs)
+        puppet.morph_vertices.push_back({ vertex.position, vertex.morph_index });
+    return true;
 }
 
 Result<void> ParseWorldBindSection(fs::IBinaryStream& f,
@@ -1132,6 +1187,10 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
         }
     }
 
+    if (! PrepareMorphs(mdl)) {
+        LOG_ERROR("invalid puppet morph mapping: %s", str_path.c_str());
+        return false;
+    }
     ApplyWPMdlPuppetSemantics(mdl);
     mdl.puppet->prepared();
 
@@ -1148,11 +1207,17 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
 
 void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl,
                                 Eigen::Vector3f position_offset) {
-    SceneVertexArray vertex({ { WE_IN_POSITION.data(), VertexType::FLOAT3 },
+    const bool morphing = mdl.puppet && ! mdl.puppet->morph_targets.empty();
+    std::vector<SceneVertexArray::SceneVertexAttribute> attrs {
+                              { WE_IN_POSITION.data(), VertexType::FLOAT3 },
                               { WE_IN_BLENDINDICES.data(), VertexType::UINT4 },
                               { WE_IN_BLENDWEIGHTS.data(), VertexType::FLOAT4 },
-                              { WE_IN_TEXCOORD.data(), VertexType::FLOAT2 } },
-                            mdl.vertexs.size());
+                              { WE_IN_TEXCOORD.data(), VertexType::FLOAT2 } };
+    if (morphing) {
+        attrs.push_back({ "a_Color", VertexType::FLOAT4 });
+        mesh.SetDynamic();
+    }
+    SceneVertexArray vertex(attrs, mdl.vertexs.size());
 
     std::array<float, 16> one_vert {};
     auto to_one = [position_offset](const WPMdl::Vertex& in, decltype(one_vert)& out) {
@@ -1171,7 +1236,14 @@ void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl,
         auto& v = mdl.vertexs[i];
         one_vert.fill(0.0f);
         to_one(v, one_vert);
-        vertex.SetVertexs(i, one_vert);
+        if (morphing) {
+            std::array<float, 20> colored {};
+            std::copy(one_vert.begin(), one_vert.end(), colored.begin());
+            std::fill(colored.begin() + 16, colored.end(), 1.0f);
+            vertex.SetVertexs(i, colored);
+        } else {
+            vertex.SetVertexs(i, one_vert);
+        }
     }
     std::vector<uint32_t> indices;
     indices.reserve(mdl.indices.size() * 3);
@@ -1228,11 +1300,13 @@ void WPMdlParser::AddPuppetShaderInfo(WPShaderInfo& info, const WPMdl& mdl) {
     info.combos[std::string(WE_CB_SKINNING)]  = "1";
     info.combos[std::string(WE_CB_BONECOUNT)] = std::to_string(mdl.puppet->bones.size());
     if (mdl.mdla == 6) info.combos["SKINNING_ALPHA"] = "1";
+    if (! mdl.puppet->morph_targets.empty()) info.combos["VERTEXCOLOR"] = "1";
 }
 
 void WPMdlParser::AddPuppetMatInfo(wpscene::WPMaterial& mat, const WPMdl& mdl) {
     mat.combos[std::string(WE_CB_SKINNING)]  = 1;
     mat.combos[std::string(WE_CB_BONECOUNT)] = (i32)mdl.puppet->bones.size();
     if (mdl.mdla == 6) mat.combos["SKINNING_ALPHA"] = 1;
+    if (! mdl.puppet->morph_targets.empty()) mat.combos["VERTEXCOLOR"] = 1;
     mat.use_puppet          = true;
 }
