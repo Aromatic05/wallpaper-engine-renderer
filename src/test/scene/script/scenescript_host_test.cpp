@@ -1050,5 +1050,198 @@ int main() {
         assert(scene_ptr->textPrimitives.contains(live_it->second));
     }
 
+    {
+        Scene scene;
+        auto node = MakeLayerNode(302, "AnimationNames");
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 302, node);
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        auto puppet = std::make_shared<wallpaper::WPPuppet>();
+        puppet->anims.resize(2);
+        std::vector<wallpaper::WPPuppetLayer::AnimationLayer> layers(2);
+        for (int i = 0; i < 2; ++i) {
+            puppet->anims[i].id = i + 1;
+            puppet->anims[i].name = i == 0 ? "IDLE" : "HEAD2";
+            puppet->anims[i].mode = wallpaper::WPPuppet::PlayMode::Loop;
+            layers[i].id = i + 1;
+            layers[i].name = i == 0 ? "idle alias" : "click alias";
+        }
+        wallpaper::WPShaderValueData data;
+        data.puppet_layer = wallpaper::WPPuppetLayer(puppet);
+        data.puppet_layer.prepared(layers);
+        auto* updater = static_cast<wallpaper::WPShaderValueUpdater*>(scene.shaderValueUpdater.get());
+        updater->SetNodeData(node.get(), data);
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(
+            302, "AnimationNames", "scale", WPSceneScriptTargetKind::Layer,
+            WPDynamicValue::Type::Float3,
+            WPDynamicValue(std::array<float, 3> { 1.0f, 1.0f, 1.0f }));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            export function update(value) {
+                if (thisLayer.getAnimationLayer('missing') !== undefined ||
+                    thisLayer.getAnimationLayer(-1) !== undefined ||
+                    thisLayer.getAnimationLayer(2) !== undefined) return new Vec3(0, 0, 0);
+                thisLayer.getAnimationLayer('IDLE').visible = false;
+                thisLayer.getAnimationLayer('HEAD2').visible = false;
+                if (thisLayer.getAnimationLayer(0).visible ||
+                    thisLayer.getAnimationLayer(1).visible) return new Vec3(0, 0, 0);
+                thisLayer.getAnimationLayer('click alias').visible = true;
+                return new Vec3(thisLayer.getAnimationLayer('idle alias').visible ? 0 : 1,
+                                thisLayer.getAnimationLayer(1).visible ? 1 : 0, 1);
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        host.FrameBegin(0.0);
+        assert(node->Scale().isApprox(Eigen::Vector3f::Ones()));
+        assert(!updater->GetNodeData(node.get())->puppet_layer.AnimationLayerState(0)->visible);
+        assert(updater->GetNodeData(node.get())->puppet_layer.AnimationLayerState(1)->visible);
+    }
+
+    {
+        Scene scene;
+        auto node = MakeLayerNode(303, "AnimationEvents");
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 303, node);
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        auto* updater = static_cast<wallpaper::WPShaderValueUpdater*>(scene.shaderValueUpdater.get());
+        auto puppet = std::make_shared<wallpaper::WPPuppet>();
+        puppet->bones.resize(1);
+        puppet->anims.resize(1);
+        auto& animation = puppet->anims[0];
+        animation.id = 1;
+        animation.fps = 10;
+        animation.length = 4;
+        animation.mode = wallpaper::WPPuppet::PlayMode::Single;
+        animation.events.push_back({ float(0.3), R"({"frame":3,"name":"end"})" });
+        puppet->prepared();
+        wallpaper::WPShaderValueData data;
+        data.puppet_layer = wallpaper::WPPuppetLayer(puppet);
+        std::vector<wallpaper::WPPuppetLayer::AnimationLayer> layers(1);
+        layers[0].id = 1;
+        data.puppet_layer.prepared(layers);
+        updater->SetNodeData(node.get(), data);
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(
+            303, "AnimationEvents", "scale", WPSceneScriptTargetKind::Layer,
+            WPDynamicValue::Type::Float3,
+            WPDynamicValue(std::array<float, 3> { 1.0f, 1.0f, 1.0f }));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            let count = 0;
+            export function init(value) {
+                thisLayer.getAnimationLayer(0).play();
+                return value;
+            }
+            export function animationEvent(event, value) {
+                if (event.name !== 'end' || event.frame !== 3) return new Vec3(-1, -1, -1);
+                count++;
+                thisLayer.getAnimationLayer(0).setFrame(0);
+                thisLayer.getAnimationLayer(0).play();
+                return new Vec3(count, value.y + 1, 1);
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        auto& runtime = updater->GetNodeData(node.get())->puppet_layer;
+        for (int count = 1; count <= 3; ++count) {
+            runtime.genFrame(0.31);
+            host.NotifyAnimationLayersAdvanced(node.get());
+            host.NotifyAnimationLayersAdvanced(node.get());
+            assert(NearlyEqual(node->Scale().x(), count));
+            assert(NearlyEqual(node->Scale().y(), count + 1));
+            assert(runtime.AnimationLayerState(0)->playing);
+            assert(NearlyEqual(runtime.AnimationLayerState(0)->cur_time, 0.0));
+        }
+        runtime.AnimationLayerState(0)->playing = false;
+        runtime.genFrame(1.0);
+        host.NotifyAnimationLayersAdvanced(node.get());
+        assert(NearlyEqual(node->Scale().x(), 3));
+        animation.mode = wallpaper::WPPuppet::PlayMode::Loop;
+        animation.events[0].time = 0.2;
+        runtime.AnimationLayerState(0)->playing = true;
+        runtime.AnimationLayerState(0)->cur_time = 0.3;
+        runtime.genFrame(0.35);
+        host.NotifyAnimationLayersAdvanced(node.get());
+        assert(NearlyEqual(node->Scale().x(), 4));
+        assert(NearlyEqual(runtime.AnimationLayerState(0)->cur_time, 0.0));
+    }
+
+    for (const bool virtual_parent : { false, true }) {
+        for (const std::string alignment : { "center", "topleft", "bottomright" }) {
+            Scene scene;
+            scene.ortho[0] = scene.ortho[1] = 1000;
+            auto parent = MakeLayerNode(300, "CursorParent");
+            parent->SetTranslate({ 400.0f, 300.0f, 7.0f });
+            parent->SetRotation({ 0.0f, 0.0f, 0.2f });
+            parent->SetScale({ 1.2f, 0.8f, 1.0f });
+            scene.sceneGraph->AppendChild(parent);
+            auto node = MakeLayerNode(301, "CursorImage");
+            node->SetTranslate({ 50.0f, 20.0f, 3.0f });
+            node->SetRotation({ 0.0f, 0.0f, 0.4f });
+            node->SetScale({ -2.0f, 1.5f, 1.0f });
+            if (virtual_parent) {
+                scene.sceneGraph->AppendChild(node);
+                scene.shaderValueUpdater =
+                    std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+                wallpaper::WPShaderValueData data;
+                data.InheritParentTransform(parent.get());
+                static_cast<wallpaper::WPShaderValueUpdater*>(scene.shaderValueUpdater.get())
+                    ->SetNodeData(node.get(), data);
+            } else {
+                parent->AppendChild(node);
+            }
+            RegisterLayer(scene, 301, node);
+            scene.imageLayers[301] = { { 80.0f, 60.0f }, alignment };
+
+            WPSceneScriptHost host(&scene);
+            auto registration = MakeRegistration(
+                301, "CursorImage", "origin", WPSceneScriptTargetKind::Layer,
+                WPDynamicValue::Type::Float3,
+                WPDynamicValue(std::array<float, 3> { 50.0f, 20.0f, 3.0f }));
+            registration.node = node.get();
+            registration.setting.script = R"(
+                let seen = 0;
+                function record(event, bit, expectedX = 25) {
+                    const p = event.localPosition.add(new Vec3(0, 0, 0));
+                    if (Math.abs(p.x - expectedX) > 0.001 ||
+                        Math.abs(p.y - 15) > 0.001 || p.z !== 0)
+                        throw new Error('incorrect localPosition');
+                    seen |= bit;
+                }
+                export function cursorEnter(e) { record(e, 1); }
+                export function cursorMove(e) { record(e, 2); }
+                export function cursorDown(e) { record(e, 4); }
+                export function cursorUp(e) { record(e, 8); }
+                export function cursorClick(e) { record(e, 16); }
+                export function cursorLeave(e) { record(e, 32, 200); }
+                export function update(value) { return new Vec3(seen, 0, 0); }
+            )";
+            assert(host.RegisterPropertyScript(std::move(registration)));
+            host.Initialize();
+
+            const double offset_x = alignment == "topleft" ? 40.0 :
+                                    alignment == "bottomright" ? -40.0 : 0.0;
+            const double offset_y = alignment == "topleft" ? -30.0 :
+                                    alignment == "bottomright" ? 30.0 : 0.0;
+            const Eigen::Matrix4d model = parent->GetLocalTrans() * node->GetLocalTrans();
+            auto move = [&](double x) {
+                const Eigen::Vector4d world =
+                    model * Eigen::Vector4d(x - 40.0 + offset_x, 15.0 + offset_y, 0.0, 1.0);
+                scene.mousePositionNormalized = {
+                    static_cast<float>(world.x() / 1000.0),
+                    static_cast<float>(1.0 - world.y() / 1000.0) };
+                host.HandleCursorMove();
+            };
+            move(25.0);
+            host.HandleCursorButton(true);
+            host.HandleCursorButton(false);
+            move(200.0);
+            host.FrameBegin(0.0);
+            assert(NearlyEqual(node->Translate().x(), 63.0));
+        }
+    }
+
     return 0;
 }

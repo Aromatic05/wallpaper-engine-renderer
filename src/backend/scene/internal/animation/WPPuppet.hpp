@@ -65,6 +65,12 @@ public:
         PlayMode    mode;
         std::string name;
 
+        struct Event {
+            double time;
+            std::string json;
+        };
+        std::vector<Event> events;
+
         struct BoneFrames {
             std::vector<BoneFrame> frames;
         };
@@ -130,6 +136,7 @@ public:
         // NotifyAnimationLayersAdvanced consumes this latch after it fires ended callbacks.
         // This lets single-shot layers report completion without pretending that they wrapped.
         bool   pending_ended_callback { false };
+        std::vector<usize> pending_events;
     };
 
     void prepared(std::span<AnimationLayer>);
