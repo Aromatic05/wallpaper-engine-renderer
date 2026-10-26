@@ -872,12 +872,22 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
     mdl.mdmp = section.version;
     mdl.morph_sections.clear();
     while (f.Tell() < section.end_offset) {
-        if (! CanReadSectionBytes(f, section, 10)) {
+        const auto meshIndex = mdl.morph_sections.size();
+        if (meshIndex >= mdl.meshes.size() || ! CanReadSectionBytes(f, section, 2)) {
             return Result<void>::failure(ResultCode::InvalidArgument,
-                                         "truncated MDMP event header");
+                                         "invalid MDMP mesh header");
         }
+        const auto flags = mdl.meshes[meshIndex].flag_a;
         WPMdl::MorphSection event;
         const uint16_t sectionCount = f.ReadUint16();
+        if (sectionCount == 0) {
+            mdl.morph_sections.push_back(std::move(event));
+            continue;
+        }
+        if (! CanReadSectionBytes(f, section, 8)) {
+            return Result<void>::failure(ResultCode::InvalidArgument,
+                                         "truncated MDMP group header");
+        }
         event.scale = f.ReadFloat();
         event.vertex_count = f.ReadUint32();
         event.sections.resize(sectionCount);
@@ -906,25 +916,25 @@ Result<void> ParseMorphSection(fs::IBinaryStream& f,
             data.vertices.resize(vertexCount);
             for (auto& vertex : data.vertices)
                 for (auto& value : vertex) value = f.ReadUint16();
-            const auto trailerBytes = data.shape_id == 0 ? length : vertexCount * 2u;
-            if (! CanReadSectionBytes(f, section, 4) || f.ReadUint32() != trailerBytes) {
-                return Result<void>::failure(ResultCode::InvalidArgument,
-                                             "MDMP trailer length does not match vertices");
-            }
-            if (data.shape_id == 0) {
-                if (! CanReadSectionBytes(f, section, length)) {
+            data.vertex_trailers.assign(vertexCount, 32767);
+            // Mesh flags select attributes, not shape IDs.
+            for (const auto flag : { 0x400u, 0x800u, 0x1000u }) {
+                if ((flags & flag) == 0) continue;
+                const auto bytes = flag == 0x1000u ? vertexCount * 2u : length;
+                if (! CanReadSectionBytes(f, section, 4) || f.ReadUint32() != bytes
+                    || ! CanReadSectionBytes(f, section, bytes)) {
                     return Result<void>::failure(ResultCode::InvalidArgument,
-                                                 "MDMP trailer exceeds section bounds");
+                                                 "invalid MDMP attribute payload");
                 }
-                data.trailer.resize(length);
-                for (auto& value : data.trailer) value = f.ReadUint8();
-            } else {
-                if (! CanReadSectionBytes(f, section, trailerBytes)) {
-                    return Result<void>::failure(ResultCode::InvalidArgument,
-                                                 "MDMP vertex trailer exceeds section bounds");
+                if (flag == 0x1000u) {
+                    for (auto& value : data.vertex_trailers) value = f.ReadUint16();
+                } else {
+                    // Normal/tangent deltas await lighting support.
+                    const auto offset = data.trailer.size();
+                    data.trailer.resize(offset + bytes);
+                    for (auto i = offset; i < data.trailer.size(); ++i)
+                        data.trailer[i] = f.ReadUint8();
                 }
-                data.vertex_trailers.resize(vertexCount);
-                for (auto& value : data.vertex_trailers) value = f.ReadUint16();
             }
         }
         mdl.morph_sections.push_back(std::move(event));

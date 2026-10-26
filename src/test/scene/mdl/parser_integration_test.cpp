@@ -143,12 +143,12 @@ Bytes BuildLegacyStaticImageMesh() {
     return bytes;
 }
 
-void AppendGenericPuppetMesh(Bytes& bytes, bool morph = false) {
+void AppendGenericPuppetMesh(Bytes& bytes, bool morph = false, std::uint32_t morphFlags = 0x1000) {
     const std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
         | wallpaper::WPMDL_FLAG_SKIN_WEIGHT | (morph ? wallpaper::WPMDL_FLAG_POSITION4 : 0);
     AppendCString(bytes, "materials/puppet.json");
-    AppendPod<std::uint32_t>(bytes, 0);
+    AppendPod(bytes, morphFlags);
     AppendPod<std::uint32_t>(bytes, 3 * wallpaper::WPMdlVertexStride(flags));
     for (std::uint32_t index = 0; index < 3; ++index) {
         AppendPod(bytes, std::array<float, 3> {
@@ -208,15 +208,26 @@ void AppendModernAnimation(Bytes& bytes, int id, bool malformed) {
     }
 }
 
+void AppendMorphAttributes(Bytes& bytes, std::uint32_t flags, std::int16_t alpha) {
+    for (const auto flag : { 0x400u, 0x800u, 0x1000u }) {
+        if ((flags & flag) == 0) continue;
+        AppendPod<std::uint32_t>(bytes, flag == 0x1000u ? 2 : 6);
+        if (flag == 0x1000u) AppendPod(bytes, alpha);
+        else AppendPod(bytes, std::array<std::int16_t, 3> { 0, 0, 32767 });
+    }
+}
+
 Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
                            bool malformedAnimation = false,
-                           bool modernAnimation = false) {
+                           bool modernAnimation = false,
+                           std::uint32_t morphFlags = 0x1000,
+                           std::uint32_t shapeId = 2) {
     Bytes bytes;
     const std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_UV | wallpaper::WPMDL_FLAG_SKIN_BLEND
         | wallpaper::WPMDL_FLAG_SKIN_WEIGHT | (modernAnimation ? wallpaper::WPMDL_FLAG_POSITION4 : 0);
     AppendHeader(bytes, 13, flags, 1);
-    AppendGenericPuppetMesh(bytes, modernAnimation);
+    AppendGenericPuppetMesh(bytes, modernAnimation, morphFlags);
 
     bytes.insert(bytes.end(), { 0, 0x7f, 0 });
     const auto skeletonEnd = BeginSection(bytes, "MDLS", 1);
@@ -261,18 +272,16 @@ Bytes BuildSectionedPuppet(bool invalidWorldBind = false,
     AppendPod<std::uint16_t>(bytes, 10);
     AppendPod<std::uint16_t>(bytes, 20);
     AppendPod<std::uint16_t>(bytes, 30);
-    AppendPod<std::uint32_t>(bytes, 2);
-    AppendPod<std::uint16_t>(bytes, 40);
+    AppendMorphAttributes(bytes, morphFlags, 40);
     if (modernAnimation) {
-        AppendPod<std::uint32_t>(bytes, 2);
+        AppendPod(bytes, shapeId);
         AppendPod<std::uint32_t>(bytes, 0);
         AppendCString(bytes, "blink");
         AppendPod<std::uint32_t>(bytes, 6);
         AppendPod<std::int16_t>(bytes, -32767);
         AppendPod<std::int16_t>(bytes, 0);
         AppendPod<std::int16_t>(bytes, 0);
-        AppendPod<std::uint32_t>(bytes, 2);
-        AppendPod<std::int16_t>(bytes, 16384);
+        AppendMorphAttributes(bytes, morphFlags, 16384);
     }
     EndSection(bytes, morphEnd);
 
@@ -473,6 +482,33 @@ void TestModernAnimationRecords() {
             "oversized MDLA6 curves must recover within section bounds");
 }
 
+void TestMorphAttributes() {
+    for (std::uint32_t flags = 0; flags <= 0x1c00; flags += 0x400) {
+        for (const auto id : { 0u, 2u }) {
+            auto mdl = ParseModel("models/morph-attributes.mdl",
+                                 BuildSectionedPuppet(false, false, true, flags, id));
+            Require(mdl.mdle == 1 && mdl.puppet->morph_targets.size() == 2,
+                    "morph attributes must preserve later records and sections");
+            const auto& shape = mdl.morph_sections[0].sections[1];
+            const auto rawBytes = ((flags & 0x400) ? 6 : 0) + ((flags & 0x800) ? 6 : 0);
+            Require(shape.shape_id == id && shape.trailer.size() == rawBytes,
+                    "normal and tangent payloads must depend on mesh flags");
+            wallpaper::WPPuppetLayer layer(mdl.puppet);
+            std::array<wallpaper::WPPuppetLayer::AnimationLayer, 1> layers {};
+            layers[0].id = 2;
+            layer.prepared(layers);
+            wallpaper::SceneMesh mesh;
+            wallpaper::WPMdlParser::GenPuppetMesh(mesh, mdl);
+            layer.genFrame(0.0);
+            layer.ApplyMorphs(mesh, Eigen::Vector3f::Zero());
+            const auto* vertices = mesh.GetVertexArray(0).Data();
+            const float alpha = (flags & 0x1000) ? 16384.0f / 32767.0f : 1.0f;
+            Require(vertices[0] == -0.5f && std::abs(vertices[19] - alpha) < 0.0001f,
+                    "shape zero must animate with authored or default opacity");
+        }
+    }
+}
+
 void TestRuntimeUint32IndexUpload() {
     wallpaper::WPMdl mdl;
     mdl.vertexs.resize(65'537);
@@ -522,6 +558,7 @@ int main() {
     TestSectionDispatchIntegration();
     TestMalformedAnimationRecovery();
     TestModernAnimationRecords();
+    TestMorphAttributes();
     TestInvalidWorldBindRejected();
     TestRuntimePositionOffset();
     return 0;
