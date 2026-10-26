@@ -1115,6 +1115,13 @@ int main() {
         animation.length = 4;
         animation.mode = wallpaper::WPPuppet::PlayMode::Single;
         animation.events.push_back({ float(0.3), R"({"frame":3,"name":"end"})" });
+        animation.bframes_array.resize(1);
+        animation.bframes_array[0].frames.resize(animation.length);
+        for (auto& frame : animation.bframes_array[0].frames) {
+            frame.position = Eigen::Vector3f::Zero();
+            frame.angle = Eigen::Vector3f::Zero();
+            frame.scale = Eigen::Vector3f::Ones();
+        }
         puppet->prepared();
         wallpaper::WPShaderValueData data;
         data.puppet_layer = wallpaper::WPPuppetLayer(puppet);
@@ -1122,7 +1129,8 @@ int main() {
         layers[0].id = 1;
         data.puppet_layer.prepared(layers);
         updater->SetNodeData(node.get(), data);
-        WPSceneScriptHost host(&scene);
+        scene.scriptHost = std::make_unique<WPSceneScriptHost>(&scene);
+        auto& host = *scene.scriptHost;
         auto registration = MakeRegistration(
             303, "AnimationEvents", "scale", WPSceneScriptTargetKind::Layer,
             WPDynamicValue::Type::Float3,
@@ -1146,24 +1154,25 @@ int main() {
         host.Initialize();
         auto& runtime = updater->GetNodeData(node.get())->puppet_layer;
         for (int count = 1; count <= 3; ++count) {
-            runtime.genFrame(0.31);
-            host.NotifyAnimationLayersAdvanced(node.get());
-            host.NotifyAnimationLayersAdvanced(node.get());
+            scene.PassFrameTime(0.31);
+            updater->FrameBegin();
             assert(NearlyEqual(node->Scale().x(), count));
             assert(NearlyEqual(node->Scale().y(), count + 1));
             assert(runtime.AnimationLayerState(0)->playing);
             assert(NearlyEqual(runtime.AnimationLayerState(0)->cur_time, 0.0));
+            host.NotifyAnimationLayersAdvanced(node.get());
+            assert(NearlyEqual(node->Scale().y(), count + 1));
         }
         runtime.AnimationLayerState(0)->playing = false;
-        runtime.genFrame(1.0);
-        host.NotifyAnimationLayersAdvanced(node.get());
+        scene.PassFrameTime(1.0);
+        updater->FrameBegin();
         assert(NearlyEqual(node->Scale().x(), 3));
         animation.mode = wallpaper::WPPuppet::PlayMode::Loop;
         animation.events[0].time = 0.2;
         runtime.AnimationLayerState(0)->playing = true;
         runtime.AnimationLayerState(0)->cur_time = 0.3;
-        runtime.genFrame(0.35);
-        host.NotifyAnimationLayersAdvanced(node.get());
+        scene.PassFrameTime(0.35);
+        updater->FrameBegin();
         assert(NearlyEqual(node->Scale().x(), 4));
         assert(NearlyEqual(runtime.AnimationLayerState(0)->cur_time, 0.0));
     }

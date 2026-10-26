@@ -279,10 +279,12 @@ void WPShaderValueUpdater::FrameBegin() {
 void WPShaderValueUpdater::AdvanceAllPuppets() {
     if (!m_scene) return;
     const double frame_time = m_scene->frameTime;
+    std::vector<SceneNode*> advanced;
 
     for (auto& [addr, nodeData] : m_nodeDataMap) {
         if (!nodeData.puppet_layer.hasPuppet()) continue;
         nodeData.puppet_layer.AdvanceIfNeeded(frame_time, m_puppet_frame_serial);
+        advanced.push_back(static_cast<SceneNode*>(addr));
 
         if (nodeData.transform_binding.IsBoneAttachment()) {
             auto* parent = nodeData.transform_binding.parent;
@@ -295,6 +297,11 @@ void WPShaderValueUpdater::AdvanceAllPuppets() {
                 }
             }
         }
+    }
+    // Dispatch after every puppet has advanced.
+    if (m_scene->scriptHost) {
+        for (auto* node : advanced)
+            m_scene->scriptHost->NotifyAnimationLayersAdvanced(node);
     }
 }
 
@@ -543,9 +550,6 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
         }
         if (nodeData.puppet_layer.hasPuppet() && info.has_BONES) {
             auto data = nodeData.puppet_layer.AdvanceIfNeeded(m_scene->frameTime, m_puppet_frame_serial);
-            if (m_scene->scriptHost) {
-                m_scene->scriptHost->NotifyAnimationLayersAdvanced(pNode);
-            }
             updateOp(G_BONES, ToDxcRowVectorSkinningUniform(data));
         }
     }
