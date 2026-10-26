@@ -330,6 +330,7 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, const ExistsUniformOp&
     info.has_VP = existsOp(G_VP);
 
     info.has_BONES            = existsOp(G_BONES);
+    info.has_BONES_ALPHA      = existsOp("g_BonesAlpha");
     info.has_TIME             = existsOp(G_TIME);
     info.has_DAYTIME          = existsOp(G_DAYTIME);
     info.has_DAYTIME_LEGACY   = existsOp(G_DAYTIME_LEGACY);
@@ -548,9 +549,10 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, sprite_map_t& sprite
                 updateOp(WE_GLTEX_MIPMAPINFO_NAMES[el.first], (float)rt.mipmap_level);
             }
         }
-        if (nodeData.puppet_layer.hasPuppet() && info.has_BONES) {
+        if (nodeData.puppet_layer.hasPuppet() && (info.has_BONES || info.has_BONES_ALPHA)) {
             auto data = nodeData.puppet_layer.AdvanceIfNeeded(m_scene->frameTime, m_puppet_frame_serial);
-            updateOp(G_BONES, ToDxcRowVectorSkinningUniform(data));
+            if (info.has_BONES) updateOp(G_BONES, ToDxcRowVectorSkinningUniform(data));
+            if (info.has_BONES_ALPHA) updateOp("g_BonesAlpha", nodeData.puppet_layer.BoneAlpha());
         }
     }
 

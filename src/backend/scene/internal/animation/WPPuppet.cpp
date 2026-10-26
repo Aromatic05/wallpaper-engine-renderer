@@ -107,6 +107,23 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
     (void)puppet_layer.m_global_blend;
 
     puppet_layer.updateInterpolation(time);
+    puppet_layer.m_bone_alpha.assign(bones.size(), 1.0f);
+    for (const auto& layer : puppet_layer.m_layers) {
+        if (! layer.anim || ! layer.anim_layer.visible) continue;
+        const auto& info = layer.interp_info;
+        const auto& curves = layer.anim->alpha_frames;
+        const auto weight = std::clamp(static_cast<float>(layer.anim_layer.blend), 0.0f, 1.0f);
+        for (usize bone = 0; bone < std::min(bones.size(), curves.size()); ++bone) {
+            const auto& values = curves[bone];
+            if (values.empty()) continue;
+            const auto a = std::min(static_cast<usize>(std::max<idx>(0, info.frame_a)), values.size() - 1);
+            const auto b = std::min(static_cast<usize>(std::max<idx>(0, info.frame_b)), values.size() - 1);
+            const auto sample = std::lerp(values[a], values[b], static_cast<float>(info.t));
+            auto& alpha = puppet_layer.m_bone_alpha[bone];
+            alpha = layer.anim_layer.additive ? alpha + (sample - 1.0f) * weight
+                                              : std::lerp(alpha, sample, weight);
+        }
+    }
 
     for (uint i = 0; i < m_final_affines.size(); i++) {
         const auto& bone   = bones[i];

@@ -38,6 +38,7 @@ struct WPUniformInfo {
     bool has_VP { false };
 
     bool has_BONES { false };
+    bool has_BONES_ALPHA { false };
     bool has_TIME { false };
     bool has_DAYTIME { false };
     bool has_DAYTIME_LEGACY { false };

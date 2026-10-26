@@ -75,6 +75,7 @@ public:
             std::vector<BoneFrame> frames;
         };
         std::vector<BoneFrames> bframes_array;
+        std::vector<std::vector<float>> alpha_frames;
 
         // prepared
         double max_time;
@@ -148,6 +149,7 @@ public:
     std::span<const Eigen::Affine3f> genFrame(double time) noexcept;
     std::span<const Eigen::Affine3f> AdvanceIfNeeded(double time, uint64_t frame_serial) noexcept;
     std::span<const Eigen::Affine3f> SkinningMatrices() const noexcept { return m_cached_skinning; }
+    std::span<const float> BoneAlpha() const noexcept { return m_bone_alpha; }
     const WPPuppet*                  Puppet() const noexcept { return m_puppet.get(); }
     usize                            AnimationLayerCount() const noexcept { return m_layers.size(); }
     const AnimationLayer*            AnimationLayerState(usize index) const noexcept;
@@ -175,6 +177,7 @@ private:
     double m_total_blend { 0.0 };
 
     std::vector<Layer>              m_layers;
+    std::vector<float>              m_bone_alpha;
     std::vector<BoneOverride>       m_bone_overrides;
     std::shared_ptr<WPPuppet>       m_puppet;
     std::span<const Eigen::Affine3f> m_cached_skinning {};
