@@ -102,6 +102,7 @@ struct WPShaderValueData {
     std::vector<std::pair<usize, std::string>> renderTargets;
 
     WPPuppetLayer puppet_layer;
+    Eigen::Vector3f puppet_vertex_offset { Eigen::Vector3f::Zero() };
     SceneNode*     parallax_anchor { nullptr };
     WPNodeTransformBinding transform_binding {};
     SceneNode*            effect_projection_node { nullptr };

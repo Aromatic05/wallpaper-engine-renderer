@@ -1,4 +1,5 @@
 #include "WPPuppet.hpp"
+#include "scene/SceneMesh.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -108,11 +109,26 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
 
     puppet_layer.updateInterpolation(time);
     puppet_layer.m_bone_alpha.assign(bones.size(), 1.0f);
+    auto& morphs = puppet_layer.m_morph_deltas;
+    morphs.assign(morph_targets.empty() ? 0 : morph_targets.front().size(), { 0, 0, 0, 1 });
     for (const auto& layer : puppet_layer.m_layers) {
         if (! layer.anim || ! layer.anim_layer.visible) continue;
         const auto& info = layer.interp_info;
         const auto& curves = layer.anim->alpha_frames;
         const auto weight = std::clamp(static_cast<float>(layer.anim_layer.blend), 0.0f, 1.0f);
+        for (const auto& curve : layer.anim->morph_curves) {
+            if (curve.values.empty() || curve.target >= morph_targets.size()) continue;
+            const auto a = std::min(static_cast<usize>(std::max<idx>(0, info.frame_a)), curve.values.size() - 1);
+            const auto b = std::min(static_cast<usize>(std::max<idx>(0, info.frame_b)), curve.values.size() - 1);
+            const auto amount = std::lerp(curve.values[a], curve.values[b], static_cast<float>(info.t)) * weight;
+            if (amount == 0) continue;
+            const auto& target = morph_targets[curve.target];
+            for (usize vertex = 0; vertex < morphs.size(); ++vertex) {
+                for (usize axis = 0; axis < 3; ++axis)
+                    morphs[vertex][axis] += target[vertex][axis] * amount;
+                morphs[vertex][3] *= std::lerp(1.0f, target[vertex][3], amount);
+            }
+        }
         for (usize bone = 0; bone < std::min(bones.size(), curves.size()); ++bone) {
             const auto& values = curves[bone];
             if (values.empty()) continue;
@@ -362,6 +378,25 @@ std::span<const Eigen::Affine3f> WPPuppetLayer::AdvanceIfNeeded(double time,
         m_cached_frame_serial = frame_serial;
     }
     return m_cached_skinning;
+}
+
+void WPPuppetLayer::ApplyMorphs(SceneMesh& mesh, const Eigen::Vector3f& offset) const {
+    if (! m_puppet || m_morph_deltas.empty() || mesh.VertexCount() == 0) return;
+    auto& vertices = mesh.GetVertexArray(0);
+    // Morph meshes use the padded puppet layout.
+    if (vertices.OneSize() != 20 || vertices.VertexCount() != m_puppet->morph_vertices.size()) return;
+    for (usize i = 0; i < vertices.VertexCount(); ++i) {
+        const auto& base = m_puppet->morph_vertices[i];
+        std::array<float, 20> vertex;
+        std::copy_n(vertices.Data() + i * vertex.size(), vertex.size(), vertex.begin());
+        const std::array<float, 4> delta = base.index == 0 ? std::array<float, 4> { 0, 0, 0, 1 }
+                                                         : m_morph_deltas[base.index - 1];
+        for (usize axis = 0; axis < 3; ++axis)
+            vertex[axis] = base.position[axis] + offset[axis] + delta[axis];
+        vertex[19] = delta[3];
+        vertices.SetVertexs(i, vertex);
+    }
+    mesh.SetDirty();
 }
 
 void WPPuppetLayer::updateInterpolation(double time) noexcept {

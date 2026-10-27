@@ -57,6 +57,10 @@ Result<void> ReadVertex(CheckedReader& reader, u32 flags, WPMdlMesh& mesh, usize
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "truncated MDL vertex position");
     }
+    if ((flags & WPMDL_FLAG_POSITION4) != 0 && ! reader.read(mesh.position_w[index])) {
+        return Result<void>::failure(ResultCode::InvalidArgument,
+                                     "truncated MDL fourth position component");
+    }
     if ((flags & WPMDL_FLAG_NORMAL) != 0 && ! reader.read(mesh.normals[index])) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "truncated MDL vertex normal");
@@ -64,10 +68,6 @@ Result<void> ReadVertex(CheckedReader& reader, u32 flags, WPMdlMesh& mesh, usize
     if ((flags & WPMDL_FLAG_TANGENT) != 0 && ! reader.read(mesh.tangents[index])) {
         return Result<void>::failure(ResultCode::InvalidArgument,
                                      "truncated MDL vertex tangent");
-    }
-    if ((flags & WPMDL_FLAG_EXTRA4) != 0 && ! reader.read(mesh.extra4[index])) {
-        return Result<void>::failure(ResultCode::InvalidArgument,
-                                     "truncated MDL vertex extra4");
     }
     if ((flags & WPMDL_FLAG_SKIN_BLEND) != 0 && ! reader.read(mesh.blend_indices[index])) {
         return Result<void>::failure(ResultCode::InvalidArgument,
@@ -269,7 +269,7 @@ Result<WPMdlMesh> ParseWPMdlMesh(fs::IBinaryStream& stream,
     mesh.positions.resize(vertexCount);
     if ((mesh.flag & WPMDL_FLAG_NORMAL) != 0) mesh.normals.resize(vertexCount);
     if ((mesh.flag & WPMDL_FLAG_TANGENT) != 0) mesh.tangents.resize(vertexCount);
-    if ((mesh.flag & WPMDL_FLAG_EXTRA4) != 0) mesh.extra4.resize(vertexCount);
+    if ((mesh.flag & WPMDL_FLAG_POSITION4) != 0) mesh.position_w.resize(vertexCount);
     if ((mesh.flag & WPMDL_FLAG_SKIN_BLEND) != 0) mesh.blend_indices.resize(vertexCount);
     if ((mesh.flag & WPMDL_FLAG_SKIN_WEIGHT) != 0) mesh.blend_weights.resize(vertexCount);
     if ((mesh.flag & (WPMDL_FLAG_UV | WPMDL_FLAG_UV2)) != 0) {

@@ -40,14 +40,14 @@ void AppendVertex(Bytes& bytes, std::uint32_t flags, std::uint32_t index) {
     AppendPod(bytes, std::array<float, 3> {
         static_cast<float>(index), static_cast<float>(index + 1), 0.0f
     });
+    if ((flags & wallpaper::WPMDL_FLAG_POSITION4) != 0) {
+        AppendPod(bytes, static_cast<float>(index + 1));
+    }
     if ((flags & wallpaper::WPMDL_FLAG_NORMAL) != 0) {
         AppendPod(bytes, std::array<float, 3> { 0.0f, 0.0f, 1.0f });
     }
     if ((flags & wallpaper::WPMDL_FLAG_TANGENT) != 0) {
         AppendPod(bytes, std::array<float, 4> { 1.0f, 0.0f, 0.0f, 1.0f });
-    }
-    if ((flags & wallpaper::WPMDL_FLAG_EXTRA4) != 0) {
-        AppendPod(bytes, std::array<std::uint8_t, 4> { 1, 2, 3, 4 });
     }
     if ((flags & wallpaper::WPMDL_FLAG_SKIN_BLEND) != 0) {
         AppendPod(bytes, std::array<std::uint32_t, 4> { 0, 1, 2, 3 });
@@ -179,7 +179,7 @@ void TestExtendedMesh() {
     };
     const std::uint32_t flags = wallpaper::WPMDL_FLAG_POSITION
         | wallpaper::WPMDL_FLAG_NORMAL | wallpaper::WPMDL_FLAG_TANGENT
-        | wallpaper::WPMDL_FLAG_EXTRA4 | wallpaper::WPMDL_FLAG_UV2;
+        | wallpaper::WPMDL_FLAG_POSITION4 | wallpaper::WPMDL_FLAG_UV2;
     auto result = Parse(BuildMesh(header, flags, 3), header);
     Require(result.ok(), "MDLV17 extended mesh should parse");
     const auto& mesh = result.value();
@@ -187,8 +187,11 @@ void TestExtendedMesh() {
             "MDLV17 bounds mismatch");
     Require(mesh.normals.size() == 3 && mesh.tangents.size() == 3,
             "extended normal/tangent streams missing");
-    Require(mesh.extra4.size() == 3 && mesh.texcoord2.size() == 3,
-            "extended extra4/UV2 streams missing");
+    Require(mesh.position_w == std::vector<float> { 1, 2, 3 } && mesh.texcoord2.size() == 3,
+            "fourth position component/UV2 streams missing");
+    Require(mesh.normals[0] == std::array<float, 3> { 0, 0, 1 } &&
+                mesh.tangents[0] == std::array<float, 4> { 1, 0, 0, 1 },
+            "fourth position component must precede normal/tangent");
 }
 
 void TestPartsAndMasks() {

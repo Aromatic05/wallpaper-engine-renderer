@@ -32,9 +32,9 @@ struct WPMdlMesh {
     bool has_aabb { false };
 
     std::vector<std::array<float, 3>> positions;
+    std::vector<float> position_w;
     std::vector<std::array<float, 3>> normals;
     std::vector<std::array<float, 4>> tangents;
-    std::vector<std::array<std::uint8_t, 4>> extra4;
     std::vector<std::array<u32, 4>> blend_indices;
     std::vector<std::array<float, 4>> blend_weights;
     std::vector<std::array<float, 2>> texcoords;
