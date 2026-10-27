@@ -838,12 +838,14 @@ Result<void> ParseAnimationSection(fs::IBinaryStream& f,
                     return Result<void>::failure(ResultCode::InvalidArgument,
                                                  "truncated MDLA metadata record");
                 }
-                f.ReadFloat();
+                const float event_time = f.ReadFloat();
                 std::string metadata;
-                if (! ReadSectionCString(f, section, metadata)) {
+                if (! std::isfinite(event_time) || event_time < 0.0f ||
+                    ! ReadSectionCString(f, section, metadata)) {
                     return Result<void>::failure(ResultCode::InvalidArgument,
                                                  "truncated MDLA metadata string");
                 }
+                animation.events.push_back({ event_time, std::move(metadata) });
             }
         }
     }
