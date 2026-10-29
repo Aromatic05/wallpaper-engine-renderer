@@ -1252,5 +1252,98 @@ int main() {
         }
     }
 
+    for (const std::string mode : { "direct", "inherited", "suppressed", "disabled" }) {
+        Scene scene;
+        scene.ortho[0] = 1000;
+        scene.ortho[1] = 800;
+        auto camera_node = MakeLayerNode(400, "Camera");
+        camera_node->SetTranslate({ 500.0f, 400.0f, 0.0f });
+        auto camera = std::make_shared<wallpaper::SceneCamera>(1000, 800, -1.0f, 1.0f);
+        camera->AttatchNode(camera_node);
+        camera->Update();
+        scene.cameras["global"] = camera;
+        scene.activeCamera = camera.get();
+        scene.shaderValueUpdater = std::make_unique<wallpaper::WPShaderValueUpdater>(&scene);
+        auto& updater = static_cast<wallpaper::WPShaderValueUpdater&>(*scene.shaderValueUpdater);
+        updater.SetCameraParallax({ mode != "disabled", 0.5f, 0.1f, 0.5f });
+
+        auto parent = MakeLayerNode(401, "ParallaxParent");
+        parent->SetTranslate({ 500.0f, 400.0f, 0.0f });
+        scene.sceneGraph->AppendChild(parent);
+        wallpaper::WPShaderValueData parent_data;
+        parent_data.parallaxDepth = { 1.5f, 2.0f };
+        updater.SetNodeData(parent.get(), parent_data);
+        auto node = MakeLayerNode(402, "ParallaxImage");
+        node->SetTranslate(mode == "inherited" ? Eigen::Vector3f(0.0f, 0.0f, 0.0f)
+                                               : Eigen::Vector3f(500.0f, 400.0f, 0.0f));
+        node->SetScale({ -1.2f, 0.8f, 1.0f });
+        node->SetRotation({ 0.0f, 0.0f, 0.2f });
+        scene.sceneGraph->AppendChild(node);
+        RegisterLayer(scene, 402, node);
+        scene.imageLayers[402] = { { 80.0f, 60.0f }, "center" };
+        wallpaper::WPShaderValueData data;
+        data.parallaxDepth = { 1.5f, 2.0f };
+        if (mode == "inherited") data.InheritParentTransform(parent.get());
+        if (mode == "suppressed") data.SuppressOwnModelParallax();
+        updater.SetNodeData(node.get(), data);
+
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(
+            402, "ParallaxImage", "scale", WPSceneScriptTargetKind::Layer,
+            WPDynamicValue::Type::Float3,
+            WPDynamicValue(std::array<float, 3> { -1.2f, 0.8f, 1.0f }));
+        registration.node = node.get();
+        registration.setting.script = R"(
+            let seen = 0;
+            function record(event, bit, expectedX = 25) {
+                if (Math.abs(event.localPosition.x - expectedX) > 0.002 ||
+                    Math.abs(event.localPosition.y - 15) > 0.002)
+                    throw new Error('parallax localPosition mismatch');
+                seen |= bit;
+            }
+            export function cursorEnter(e) { record(e, 1); }
+            export function cursorMove(e) { record(e, 2); }
+            export function cursorDown(e) { record(e, 4); }
+            export function cursorUp(e) { record(e, 8); }
+            export function cursorClick(e) { record(e, 16); }
+            export function cursorLeave(e) { record(e, 32, 200); }
+            export function update(value) { return new Vec3(seen, value.y, value.z); }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        updater.MouseInput(0.9, 0.1);
+        scene.PassFrameTime(0.02);
+        updater.FrameBegin();
+        updater.InitUniforms(node.get(), [](std::string_view name) { return name == "g_ModelMatrix"; });
+        wallpaper::sprite_map_t sprites;
+        Eigen::Matrix4d model = Eigen::Matrix4d::Identity();
+        updater.UpdateUniforms(node.get(), sprites, [&](std::string_view name, wallpaper::ShaderValue value) {
+            if (name == "g_ModelMatrix") {
+                assert(value.size() == 16);
+                model = Eigen::Map<const Eigen::Matrix4f>(value.data()).cast<double>();
+            }
+        });
+        if (mode == "direct" || mode == "inherited") {
+            assert(model(1, 3) < 370.0 && model(1, 3) > 240.0);
+        } else {
+            assert(NearlyEqual(model(1, 3), 400.0));
+        }
+        auto effect_camera = std::make_shared<wallpaper::SceneCamera>(64, 64, -1.0f, 1.0f);
+        scene.activeCamera = effect_camera.get();
+        auto move = [&](double x) {
+            const Eigen::Vector4d world = model * Eigen::Vector4d(x - 40.0, 15.0, 0.0, 1.0);
+            scene.mousePositionNormalized = { static_cast<float>(world.x() / 1000.0),
+                                              static_cast<float>(1.0 - world.y() / 800.0) };
+            updater.MouseInput(scene.mousePositionNormalized[0], scene.mousePositionNormalized[1]);
+            host.HandleCursorMove();
+        };
+        move(25.0);
+        host.HandleCursorButton(true);
+        host.HandleCursorButton(false);
+        move(200.0);
+        host.FrameBegin(0.0);
+        assert(NearlyEqual(node->Scale().x(), 63.0));
+    }
+
     return 0;
 }

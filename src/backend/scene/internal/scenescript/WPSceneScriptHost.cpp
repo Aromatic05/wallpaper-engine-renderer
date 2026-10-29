@@ -4904,10 +4904,23 @@ Eigen::Matrix4d ResolveCursorHitModelTransform(const WPSceneScriptHost::Opaque* 
     return resolved;
 }
 
+const SceneCamera* CursorCamera(const WPSceneScriptHost::Opaque* opaque) {
+    if (opaque == nullptr || opaque->scene == nullptr) return nullptr;
+    const auto global = opaque->scene->cameras.find("global");
+    return global != opaque->scene->cameras.end() && global->second
+               ? global->second.get() : opaque->scene->activeCamera;
+}
+
 Eigen::Matrix4d ResolveCursorHitModelTransform(const WPSceneScriptHost::Opaque* opaque,
                                                SceneNode*                       node) {
     std::unordered_set<SceneNode*> resolving;
-    return ResolveCursorHitModelTransform(opaque, node, resolving);
+    Eigen::Matrix4d model = ResolveCursorHitModelTransform(opaque, node, resolving);
+    if (auto* updater = GetShaderUpdater(opaque)) {
+        // Apply inherited parallax only once.
+        model.topRightCorner<3, 1>() +=
+            updater->GetModelParallax(node, CursorCamera(opaque)).cast<double>();
+    }
+    return model;
 }
 
 std::optional<std::array<double, 4>> ComputeQuadBounds2D(
@@ -8501,11 +8514,7 @@ CursorPositionState ComputeCursorPositionState(const WPSceneScriptHost::Opaque* 
 
     double             world_x          = screen_x;
     double             world_y          = static_cast<float>(opaque->scene->ortho[1]) - screen_y;
-    const SceneCamera* camera           = opaque->scene->activeCamera;
-    const auto         global_camera_it = opaque->scene->cameras.find("global");
-    if (global_camera_it != opaque->scene->cameras.end() && global_camera_it->second) {
-        camera = global_camera_it->second.get();
-    }
+    const SceneCamera* camera           = CursorCamera(opaque);
     if (camera != nullptr) {
         const Eigen::Vector3d camera_pos = camera->GetPosition();
         const double          left       = camera_pos.x() - camera->Width() / 2.0;

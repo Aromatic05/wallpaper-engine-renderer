@@ -17,6 +17,7 @@ namespace wallpaper
 {
 
 class Scene;
+class SceneCamera;
 class SceneNode;
 class SceneMesh;
 
@@ -189,6 +190,7 @@ public:
     void SetNodeData(void*, const WPShaderValueData&);
     const WPShaderValueData* GetNodeData(const void* node_addr) const;
     WPShaderValueData*       GetNodeData(const void* node_addr);
+    Eigen::Vector3f GetModelParallax(SceneNode* node, const SceneCamera* camera);
     void ReplaceNodeReferences(SceneNode* old_node, SceneNode* new_node);
     void SetCameraParallax(const WPCameraParallax& value) {
         m_parallax = value;
