@@ -240,6 +240,23 @@ std::string_view ResolveEffectiveNodeCameraName(const SceneNode* node) {
 
 } // namespace
 
+Eigen::Vector3f WPShaderValueUpdater::GetModelParallax(SceneNode* node,
+                                                     const SceneCamera* camera) {
+    const auto* data = GetNodeData(node);
+    if (m_scene == nullptr || !m_parallax.enable || data == nullptr ||
+        !data->AppliesModelParallax()) {
+        return Eigen::Vector3f::Zero();
+    }
+
+    // Keep input queries outside render caches.
+    Map<void*, Matrix4d> models;
+    Map<void*, Vector3f> offsets;
+    Map<void*, Affine3f> attachments;
+    WPNodeTransformResolver resolver(*m_scene, m_parallax, m_nodeDataMap, models, offsets,
+                                      attachments, camera, m_mousePos, m_puppet_frame_serial);
+    return resolver.ResolveParallaxOffset(node, camera);
+}
+
 void WPShaderValueUpdater::FrameBegin() {
     m_puppet_frame_serial++;
     m_modelTransformCache.clear();
