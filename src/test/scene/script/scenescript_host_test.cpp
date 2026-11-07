@@ -145,6 +145,34 @@ int main() {
 
     {
         Scene scene;
+        auto node = MakeLayerNode(238, "Fan auto");
+        RegisterLayer(scene, 238, node);
+        WPSceneScriptHost host(&scene);
+        auto registration = MakeRegistration(238, "Fan auto", "angles",
+                                             WPSceneScriptTargetKind::Layer,
+                                             WPDynamicValue::Type::Float3,
+                                             WPDynamicValue(std::array<float, 3>{0, 0, 0}));
+        registration.node = node.get();
+        // Same two-turns-per-second rotation as Bunk's Day/Night variants.
+        registration.setting.script = R"(
+            export function update(value) {
+                value.z = (engine.runtime * 2) % 1.0 * 360;
+                return value;
+            }
+        )";
+        assert(host.RegisterPropertyScript(std::move(registration)));
+        host.Initialize();
+        double elapsed = 0;
+        for (double dt : {0.01, 0.04, 0.015, 0.035, 0.4, 0.02, 0.05}) {
+            elapsed += dt;
+            host.FrameBegin(dt);
+            const double expected = std::fmod(elapsed * 2, 1.0) * 2 * std::acos(-1.0);
+            assert(NearlyEqual(node->Rotation().z(), expected));
+        }
+    }
+
+    {
+        Scene scene;
         auto node = MakeLayerNode(9, "MaterialLayer");
         auto mesh = std::make_shared<SceneMesh>();
         SceneMaterial material;

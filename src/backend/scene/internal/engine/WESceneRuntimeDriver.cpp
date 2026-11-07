@@ -454,8 +454,13 @@ private:
     }
     MHANDLER_CMD(DRAW) {
         m_frameTimer->FrameBegin();
+        if (!m_frameTimer->Running()) {
+            // STOP may overtake a draw already posted by the timer thread.
+            m_frameTimer->FrameEnd();
+            return;
+        }
         if (m_rg) {
-            m_scene->PassFrameTime(m_frameTimer->IdeaTime() * m_speed);
+            m_scene->PassFrameTime(m_frameTimer->DeltaTime() * m_speed);
             if (m_scene->scriptHost) {
                 m_scene->scriptHost->FrameBegin(m_scene->frameTime);
             }
@@ -546,6 +551,8 @@ private:
             m_render->compileRenderGraph(*m_scene, *m_rg);
             m_scene->ClearRenderGraphDirty();
             m_render->UpdateCameraFillMode(*m_scene, m_fillmode);
+            // Parsing, script setup and shader compilation are not scene playback time.
+            m_frameTimer->ResetClock();
         }
     }
     MHANDLER_CMD(SET_SPEED) { msg->findFloat("value", &m_speed); }

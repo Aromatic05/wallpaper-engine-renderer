@@ -1,3 +1,13 @@
+add_executable(frame-timer-clock-test runtime/frame_timer_clock_test.cpp)
+target_link_libraries(frame-timer-clock-test PRIVATE wpTimer)
+target_compile_options(frame-timer-clock-test PRIVATE ${warn_opts})
+add_test(NAME frame-timer-clock-test COMMAND frame-timer-clock-test)
+
+add_executable(sprite-animation-clock-test scene/sprite_animation_clock_test.cpp)
+target_include_directories(sprite-animation-clock-test PRIVATE ../common/scene ../common)
+target_compile_options(sprite-animation-clock-test PRIVATE ${warn_opts})
+add_test(NAME sprite-animation-clock-test COMMAND sprite-animation-clock-test)
+
 add_executable(
   wallpaper-session-contract-test
   runtime/wallpaper_session_contract_test.cpp)

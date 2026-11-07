@@ -1,6 +1,7 @@
 #include "ThreadTimer.hpp"
 
 #include <cassert>
+#include <algorithm>
 
 using namespace wallpaper;
 using micros = std::chrono::microseconds;
@@ -10,22 +11,30 @@ ThreadTimer::~ThreadTimer() { Stop(); }
 
 bool ThreadTimer::Running() const { return m_running; }
 
-void ThreadTimer::SetInterval(micros v) { m_interval = v; }
+void ThreadTimer::SetInterval(micros v) { m_interval = std::max(v, micros(1)); }
 
 void ThreadTimer::Start() {
     std::unique_lock<std::mutex> lock(m_op_mutex);
 
     if (Running()) return;
+    m_running = true;
     m_timer_thread = std::thread([this]() {
+        using clock = std::chrono::steady_clock;
+        auto deadline = clock::now() + m_interval.load();
         while (Running()) {
             {
                 std::unique_lock<std::mutex> lock(m_cond_mutex);
-                m_condition.wait_for(lock, m_interval.load());
+                if (m_condition.wait_until(lock, deadline, [this] { return !Running(); }))
+                    break;
             }
             if (m_callback) m_callback();
+            const auto interval = m_interval.load();
+            deadline += interval;
+            const auto now = clock::now();
+            // Skip missed ticks instead of emitting a burst of overdue draws.
+            if (deadline <= now) deadline = now + interval;
         }
     });
-    m_running      = true;
 }
 
 void ThreadTimer::Stop() {
