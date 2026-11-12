@@ -36,8 +36,8 @@ private:
     std::condition_variable m_condition;
 
     // init
-    std::atomic<std::chrono::microseconds> m_interval;
-    std::atomic<bool>                      m_running;
+    std::atomic<std::chrono::microseconds> m_interval { std::chrono::microseconds(1) };
+    std::atomic<bool>                      m_running { false };
 };
 
 } // namespace wallpaper

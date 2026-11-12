@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include <cstdint>
 #include <vector>
 #include <iostream>
@@ -25,19 +26,35 @@ struct SpriteFrame {
 class SpriteAnimation {
 public:
     const auto& GetAnimateFrame(double newtime) {
-        if (!m_playing) {
+        if (!m_playing || !std::isfinite(newtime)) {
             return m_frames.at((usize)m_curFrame);
         }
-        if ((m_remainTime -= newtime) < 0.0f) {
+
+        if (newtime >= m_remainTime) {
+            const double duration = Duration();
+            // An animation with no elapsed duration has no next timed frame.
+            if (!(duration > 0.0) || !std::isfinite(duration)) {
+                return m_frames.at((usize)m_curFrame);
+            }
+            // Remove full cycles before subtracting the current remainder so
+            // even very large deltas preserve the current sub-frame phase.
+            newtime = std::fmod(newtime, duration);
+        }
+
+        m_remainTime -= newtime;
+        // At most one cycle remains, including any zero-duration frames.
+        for (usize visited = 0; m_remainTime <= 0.0 && visited < m_frames.size(); ++visited) {
             SwitchToNext();
-            const auto& frame = m_frames.at((usize)m_curFrame);
-            m_remainTime      = frame.frametime;
+            m_remainTime += m_frames.at((usize)m_curFrame).frametime;
         }
         const auto& frame = m_frames.at((usize)m_curFrame);
         return frame;
     }
     const auto& GetCurFrame() const { return m_frames.at((usize)m_curFrame); }
-    void        AppendFrame(const SpriteFrame& frame) { m_frames.push_back(frame); }
+    void AppendFrame(const SpriteFrame& frame) {
+        m_frames.push_back(frame);
+        if (m_frames.size() == 1) m_remainTime = frame.frametime;
+    }
     const auto& Frames() const { return m_frames; }
 
     usize numFrames() const { return m_frames.size(); }

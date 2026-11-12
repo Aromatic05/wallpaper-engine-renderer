@@ -22,12 +22,15 @@ public:
     bool   Running() const;
     double FrameTime() const;
     double IdeaTime() const;
+    // Elapsed active time between FrameBegin calls, for animation and SceneScript.
+    double DeltaTime() const;
 
     void SetRequiredFps(u16);
 
     // only used with one render
     void FrameBegin();
     void FrameEnd();
+    void ResetClock();
 
 private:
     void AddFrametime(std::chrono::microseconds);
@@ -42,6 +45,9 @@ private:
     std::atomic<i32>                       m_frame_busy_count;
 
     ThreadTimer m_timer;
+
+    std::atomic<bool> m_reset_clock { true };
+    double m_delta_time { 0.0 };
 
     // out of time thread
     std::chrono::time_point<std::chrono::steady_clock> m_clock;
