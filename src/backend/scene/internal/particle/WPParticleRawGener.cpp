@@ -266,9 +266,9 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
     return total_subsegments;
 }
 
-inline void updateIndexArray(uint16_t index, size_t count, SceneIndexArray& iarray) noexcept {
+inline void updateIndexArray(size_t index, size_t count, SceneIndexArray& iarray) noexcept {
     constexpr size_t single_size = 6;
-    const uint16_t   cv          = index * 4;
+    const uint16_t   cv          = static_cast<uint16_t>(index * 4);
 
     std::array<uint16_t, single_size> single;
     // 0 1 3
@@ -280,7 +280,7 @@ inline void updateIndexArray(uint16_t index, size_t count, SceneIndexArray& iarr
     single[4] = cv + 2;
     single[5] = cv + 3;
     // every particle
-    for (uint16_t i = index; i < count; i++) {
+    for (size_t i = index; i < count; i++) {
         iarray.AssignHalf(i * single_size, single);
         for (auto& x : single) x += 4;
     }
@@ -314,7 +314,13 @@ void WPParticleRawGener::GenGLData(std::span<const std::unique_ptr<ParticleInsta
 
     // LOG_INFO("num: %d", particle_num);
 
-    u16 indexNum = (si.DataCount() * 2) / 6;
+    // The mesh uses 16-bit indices (4 vertices per quad), so only 16384 quads are addressable.
+    // Anything above wrapped the index values around and drew duplicate / garbled quads (stretched
+    // "strands" in dense rain systems like Rain_down_pour, 25000 particles).
+    constexpr usize kMaxIndexableParticles = 0x10000 / 4;
+    particle_num = std::min(particle_num, kMaxIndexableParticles);
+
+    usize indexNum = (si.DataCount() * 2) / 6;
     if (particle_num > indexNum) {
         updateIndexArray(indexNum, particle_num, si);
     }

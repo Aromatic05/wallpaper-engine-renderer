@@ -8133,6 +8133,45 @@ bool wallpaper::CreateDynamicSceneLayer(
     return true;
 }
 
+namespace
+{
+bool JsonHasNonNull(const nlohmann::json& object, const char* key) {
+    return object.contains(key) && ! object.at(key).is_null();
+}
+
+bool JsonHasParent(const nlohmann::json& object) {
+    if (! JsonHasNonNull(object, "parent")) return false;
+    const auto& parent = object.at("parent");
+    return ! (parent.is_number_integer() && parent.get<int64_t>() == 0);
+}
+
+// Wallpaper Engine's editor writes `"parallaxDepth": "1.000 1.000"` for ordinary layers (its own
+// asset sample scenes carry 98 explicit 1s against 4 explicit 0s), and authors who want a layer
+// to stay put while camera parallax is on set an explicit "0 0". A scene that leaves the field
+// out, typically from older editor versions, therefore means the editor default 1, not 0:
+// treating it as 0 froze e.g. the character, ground and clock of 3659877246 while only its
+// explicitly pinned tree was meant to stay still. Only top-level image, particle, text and plain
+// group layers get the default; explicit values (including "0 0"), child layers (they follow
+// their parent's parallax anchor), sounds, lights, models and camera layers are left untouched.
+// Fullscreen layers ignore parallaxDepth when parsed, so they are unaffected as well.
+void ApplyDefaultRootParallaxDepth(nlohmann::json& scene_json) {
+    if (! scene_json.contains("objects") || ! scene_json.at("objects").is_array()) return;
+    for (auto& object : scene_json.at("objects")) {
+        if (! object.is_object() || object.contains("parallaxDepth") || JsonHasParent(object)) {
+            continue;
+        }
+        const bool drawable = JsonHasNonNull(object, "image") ||
+                              JsonHasNonNull(object, "particle") || JsonHasNonNull(object, "text");
+        const bool plain_group =
+            ! drawable && object.contains("origin") && ! JsonHasNonNull(object, "sound") &&
+            ! JsonHasNonNull(object, "light") && ! JsonHasNonNull(object, "model") &&
+            ! JsonHasNonNull(object, "camera") && ! JsonHasNonNull(object, "path") &&
+            ! JsonHasNonNull(object, "shape");
+        if (drawable || plain_group) object["parallaxDepth"] = "1.00000 1.00000";
+    }
+}
+} // namespace
+
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
                                             fs::VFS& vfs, audio::SoundManager& sm,
                                             const UserPropertyMap* user_properties,
@@ -8160,6 +8199,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
 
     CollectScriptReferencedLayerNames(json, script_referenced_layer_names);
     dependency_source_ids = linked_source_ids;
+
+    ApplyDefaultRootParallaxDepth(json);
 
     for (auto& obj : json.at("objects")) {
         int32_t     object_id = 0;
