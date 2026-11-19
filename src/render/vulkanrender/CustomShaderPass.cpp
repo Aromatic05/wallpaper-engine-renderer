@@ -581,7 +581,14 @@ CustomShaderRenderState BuildCustomShaderRenderState(
     VkColorComponentFlags   color_mask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
     const auto camera_name = EffectiveCustomShaderCamera(desc);
-    const bool writes_alpha = ShouldWriteCustomShaderAlpha(material, camera_name, desc.force_alpha_write);
+    // `_rt_default` is the opaque scene framebuffer (PrePass clears it with alpha 1). The camera
+    // rule above keeps global-camera passes out of its alpha, but fullscreen post-processing layers
+    // draw through their own camera and used to write their composite alpha into it, e.g. a
+    // raindrop layer faded to 39% left the whole frame at alpha ~0.39. Later effects that
+    // un-premultiply by the framebuffer alpha (blur_combine divides rgb by alpha) then blew the
+    // image out to white. Wallpaper Engine's backbuffer stays opaque, so never write alpha there.
+    const bool writes_alpha = desc.output != wallpaper::SpecTex_Default &&
+        ShouldWriteCustomShaderAlpha(material, camera_name, desc.force_alpha_write);
 
     if (writes_alpha) color_mask |= VK_COLOR_COMPONENT_A_BIT;
     state.color_blend.colorWriteMask = color_mask;
