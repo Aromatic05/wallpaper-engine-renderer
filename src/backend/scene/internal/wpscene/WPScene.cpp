@@ -49,6 +49,7 @@ bool WPSceneGeneral::FromJson(const nlohmann::json& json) {
 	GET_JSON_NAME_VALUE(json, "cameraparallaxmouseinfluence", cameraparallaxmouseinfluence);
 	GET_JSON_NAME_VALUE_NOWARN(json, "zoom", zoom);
 	GET_JSON_NAME_VALUE_NOWARN(json, "fov", fov);
+	GET_JSON_NAME_VALUE_NOWARN(json, "perspectiveoverridefov", perspectiveoverridefov);
 	GET_JSON_NAME_VALUE_NOWARN(json, "nearz", nearz);
 	GET_JSON_NAME_VALUE_NOWARN(json, "farz", farz);
     if(json.contains("orthogonalprojection")) {

@@ -3410,14 +3410,28 @@ void ParseCamera(ParseContext& context, const wpscene::WPScene& scene_config) {
     scene.defaultGlobalCameraNode = context.global_camera_node;
     scene.defaultGlobalCameraZoom = std::max(0.0001f, general.zoom);
 
-    scene.cameras["global_perspective"] =
-        std::make_shared<SceneCamera>((float)context.ortho_w / (float)context.ortho_h,
-                                      general.nearz,
-                                      general.farz,
-                                      algorism::CalculatePersperctiveFov(1000.0f, context.ortho_h));
+    // Perspective particles (rain, snow, sparks) are seen through a perspective camera placed so
+    // its FOV exactly frames the canvas, which keeps the z=0 plane pixel-identical to the
+    // orthographic layers. Wallpaper Engine takes that FOV from `perspectiveoverridefov` (newer
+    // editors write it, default 90; authors also use 5, 30 or 170) and falls back to the scene
+    // `fov` for older scenes. The camera used to sit a fixed 1000 units away whatever the canvas
+    // size, so e.g. a 4640-unit-tall scene's rain was magnified and far denser than on Windows.
+    const float authored_fov = general.perspectiveoverridefov > 0.0f
+                                   ? general.perspectiveoverridefov
+                                   : general.fov;
+    const float perspective_fov =
+        std::clamp(std::isfinite(authored_fov) ? authored_fov : 50.0f, 1.0f, 170.0f);
+    scene.perspectiveCameraDistance = static_cast<float>(
+        (static_cast<double>(context.ortho_h) * 0.5) /
+        std::tan(static_cast<double>(perspective_fov) * M_PI / 360.0));
+    scene.cameras["global_perspective"] = std::make_shared<SceneCamera>(
+        (float)context.ortho_w / (float)context.ortho_h,
+        general.nearz,
+        general.farz,
+        algorism::CalculatePersperctiveFov(scene.perspectiveCameraDistance, context.ortho_h));
 
     Vector3f cperori                       = cori;
-    cperori[2]                             = 1000.0f;
+    cperori[2]                             = scene.perspectiveCameraDistance;
     context.global_perspective_camera_node = std::make_shared<SceneNode>(cperori, cscale, cangle);
     scene.cameras["global_perspective"]->AttatchNode(context.global_perspective_camera_node);
     scene.sceneGraph->AppendChild(context.global_perspective_camera_node);
@@ -5949,7 +5963,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
     shaderInfo.baseConstSvs["g_EyePosition"]        = std::array {
         static_cast<float>(context.ortho_w) / 2.0f,
         static_cast<float>(context.ortho_h) / 2.0f,
-        1000.0f,
+        context.scene->perspectiveCameraDistance,
     };
 
     const auto spawn_type              = ParseSpawnType(child_data.type);
