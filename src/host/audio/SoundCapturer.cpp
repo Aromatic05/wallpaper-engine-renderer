@@ -212,6 +212,7 @@ private:
     void UnInit() {
         m_inited = false;
         if (m_device_inited) {
+            ::miniaudio::StopDeviceBeforeUninit(&m_device);
             ma_device_uninit(&m_device);
             m_device_inited = false;
         }
