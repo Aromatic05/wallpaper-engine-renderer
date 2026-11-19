@@ -823,14 +823,15 @@ constexpr std::string_view kSyntheticDirectDrawShapeTextureName {
     "__hanabi_shape_directdraw_transparent_source"
 };
 
-void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key) {
+void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key,
+                                   const std::array<uint8_t, 4>& rgba = { 0, 0, 0, 0 }) {
     auto* synthetic_parser = AsSyntheticImageParser(scene.imageParser.get());
     if (synthetic_parser == nullptr) return;
 
     const std::string key(texture_key);
     if (scene.textures.count(key) != 0) return;
 
-    synthetic_parser->RegisterImage(key, CreateSceneScriptSolidImage(texture_key, { 0, 0, 0, 0 }));
+    synthetic_parser->RegisterImage(key, CreateSceneScriptSolidImage(texture_key, rgba));
     scene.textures[key] = SceneTexture {
         .url = key,
         .sample =
@@ -849,6 +850,81 @@ void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key) {
         .mapHeight = 1,
     };
     scene.dirtyImportedTextureKeys.insert(key);
+}
+
+// Wallpaper Engine's opacity-mask samplers declare `require` combos (e.g. ENABLEMASK) and a
+// `paintdefaultcolor`. When an effect pass opts in to the mask by setting those combos but saved no
+// painted texture, Wallpaper Engine samples the paint-default colour (usually black). Leaving the
+// slot empty instead disables the MASK branch, so the effect applies at full strength: blurprecise
+// on clock text, for example, blurs the whole layer instead of not at all. Only explicit authored
+// opt-ins are handled here; plain metadata defaults stay unbound (see TextureSlotCanEnableCombo).
+void BindAuthoredMaskPaintDefaults(Scene& scene, const wpscene::WPMaterial& wpmat,
+                                   std::span<const WPShaderUnit> units,
+                                   std::vector<std::string>&     textures) {
+    constexpr std::string_view kSamplerDecl { "uniform sampler2D g_Texture" };
+    for (const auto& unit : units) {
+        const std::string_view src(unit.src);
+        size_t                 pos = 0;
+        while ((pos = src.find(kSamplerDecl, pos)) != std::string_view::npos) {
+            const size_t           line_end = src.find('\n', pos);
+            const std::string_view line =
+                src.substr(pos, line_end == std::string_view::npos ? std::string_view::npos
+                                                                   : line_end - pos);
+            pos = line_end == std::string_view::npos ? src.size() : line_end;
+
+            int32_t index  = -1;
+            size_t  cursor = kSamplerDecl.size();
+            while (cursor < line.size() && line[cursor] >= '0' && line[cursor] <= '9') {
+                index  = (index < 0 ? 0 : index * 10) + (line[cursor] - '0');
+                cursor++;
+            }
+            const size_t json_start = line.find("// {");
+            if (index < 0 || json_start == std::string_view::npos) continue;
+            if (static_cast<size_t>(index) < textures.size() && ! textures[index].empty()) continue;
+
+            const auto json = nlohmann::json::parse(line.substr(json_start + 3), nullptr, false);
+            if (json.is_discarded() || ! json.is_object() || ! json.contains("paintdefaultcolor") ||
+                ! json.contains("require") || ! json.at("require").is_object() ||
+                json.at("require").empty()) {
+                continue;
+            }
+
+            const bool requireany = json.value("requireany", false);
+            bool       any        = false;
+            bool       all        = true;
+            for (const auto& [combo, wanted] : json.at("require").items()) {
+                const auto it = wpmat.combos.find(combo);
+                const bool ok = it != wpmat.combos.end() && wanted.is_number_integer() &&
+                                it->second == wanted.get<int32_t>();
+                any |= ok;
+                all &= ok;
+            }
+            if (! (requireany ? any : all)) continue;
+
+            std::array<float, 4> color { 0.0f, 0.0f, 0.0f, 1.0f };
+            const auto&          paint = json.at("paintdefaultcolor");
+            if (paint.is_string()) {
+                std::istringstream values(paint.get<std::string>());
+                for (auto& component : color) {
+                    if (! (values >> component)) break;
+                }
+            }
+            std::array<uint8_t, 4> rgba {};
+            std::string            key { "__hanabi_paint_default" };
+            for (size_t i = 0; i < 4; i++) {
+                rgba[i] = static_cast<uint8_t>(std::lround(std::clamp(color[i], 0.0f, 1.0f) * 255.0f));
+                key += "_" + std::to_string(rgba[i]);
+            }
+
+            if (textures.size() <= static_cast<size_t>(index)) textures.resize(index + 1);
+            textures[index] = key;
+            EnsureSystemTextureRegistered(scene, key, rgba);
+            LOG_VERBOSE("MaskPaintDefault: material shader '%s' g_Texture%d -> %s",
+                        wpmat.shader.c_str(),
+                        index,
+                        key.c_str());
+        }
+    }
 }
 
 bool ResolveObjectVisibility(bool raw_visible, const VisibleBinding& binding,
@@ -1600,6 +1676,8 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
 
         textures[i] = *property;
     }
+
+    BindAuthoredMaskPaintDefaults(*pScene, wpmat, sd_units, textures);
 
     std::vector<WPShaderTexInfo>                 texinfos;
     std::unordered_map<std::string, ImageHeader> texHeaders;
@@ -4958,6 +5036,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             // active scene camera.
             imgEffectLayer->SetFullscreen(wpimgobj.fullscreen);
             imgEffectLayer->SetFinalBlend(imgBlendMode);
+            imgEffectLayer->SetFinalBlendsWithFramebuffer(color_blend_plan.append_final_effect);
             imgEffectLayer->SetClearSourceBeforeOwnerDraw(use_copybackground_source_helper);
             const auto source_policy = ResolveImageEffectSourcePolicy(isCompose, wpimgobj);
             imgEffectLayer->SetSourceContributionPolicy(source_policy);
