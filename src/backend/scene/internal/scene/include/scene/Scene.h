@@ -279,6 +279,9 @@ public:
     float                cameraParallaxMouseInfluence { 0.0f };
     double               textRenderScale { 1.0 };
     double               textAuthoringScale { 1.0 };
+    // Distance of the legacy `global_perspective` particle camera from the z=0 scene plane,
+    // derived from the scene FOV so that plane exactly fills the view (see WPSceneParser).
+    float                perspectiveCameraDistance { 1000.0f };
 
     double elapsingTime { 0.0f }, frameTime { 0.0f };
     void   PassFrameTime(double t) {

@@ -156,6 +156,10 @@ public:
     bool        ClearSourceBeforeOwnerDraw() const { return m_clear_source_before_owner_draw; }
     void        SetFinalCompositeSource(std::string source);
     void        SetFullscreen(bool fullscreen) { m_fullscreen = fullscreen; }
+    // The final authored pass blends with the framebuffer through its own screen-space position
+    // (genericimage BLENDMODE color blend). It must draw at the layer's on-screen placement, not
+    // privately through the effect camera, or it samples the whole framebuffer.
+    void        SetFinalBlendsWithFramebuffer(bool value) { m_final_blends_with_framebuffer = value; }
     void        SetSourceContributionPolicy(SourcePolicy policy) { m_source_policy = policy; }
     void        SetClearSourceBeforeOwnerDraw(bool clear_source_before_owner_draw) {
         m_clear_source_before_owner_draw = clear_source_before_owner_draw;
@@ -225,6 +229,7 @@ private:
     // effect camera/fullscreen mesh path; resolving that pass through the active scene camera turns
     // a shader such as godrays_combine into a tiny world-space quad and makes the rays disappear.
     bool m_fullscreen { false };
+    bool m_final_blends_with_framebuffer { false };
     bool m_materialization_failed { false };
     SourcePolicy m_source_policy { SourcePolicy::OwnerNode };
     //    std::vector<float> m_size;

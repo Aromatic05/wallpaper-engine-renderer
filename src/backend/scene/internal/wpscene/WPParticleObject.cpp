@@ -104,11 +104,12 @@ bool Emitter::FromJson(const nlohmann::json& json) {
     GET_JSON_NAME_VALUE_NOWARN(json, "flags", _raw_flags);
     flags = EFlags(_raw_flags);
 
+    // `sign` restricts an axis to its positive (+1) or negative (-1) half. Rain_down_pour
+    // authors "10 10 10"; Wallpaper Engine does not restrict the emitter with such values
+    // (clamping them to +1 confined the rain to one octant and made it ~1.7x denser than on
+    // Windows), so only exactly +-1 counts.
     std::transform(sign.begin(), sign.end(), sign.begin(), [](int32_t v) {
-        if (v != 0)
-            return v / std::abs(v);
-        else
-            return 0;
+        return (v == 1 || v == -1) ? v : 0;
     });
     return true;
 }

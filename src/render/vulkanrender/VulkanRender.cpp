@@ -1577,7 +1577,8 @@ void VulkanRender::Impl::UpdateCameraFillMode(wallpaper::Scene&   scene,
     gPerCam.SetAspect(perspective_aspect);
     gPerCam.SetFov(use_active_global_perspective_fov
                        ? active_global_perspective_fov
-                       : algorism::CalculatePersperctiveFov(1000.0f, gCam.Height()));
+                       : algorism::CalculatePersperctiveFov(
+                             scene.perspectiveCameraDistance, gCam.Height()));
     gCam.Update();
     gPerCam.Update();
     scene.UpdateLinkedCamera("global");

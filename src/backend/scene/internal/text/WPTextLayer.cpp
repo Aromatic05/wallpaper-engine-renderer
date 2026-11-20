@@ -2188,11 +2188,16 @@ bool HasDirectionalTextScreenAnchor(const wpscene::WPTextObject& object) {
            TextAnchorContains(object.anchor, "top") || TextAnchorContains(object.anchor, "bottom");
 }
 
-double ResolveBaseTextGeometryScale(double authoring_scale) {
-    const double scene_authoring_scale =
-        std::max(static_cast<double>(kMinTextVisualScaleFactor), authoring_scale);
-    return std::max(static_cast<double>(kMinTextVisualScaleFactor),
-                    scene_authoring_scale * scene_authoring_scale);
+// Wallpaper Engine sizes text glyphs as FreeType points at 300 DPI (the recovered font path passes
+// `pointsize * 64`, FreeType's 26.6 point size): one authored point is 300/72 scene units before the
+// layer's own scale, independent of the scene canvas size. Measured against workshop previews on
+// 1560x960, 3440x1440 and 3840x2160 scenes the Windows text is 4.1-4.4x the raw pointsize. The
+// previous canvas-relative rule, (min(w/1920, h/1080) clamped to 1)^2, only matched 4K canvases
+// (4x) and drew text 1.78x on 1440p canvases and 1x on 1080p and smaller ones, i.e. 2-4x too small.
+constexpr double kWallpaperEngineTextUnitsPerPoint { 300.0 / 72.0 };
+
+double ResolveBaseTextGeometryScale(double /*authoring_scale*/) {
+    return kWallpaperEngineTextUnitsPerPoint;
 }
 
 double ResolveMeasuredTextGeometryScale(const wpscene::WPTextObject& object,
