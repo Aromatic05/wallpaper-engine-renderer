@@ -398,11 +398,22 @@ VideoBackend::VideoBackend(const BackendContext& context)
                 ! m_renderBinding ||
                 m_renderBinding->renderInitInfo().width != renderInfo.width ||
                 m_renderBinding->renderInitInfo().height != renderInfo.height;
+            // Wayland compositors resend linux-dmabuf feedback rounds with the same formats in
+            // a different order; only membership decides the pipeline configuration.
+            const bool consumerFormatsChanged =
+                renderInfo.consumer_dmabuf_formats_known != m_consumerDmabufFormatsKnown ||
+                renderInfo.consumer_dmabuf_formats.size() != m_consumerDmabufFormats.size() ||
+                std::any_of(renderInfo.consumer_dmabuf_formats.begin(),
+                            renderInfo.consumer_dmabuf_formats.end(),
+                            [this](const auto& format) {
+                                return std::find(m_consumerDmabufFormats.begin(),
+                                                 m_consumerDmabufFormats.end(),
+                                                 format)
+                                    == m_consumerDmabufFormats.end();
+                            });
             const bool pipelineConfigChanged =
                 outputExtentChanged || requestedMode != m_preferredPipelineMode ||
-                renderInfo.allow_shm_fallback != m_allowShmFallback ||
-                renderInfo.consumer_dmabuf_formats_known != m_consumerDmabufFormatsKnown ||
-                renderInfo.consumer_dmabuf_formats != m_consumerDmabufFormats;
+                renderInfo.allow_shm_fallback != m_allowShmFallback || consumerFormatsChanged;
 
             if (m_renderBinding) m_renderBinding->attachSwapchain(nullptr);
             m_frameSwapchain.reset();
