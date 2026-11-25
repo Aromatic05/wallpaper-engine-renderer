@@ -360,9 +360,14 @@ SceneImageEffectLayer::ResolveFinalOutputDecision(
     FinalOutputPolicy final_output_policy) {
     FinalOutputResolveDecision decision;
 
+    // Source-less passthrough layers normally keep their final effect private and publish it
+    // through the neutral composite. A final color-blend pass is the exception: Wallpaper Engine
+    // draws it at the layer's screen position, where its framebuffer sample is the scene directly
+    // under the layer. Rendering it privately through the effect camera maps that sample across the
+    // whole framebuffer, so the layer shows a shrunken copy of the entire scene.
     const bool source_less_final_output =
         m_final_composite.hidden_policy == HiddenFinalCompositePolicy::SuppressOutput &&
-        m_final_composite.output_effect != nullptr;
+        m_final_composite.output_effect != nullptr && !m_final_blends_with_framebuffer;
     const bool publish_private_final_composite =
         final_output_policy == FinalOutputPolicy::PrivateAuthoredThenComposite;
     decision.keep_authored_final_private =

@@ -34,6 +34,18 @@
 
 namespace
 {
+// Wayland compositors resend linux-dmabuf feedback rounds whose format lists contain the
+// same entries in a different order. Consumers only test membership
+// (SupportsDmabufFormat / CollectDmabufModifiers), so reorderings are not a real change.
+bool SameFormats(const std::vector<wallpaper::DmabufFormatModifier>& lhs,
+                 const std::vector<wallpaper::DmabufFormatModifier>& rhs) {
+    if (lhs.size() != rhs.size()) return false;
+    for (const auto& format : lhs) {
+        if (std::find(rhs.begin(), rhs.end(), format) == rhs.end()) return false;
+    }
+    return true;
+}
+
 // Owns the saved binding polymorphically; the concrete type
 // (WESceneOutputBinding, WebOutputBinding, or VideoOutputBinding) is chosen in
 // we_session_set_render_config from state->sourceKind.
@@ -392,7 +404,7 @@ int32_t we_session_set_dmabuf_formats(we_session_t* session, const uint32_t* fou
     }
 
     if (state->renderInitInfo.consumer_dmabuf_formats_known &&
-        state->renderInitInfo.consumer_dmabuf_formats == formats) {
+        SameFormats(state->renderInitInfo.consumer_dmabuf_formats, formats)) {
         return 0;
     }
 

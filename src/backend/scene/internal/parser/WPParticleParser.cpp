@@ -72,6 +72,7 @@ struct SingleRandom {
     static void ReadFromJson(const nlohmann::json& j, SingleRandom& r) {
         GET_JSON_NAME_VALUE_NOWARN(j, "min", r.min);
         GET_JSON_NAME_VALUE_NOWARN(j, "max", r.max);
+        GET_JSON_NAME_VALUE_NOWARN(j, "exponent", r.exponent);
     };
 };
 struct VecRandom {
@@ -176,8 +177,12 @@ ParticleInitOp WPParticleParser::genParticleInitOp(const nlohmann::json& wpj) {
         } else if (name == "sizerandom") {
             SingleRandom r = { 0.0f, 20.0f };
             SingleRandom::ReadFromJson(wpj, r);
+            // Wallpaper Engine biases the random size by the authored exponent, so a scene that
+            // asks for 75..100 with exponent 30 gets almost every drop at 75 while a plain uniform
+            // range spreads them to 100. Ignoring it made rain quads noticeably larger.
             return [=](Particle& p, const ParticleInitInfo&) {
-                PM::InitSize(p, Random::get(r.min, r.max));
+                const double t = std::pow(Random::get(0.0f, 1.0f), r.exponent);
+                PM::InitSize(p, r.min + t * (r.max - r.min));
             };
         } else if (name == "alpharandom") {
             SingleRandom r = { 0.05f, 1.0f };

@@ -8,6 +8,8 @@
 #include <functional>
 #include <cstring>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -37,6 +39,34 @@
 
 namespace miniaudio
 {
+
+// miniaudio 0.11.21's ma_device_uninit() no longer stops a started device; it flips the state
+// and joins the worker. With the PulseAudio backend that worker is blocked inside
+// pa_mainloop_iterate(), which only the backend's data-loop wakeup interrupts, so an idle stream
+// (wallpaper paused or muted, suspended sink, after system sleep) made uninit wait forever and a
+// wallpaper switch never completed. Call this before every ma_device_uninit(): ma_device_stop()
+// wakes the loop and waits for the worker to leave it. A single wakeup can be swallowed if it
+// lands just before the loop re-arms, so keep re-sending it until the stop returns. The backend
+// loop is only freed later by ma_device_uninit(), after the helper thread has been joined.
+inline void StopDeviceBeforeUninit(ma_device* device) {
+    if (device == nullptr || ma_device_get_state(device) != ma_device_state_started) return;
+    auto* context = device->pContext;
+    auto  wakeup  = context != nullptr ? context->callbacks.onDeviceDataLoopWakeup : nullptr;
+
+    std::atomic<bool> stopping { true };
+    std::thread       waker;
+    if (wakeup != nullptr) {
+        waker = std::thread([device, wakeup, &stopping] {
+            while (stopping.load(std::memory_order_acquire)) {
+                wakeup(device);
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
+    }
+    ma_device_stop(device);
+    stopping.store(false, std::memory_order_release);
+    if (waker.joinable()) waker.join();
+}
 
 struct DeviceDesc {
     ma_uint32              phyChannels;
@@ -159,8 +189,11 @@ public:
             LOG_INFO("uninit sound device");
         }
         UnmountAll();
+        StopBeforeUninit();
         ma_device_uninit(&m_device); // always do it
     }
+
+    void StopBeforeUninit() { StopDeviceBeforeUninit(&m_device); }
     // bool IsStarted() const { return ma_device_is_started(&m_device); }
     // bool IsStopped() const { return ma_device_get_state(&m_device) == MA_STATE_STOPPED; }
     void Start() {

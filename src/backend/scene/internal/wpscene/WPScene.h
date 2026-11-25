@@ -57,6 +57,9 @@ public:
     Orthogonalprojection orthogonalprojection { 1920, 1080 };
     float                zoom { 1.0f };
     float                fov { 50.0f };
+    // FOV of the perspective camera that 2D scenes use for perspective particles. Newer editors
+    // write it (default 90); older scenes omit it, and then `fov` applies.
+    float                perspectiveoverridefov { 0.0f };
     float                nearz { 0.01f };
     float                farz { 10000.0f };
     std::array<float, 3> ambientcolor { 0.2f, 0.2f, 0.2f };

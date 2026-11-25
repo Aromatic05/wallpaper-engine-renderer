@@ -823,14 +823,15 @@ constexpr std::string_view kSyntheticDirectDrawShapeTextureName {
     "__hanabi_shape_directdraw_transparent_source"
 };
 
-void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key) {
+void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key,
+                                   const std::array<uint8_t, 4>& rgba = { 0, 0, 0, 0 }) {
     auto* synthetic_parser = AsSyntheticImageParser(scene.imageParser.get());
     if (synthetic_parser == nullptr) return;
 
     const std::string key(texture_key);
     if (scene.textures.count(key) != 0) return;
 
-    synthetic_parser->RegisterImage(key, CreateSceneScriptSolidImage(texture_key, { 0, 0, 0, 0 }));
+    synthetic_parser->RegisterImage(key, CreateSceneScriptSolidImage(texture_key, rgba));
     scene.textures[key] = SceneTexture {
         .url = key,
         .sample =
@@ -849,6 +850,81 @@ void EnsureSystemTextureRegistered(Scene& scene, std::string_view texture_key) {
         .mapHeight = 1,
     };
     scene.dirtyImportedTextureKeys.insert(key);
+}
+
+// Wallpaper Engine's opacity-mask samplers declare `require` combos (e.g. ENABLEMASK) and a
+// `paintdefaultcolor`. When an effect pass opts in to the mask by setting those combos but saved no
+// painted texture, Wallpaper Engine samples the paint-default colour (usually black). Leaving the
+// slot empty instead disables the MASK branch, so the effect applies at full strength: blurprecise
+// on clock text, for example, blurs the whole layer instead of not at all. Only explicit authored
+// opt-ins are handled here; plain metadata defaults stay unbound (see TextureSlotCanEnableCombo).
+void BindAuthoredMaskPaintDefaults(Scene& scene, const wpscene::WPMaterial& wpmat,
+                                   std::span<const WPShaderUnit> units,
+                                   std::vector<std::string>&     textures) {
+    constexpr std::string_view kSamplerDecl { "uniform sampler2D g_Texture" };
+    for (const auto& unit : units) {
+        const std::string_view src(unit.src);
+        size_t                 pos = 0;
+        while ((pos = src.find(kSamplerDecl, pos)) != std::string_view::npos) {
+            const size_t           line_end = src.find('\n', pos);
+            const std::string_view line =
+                src.substr(pos, line_end == std::string_view::npos ? std::string_view::npos
+                                                                   : line_end - pos);
+            pos = line_end == std::string_view::npos ? src.size() : line_end;
+
+            int32_t index  = -1;
+            size_t  cursor = kSamplerDecl.size();
+            while (cursor < line.size() && line[cursor] >= '0' && line[cursor] <= '9') {
+                index  = (index < 0 ? 0 : index * 10) + (line[cursor] - '0');
+                cursor++;
+            }
+            const size_t json_start = line.find("// {");
+            if (index < 0 || json_start == std::string_view::npos) continue;
+            if (static_cast<size_t>(index) < textures.size() && ! textures[index].empty()) continue;
+
+            const auto json = nlohmann::json::parse(line.substr(json_start + 3), nullptr, false);
+            if (json.is_discarded() || ! json.is_object() || ! json.contains("paintdefaultcolor") ||
+                ! json.contains("require") || ! json.at("require").is_object() ||
+                json.at("require").empty()) {
+                continue;
+            }
+
+            const bool requireany = json.value("requireany", false);
+            bool       any        = false;
+            bool       all        = true;
+            for (const auto& [combo, wanted] : json.at("require").items()) {
+                const auto it = wpmat.combos.find(combo);
+                const bool ok = it != wpmat.combos.end() && wanted.is_number_integer() &&
+                                it->second == wanted.get<int32_t>();
+                any |= ok;
+                all &= ok;
+            }
+            if (! (requireany ? any : all)) continue;
+
+            std::array<float, 4> color { 0.0f, 0.0f, 0.0f, 1.0f };
+            const auto&          paint = json.at("paintdefaultcolor");
+            if (paint.is_string()) {
+                std::istringstream values(paint.get<std::string>());
+                for (auto& component : color) {
+                    if (! (values >> component)) break;
+                }
+            }
+            std::array<uint8_t, 4> rgba {};
+            std::string            key { "__hanabi_paint_default" };
+            for (size_t i = 0; i < 4; i++) {
+                rgba[i] = static_cast<uint8_t>(std::lround(std::clamp(color[i], 0.0f, 1.0f) * 255.0f));
+                key += "_" + std::to_string(rgba[i]);
+            }
+
+            if (textures.size() <= static_cast<size_t>(index)) textures.resize(index + 1);
+            textures[index] = key;
+            EnsureSystemTextureRegistered(scene, key, rgba);
+            LOG_VERBOSE("MaskPaintDefault: material shader '%s' g_Texture%d -> %s",
+                        wpmat.shader.c_str(),
+                        index,
+                        key.c_str());
+        }
+    }
 }
 
 bool ResolveObjectVisibility(bool raw_visible, const VisibleBinding& binding,
@@ -1600,6 +1676,8 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
 
         textures[i] = *property;
     }
+
+    BindAuthoredMaskPaintDefaults(*pScene, wpmat, sd_units, textures);
 
     std::vector<WPShaderTexInfo>                 texinfos;
     std::unordered_map<std::string, ImageHeader> texHeaders;
@@ -3332,14 +3410,28 @@ void ParseCamera(ParseContext& context, const wpscene::WPScene& scene_config) {
     scene.defaultGlobalCameraNode = context.global_camera_node;
     scene.defaultGlobalCameraZoom = std::max(0.0001f, general.zoom);
 
-    scene.cameras["global_perspective"] =
-        std::make_shared<SceneCamera>((float)context.ortho_w / (float)context.ortho_h,
-                                      general.nearz,
-                                      general.farz,
-                                      algorism::CalculatePersperctiveFov(1000.0f, context.ortho_h));
+    // Perspective particles (rain, snow, sparks) are seen through a perspective camera placed so
+    // its FOV exactly frames the canvas, which keeps the z=0 plane pixel-identical to the
+    // orthographic layers. Wallpaper Engine takes that FOV from `perspectiveoverridefov` (newer
+    // editors write it, default 90; authors also use 5, 30 or 170) and falls back to the scene
+    // `fov` for older scenes. The camera used to sit a fixed 1000 units away whatever the canvas
+    // size, so e.g. a 4640-unit-tall scene's rain was magnified and far denser than on Windows.
+    const float authored_fov = general.perspectiveoverridefov > 0.0f
+                                   ? general.perspectiveoverridefov
+                                   : general.fov;
+    const float perspective_fov =
+        std::clamp(std::isfinite(authored_fov) ? authored_fov : 50.0f, 1.0f, 170.0f);
+    scene.perspectiveCameraDistance = static_cast<float>(
+        (static_cast<double>(context.ortho_h) * 0.5) /
+        std::tan(static_cast<double>(perspective_fov) * M_PI / 360.0));
+    scene.cameras["global_perspective"] = std::make_shared<SceneCamera>(
+        (float)context.ortho_w / (float)context.ortho_h,
+        general.nearz,
+        general.farz,
+        algorism::CalculatePersperctiveFov(scene.perspectiveCameraDistance, context.ortho_h));
 
     Vector3f cperori                       = cori;
-    cperori[2]                             = 1000.0f;
+    cperori[2]                             = scene.perspectiveCameraDistance;
     context.global_perspective_camera_node = std::make_shared<SceneNode>(cperori, cscale, cangle);
     scene.cameras["global_perspective"]->AttatchNode(context.global_perspective_camera_node);
     scene.sceneGraph->AppendChild(context.global_perspective_camera_node);
@@ -4958,6 +5050,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj,
             // active scene camera.
             imgEffectLayer->SetFullscreen(wpimgobj.fullscreen);
             imgEffectLayer->SetFinalBlend(imgBlendMode);
+            imgEffectLayer->SetFinalBlendsWithFramebuffer(color_blend_plan.append_final_effect);
             imgEffectLayer->SetClearSourceBeforeOwnerDraw(use_copybackground_source_helper);
             const auto source_policy = ResolveImageEffectSourcePolicy(isCompose, wpimgobj);
             imgEffectLayer->SetSourceContributionPolicy(source_policy);
@@ -5870,7 +5963,7 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
     shaderInfo.baseConstSvs["g_EyePosition"]        = std::array {
         static_cast<float>(context.ortho_w) / 2.0f,
         static_cast<float>(context.ortho_h) / 2.0f,
-        1000.0f,
+        context.scene->perspectiveCameraDistance,
     };
 
     const auto spawn_type              = ParseSpawnType(child_data.type);
@@ -8040,6 +8133,45 @@ bool wallpaper::CreateDynamicSceneLayer(
     return true;
 }
 
+namespace
+{
+bool JsonHasNonNull(const nlohmann::json& object, const char* key) {
+    return object.contains(key) && ! object.at(key).is_null();
+}
+
+bool JsonHasParent(const nlohmann::json& object) {
+    if (! JsonHasNonNull(object, "parent")) return false;
+    const auto& parent = object.at("parent");
+    return ! (parent.is_number_integer() && parent.get<int64_t>() == 0);
+}
+
+// Wallpaper Engine's editor writes `"parallaxDepth": "1.000 1.000"` for ordinary layers (its own
+// asset sample scenes carry 98 explicit 1s against 4 explicit 0s), and authors who want a layer
+// to stay put while camera parallax is on set an explicit "0 0". A scene that leaves the field
+// out, typically from older editor versions, therefore means the editor default 1, not 0:
+// treating it as 0 froze e.g. the character, ground and clock of 3659877246 while only its
+// explicitly pinned tree was meant to stay still. Only top-level image, particle, text and plain
+// group layers get the default; explicit values (including "0 0"), child layers (they follow
+// their parent's parallax anchor), sounds, lights, models and camera layers are left untouched.
+// Fullscreen layers ignore parallaxDepth when parsed, so they are unaffected as well.
+void ApplyDefaultRootParallaxDepth(nlohmann::json& scene_json) {
+    if (! scene_json.contains("objects") || ! scene_json.at("objects").is_array()) return;
+    for (auto& object : scene_json.at("objects")) {
+        if (! object.is_object() || object.contains("parallaxDepth") || JsonHasParent(object)) {
+            continue;
+        }
+        const bool drawable = JsonHasNonNull(object, "image") ||
+                              JsonHasNonNull(object, "particle") || JsonHasNonNull(object, "text");
+        const bool plain_group =
+            ! drawable && object.contains("origin") && ! JsonHasNonNull(object, "sound") &&
+            ! JsonHasNonNull(object, "light") && ! JsonHasNonNull(object, "model") &&
+            ! JsonHasNonNull(object, "camera") && ! JsonHasNonNull(object, "path") &&
+            ! JsonHasNonNull(object, "shape");
+        if (drawable || plain_group) object["parallaxDepth"] = "1.00000 1.00000";
+    }
+}
+} // namespace
+
 std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std::string& buf,
                                             fs::VFS& vfs, audio::SoundManager& sm,
                                             const UserPropertyMap* user_properties,
@@ -8067,6 +8199,8 @@ std::shared_ptr<Scene> WPSceneParser::Parse(std::string_view scene_id, const std
 
     CollectScriptReferencedLayerNames(json, script_referenced_layer_names);
     dependency_source_ids = linked_source_ids;
+
+    ApplyDefaultRootParallaxDepth(json);
 
     for (auto& obj : json.at("objects")) {
         int32_t     object_id = 0;
