@@ -872,15 +872,23 @@ void BindAuthoredMaskPaintDefaults(Scene& scene, const wpscene::WPMaterial& wpma
                                                                    : line_end - pos);
             pos = line_end == std::string_view::npos ? src.size() : line_end;
 
-            int32_t index  = -1;
+            size_t  index  = 0;
             size_t  cursor = kSamplerDecl.size();
+            bool    has_index = false;
             while (cursor < line.size() && line[cursor] >= '0' && line[cursor] <= '9') {
-                index  = (index < 0 ? 0 : index * 10) + (line[cursor] - '0');
+                has_index = true;
+                const size_t digit = static_cast<size_t>(line[cursor] - '0');
+                if (index > (WE_GLTEX_NAMES.size() - 1 - digit) / 10) {
+                    index = WE_GLTEX_NAMES.size();
+                    break;
+                }
+                index = index * 10 + digit;
                 cursor++;
             }
             const size_t json_start = line.find("// {");
-            if (index < 0 || json_start == std::string_view::npos) continue;
-            if (static_cast<size_t>(index) < textures.size() && ! textures[index].empty()) continue;
+            if (! has_index || index >= WE_GLTEX_NAMES.size() ||
+                json_start == std::string_view::npos) continue;
+            if (index < textures.size() && ! textures[index].empty()) continue;
 
             const auto json = nlohmann::json::parse(line.substr(json_start + 3), nullptr, false);
             if (json.is_discarded() || ! json.is_object() || ! json.contains("paintdefaultcolor") ||
@@ -889,6 +897,7 @@ void BindAuthoredMaskPaintDefaults(Scene& scene, const wpscene::WPMaterial& wpma
                 continue;
             }
 
+            if (json.contains("requireany") && ! json.at("requireany").is_boolean()) continue;
             const bool requireany = json.value("requireany", false);
             bool       any        = false;
             bool       all        = true;
@@ -916,7 +925,7 @@ void BindAuthoredMaskPaintDefaults(Scene& scene, const wpscene::WPMaterial& wpma
                 key += "_" + std::to_string(rgba[i]);
             }
 
-            if (textures.size() <= static_cast<size_t>(index)) textures.resize(index + 1);
+            if (textures.size() <= index) textures.resize(index + 1);
             textures[index] = key;
             EnsureSystemTextureRegistered(scene, key, rgba);
             LOG_VERBOSE("MaskPaintDefault: material shader '%s' g_Texture%d -> %s",
@@ -3424,10 +3433,13 @@ void ParseCamera(ParseContext& context, const wpscene::WPScene& scene_config) {
     scene.perspectiveCameraDistance = static_cast<float>(
         (static_cast<double>(context.ortho_h) * 0.5) /
         std::tan(static_cast<double>(perspective_fov) * M_PI / 360.0));
+    const float perspective_farz = std::max(
+        general.farz,
+        scene.perspectiveCameraDistance + static_cast<float>(std::max(context.ortho_w, context.ortho_h)));
     scene.cameras["global_perspective"] = std::make_shared<SceneCamera>(
         (float)context.ortho_w / (float)context.ortho_h,
         general.nearz,
-        general.farz,
+        perspective_farz,
         algorism::CalculatePersperctiveFov(scene.perspectiveCameraDistance, context.ortho_h));
 
     Vector3f cperori                       = cori;
